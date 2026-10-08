@@ -12,7 +12,8 @@ exchanged through the PAKE channel and bound to the code by a MAC exchange.
 | `IrohTransport::bind(Role, Relays)` | A fresh endpoint with a fresh secret key, ALPN `wyrmyon/1`, the `Minimal` preset (no pkarr or DNS publishing: addresses only ever travel through the mailbox), n0's default relays or none |
 | `IrohTransport::info()` | Our `IrohInfo`, after waiting up to 5 s for the home relay (when relays are on) and a direct address |
 | `IrohTransport::connect(&their_info, wormhole_key)` | Sender dials, receiver accepts; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s |
-| `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` | Raw bytes on the stream; the last message finishes it; `finish` closes in order |
+| `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` / `abort` | Raw bytes on the stream; the last message finishes it; `finish` closes in order, `abort` closes at once with an error code |
+| `IrohTransport::close()` | Closes an endpoint that never connected, e.g. when the receiver refuses the offer |
 
 ## Wire format
 
@@ -41,8 +42,13 @@ On the connection:
    the end (at most 4 KiB).
 4. The sender closes the connection; the receiver waits up to 5 s for that
    close before closing its endpoint, so the ack is never lost to an early
-   exit. Every failed `connect` also closes its endpoint, which flushes the
-   QUIC close to the peer instead of leaving it to a 30 s idle timeout.
+   exit. Every failed `connect` closes its endpoint, and any error after the
+   connection is up (a short file, a failed unzip, a disk error) aborts the
+   pipe, so the peer learns at once instead of at the 30 s idle timeout.
+
+The `Receiving (...)` line says `iroh, direct` or `iroh, via relay until a
+direct path opens`: it is a snapshot at connect time, and iroh moves to a
+direct path by itself once hole-punching succeeds.
 
 The node ID pin proves the connection reaches the endpoint the peer announced
 through the encrypted mailbox; the binding proves that endpoint belongs to

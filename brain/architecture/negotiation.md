@@ -39,9 +39,10 @@ Each side decides on its own from the same two adverts:
 | none | yes | iroh-v1 |
 | none | no | classic transit |
 | `--force-classic` | either | classic transit (and no advert, so the peer agrees) |
-| `--force-iroh` | no | refused: an `error` to the peer, then a failing exit |
+| `--force-iroh` | no | refused for files and directories: an `error` to the peer, then a failing exit. Text needs no transport, so it still goes through |
 
-Only a side that saw the peer's advert sends `{"wyrmyon-iroh-v1": ...}`
+A side that cannot bind its iroh endpoint tells the peer with an `error`
+before failing. Only a side that saw the peer's advert sends `{"wyrmyon-iroh-v1": ...}`
 ([iroh-v1.md](iroh-v1.md)), so a legacy client never receives it. When iroh
 cannot connect, the transfer fails; it does not fall back to classic transit
 on the same wormhole ([decisions.md](../decisions.md)).
