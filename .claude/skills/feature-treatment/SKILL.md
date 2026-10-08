@@ -104,6 +104,7 @@ resolve.
 cargo fmt --all --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+scripts/coverage.sh                  # at or above the 90% floor, and look for a logic file drifting down the list
 ```
 
 Every commit must pass on its own, not just the tip; check from clean exports
@@ -135,7 +136,8 @@ gh pr create -R Arzaroth/wyrmyon --head <branch> ... || gh pr edit ...
 gh pr checks --watch -R Arzaroth/wyrmyon
 ```
 
-CI runs fmt, clippy and tests on x86_64 and aarch64. It must be green.
+CI runs fmt, clippy and tests on x86_64 and aarch64, and the coverage floor.
+It must be green.
 
 ## 7. Merge (keep the layers)
 

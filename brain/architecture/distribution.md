@@ -10,7 +10,9 @@ both together.
 `.github/workflows/ci.yml` runs on pull requests and pushes to `master`, on
 x86_64 and aarch64 Linux: `cargo fmt --all --check`, clippy with
 `-D warnings` (pedantic, from `[workspace.lints]`), and `cargo test`, all
-`--locked`.
+`--locked`. A `coverage` job shellchecks `scripts/coverage.sh` and runs it with
+`--check`: line coverage under 90% fails the build
+([testing.md](testing.md)).
 
 The repository lives on Forgejo (`git.arzaroth.com/Arzaroth/wyrmyon`) and is
 push-mirrored to GitHub (`github.com/Arzaroth/wyrmyon`). CI and releases run on

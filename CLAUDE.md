@@ -57,6 +57,9 @@ never touch n0's iroh relays: `tests/support` disables them.
   bump both together.
 - Before finishing: `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test`. CI runs the same on x86_64 and aarch64.
+- Line coverage stays at or above 90% (`scripts/coverage.sh --check`, a CI
+  job). New code comes with tests that keep it there; `scripts/coverage.sh`
+  ranks the files with the most uncovered lines.
 - Protocol identifiers are part of the wire format; changing any of them breaks
   older wyrmyon peers: the `app_versions` key `wyrmyon`, the transport name
   `iroh-v1`, the app message `wyrmyon-iroh-v1` and its `IrohInfo` fields, the

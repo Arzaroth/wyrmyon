@@ -8,6 +8,19 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
+## Coverage
+
+```bash
+scripts/coverage.sh            # summary, then files ranked by uncovered lines
+scripts/coverage.sh --check    # fails below 90% of lines (WYRMYON_COVERAGE_FLOOR)
+scripts/coverage.sh --html     # browsable report
+```
+
+`cargo-llvm-cov` over the whole workspace, the CLI tests' runs of the built
+binaries included; `crates/testkit` is left out, being test infrastructure.
+CI's `coverage` job runs `--check`, so a branch that drops line coverage under
+the floor fails. The toolchain pin carries `llvm-tools-preview` for it.
+
 ## Off the public servers
 
 Tests never reach `relay.magic-wormhole.io`, `transit.magic-wormhole.io` or
@@ -62,4 +75,5 @@ of a closed pipe.
 - [crates/cli/tests/cli.rs](../../crates/cli/tests/cli.rs)
 - [crates/cli/tests/interop.rs](../../crates/cli/tests/interop.rs)
 - [crates/cli/tests/support/mod.rs](../../crates/cli/tests/support/mod.rs)
+- [scripts/coverage.sh](../../scripts/coverage.sh)
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
