@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use wyrmyon_transport_iroh::{Error, IrohTransport, Relays, Role};
+use wyrmyon_transport_iroh::{Error, IrohInfo, IrohTransport, Relays, Role};
 use wyrmyon_wormhole::Key;
 
 async fn within<T>(future: impl Future<Output = T>) -> T {
@@ -65,14 +65,15 @@ async fn a_different_wormhole_key_fails_the_binding() {
         )
     })
     .await;
+    assert!(upstream.is_err(), "the sender accepted a wrong binding");
+    assert!(downstream.is_err(), "the receiver accepted a wrong binding");
     assert!(
         matches!(upstream, Err(Error::WrongPeer)) || matches!(downstream, Err(Error::WrongPeer))
     );
-    assert!(upstream.is_err() || downstream.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_receiver_only_takes_the_announced_sender() {
+async fn the_receiver_turns_a_stranger_away_and_still_takes_the_sender() {
     let key = Key::from_bytes([3; 32]);
     let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
         .await
@@ -83,21 +84,46 @@ async fn the_receiver_only_takes_the_announced_sender() {
     let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
         .await
         .unwrap();
-    let sender_info = sender.info().await;
-    let receiver_info = receiver.info().await;
+    let (sender_info, receiver_info) = (sender.info().await, receiver.info().await);
     let receiver_key = key.clone();
-    let waiting = tokio::spawn(async move {
-        tokio::time::timeout(
-            Duration::from_secs(3),
-            receiver.connect(&sender_info, &receiver_key),
-        )
-        .await
-    });
-    let intruder = stranger.connect(&receiver_info, &key).await;
-    assert!(intruder.is_err());
+    let waiting = tokio::spawn(async move { receiver.connect(&sender_info, &receiver_key).await });
     assert!(
-        waiting.await.unwrap().is_err(),
-        "the receiver accepted a stranger"
+        within(stranger.connect(&receiver_info, &key))
+            .await
+            .is_err()
     );
-    drop(sender);
+    let upstream = within(sender.connect(&receiver_info, &key)).await;
+    let downstream = within(waiting).await.unwrap();
+    assert!(upstream.is_ok(), "{:?}", upstream.err());
+    assert!(downstream.is_ok(), "{:?}", downstream.err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unusable_addresses_fail_at_once() {
+    let key = Key::from_bytes([8; 32]);
+    let real = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let id = real.info().await.id;
+    let bad = [
+        IrohInfo {
+            id: "garbage".into(),
+            relays: vec![],
+            direct: vec!["127.0.0.1:9".into()],
+        },
+        IrohInfo {
+            id,
+            relays: vec!["not a url".into()],
+            direct: vec!["nope".into()],
+        },
+    ];
+    for info in bad {
+        let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+            .await
+            .unwrap();
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), sender.connect(&info, &key)).await;
+        assert!(matches!(result, Ok(Err(Error::BadAddress(_)))));
+    }
+    real.close().await;
 }

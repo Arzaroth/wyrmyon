@@ -326,21 +326,52 @@ async fn an_existing_output_directory_receives_the_file_inside() {
     assert_eq!(std::fs::read(to.path().join("in.txt")).unwrap(), b"inside");
 }
 
+struct Outcome {
+    ok: bool,
+    sender: String,
+    receiver: String,
+}
+
 async fn transfer_with(
     server: &MailboxServer,
     send_flags: &[&str],
     receive_flags: &[&str],
-) -> (bool, String) {
+    directory: bool,
+) -> Outcome {
     let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    std::fs::write(from.path().join("t.bin"), vec![5u8; 100_000]).unwrap();
+    let what = if directory {
+        std::fs::create_dir_all(from.path().join("t/sub")).unwrap();
+        std::fs::write(from.path().join("t/sub/x"), vec![5u8; 100_000]).unwrap();
+        "t"
+    } else {
+        std::fs::write(from.path().join("t"), vec![5u8; 100_000]).unwrap();
+        "t"
+    };
     let mut sender = wyrm(&server.url())
         .args(send_flags)
-        .args(["send", "t.bin"])
+        .args(["send", what])
         .current_dir(from.path())
         .spawn()
         .unwrap();
-    let code = read_code(sender.stderr.take().unwrap()).await;
-    let (ok, _, stderr) = finish(
+    let stderr = sender.stderr.take().unwrap();
+    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
+    let collected = tokio::spawn(async move {
+        use tokio::io::AsyncBufReadExt;
+        let mut lines = tokio::io::BufReader::new(stderr).lines();
+        let (mut all, mut code_tx) = (String::new(), Some(code_tx));
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(code) = line.split("code is: ").nth(1)
+                && let Some(tx) = code_tx.take()
+            {
+                let _ = tx.send(code.trim().to_owned());
+            }
+            all.push_str(&line);
+            all.push('\n');
+        }
+        all
+    });
+    let code = code_rx.await.unwrap();
+    let (receive_ok, _, receiver_log) = finish(
         wyrm(&server.url())
             .args(receive_flags)
             .args(["receive", "--accept-file", &code])
@@ -349,30 +380,68 @@ async fn transfer_with(
             .unwrap(),
     )
     .await;
-    let sent = finish(sender).await.0;
-    let same = std::fs::read(to.path().join("t.bin")).is_ok_and(|d| d == vec![5u8; 100_000]);
-    (ok && sent && same, stderr)
+    let (sent, _, _) = finish(sender).await;
+    let path = if directory { "t/sub/x" } else { "t" };
+    let same = std::fs::read(to.path().join(path)).is_ok_and(|d| d == vec![5u8; 100_000]);
+    Outcome {
+        ok: receive_ok && sent && same,
+        sender: collected.await.unwrap(),
+        receiver: receiver_log,
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn two_wyrms_pick_iroh_unless_either_forces_classic() {
     let server = MailboxServer::start().await;
-    let (ok, stderr) = transfer_with(&server, &[], &[]).await;
-    assert!(ok, "{stderr}");
-    assert!(stderr.contains("Receiving (iroh"), "{stderr}");
+    for directory in [false, true] {
+        let outcome = transfer_with(&server, &[], &[], directory).await;
+        assert!(outcome.ok, "{}", outcome.receiver);
+        assert!(
+            outcome.receiver.contains("Receiving (iroh"),
+            "{}",
+            outcome.receiver
+        );
+    }
     for (send_flags, receive_flags) in [
         (&["--force-classic"][..], &[][..]),
         (&[][..], &["--force-classic"][..]),
     ] {
-        let (ok, stderr) = transfer_with(&server, send_flags, receive_flags).await;
-        assert!(ok, "{stderr}");
-        assert!(stderr.contains("Receiving (directly"), "{stderr}");
+        let outcome = transfer_with(&server, send_flags, receive_flags, false).await;
+        assert!(outcome.ok, "{}", outcome.receiver);
+        assert!(
+            outcome.receiver.contains("Receiving (directly"),
+            "{}",
+            outcome.receiver
+        );
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn force_iroh_refuses_a_legacy_peer() {
+async fn force_iroh_refuses_a_legacy_peer_on_either_side() {
     let server = MailboxServer::start().await;
-    let (ok, stderr) = transfer_with(&server, &["--force-iroh"], &["--force-classic"]).await;
-    assert!(!ok, "{stderr}");
+    let outcome = transfer_with(&server, &["--force-iroh"], &["--force-classic"], false).await;
+    assert!(!outcome.ok);
+    assert!(
+        outcome.sender.contains("does not speak iroh-v1"),
+        "{}",
+        outcome.sender
+    );
+    assert!(
+        outcome.receiver.contains("requires iroh-v1"),
+        "{}",
+        outcome.receiver
+    );
+
+    let outcome = transfer_with(&server, &["--force-classic"], &["--force-iroh"], false).await;
+    assert!(!outcome.ok);
+    assert!(
+        outcome.receiver.contains("does not speak iroh-v1"),
+        "{}",
+        outcome.receiver
+    );
+    assert!(
+        outcome.sender.contains("requires iroh-v1"),
+        "{}",
+        outcome.sender
+    );
 }
