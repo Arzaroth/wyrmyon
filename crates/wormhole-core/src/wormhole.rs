@@ -12,6 +12,7 @@ use crate::server::{Inbound, Mood, Outbound};
 use crate::{APPID, Error, PUBLIC_RELAY};
 
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_EARLY_PHASES: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -41,7 +42,7 @@ pub struct Pending {
     code: Code,
     nameplate: Option<String>,
     mailbox: String,
-    spake: Spake2<Ed25519Group>,
+    spake: Option<Spake2<Ed25519Group>>,
     app_versions: Value,
     welcome: Welcome,
 }
@@ -49,43 +50,60 @@ pub struct Pending {
 pub struct Wormhole {
     conn: Connection,
     side: String,
-    their_side: String,
     mailbox: String,
     key: Key,
+    inbox: Inbox,
     their_app_versions: Value,
     welcome: Welcome,
     next_tx: u64,
+}
+
+struct Inbox {
+    their_side: String,
+    key: Key,
     next_rx: u64,
     received: BTreeMap<u64, Vec<u8>>,
 }
 
 pub async fn create(config: &Config, words: usize) -> Result<Pending, Error> {
     let (mut conn, side, welcome) = bind(config).await?;
-    conn.send(&Outbound::Allocate).await?;
-    let nameplate = conn
-        .expect(|msg| match msg {
-            Inbound::Allocated { nameplate } => Some(nameplate),
-            _ => None,
-        })
-        .await?;
-    let code = Code::with_nameplate(&nameplate, &code::choose_words(words));
-    Pending::start(conn, side, welcome, code, config).await
+    let allocated = async {
+        conn.send(&Outbound::Allocate).await?;
+        let nameplate = conn
+            .expect(|msg| match msg {
+                Inbound::Allocated { nameplate } => Some(nameplate),
+                _ => None,
+            })
+            .await?;
+        if code::is_nameplate(&nameplate) {
+            Ok(nameplate)
+        } else {
+            Err(Error::Protocol(
+                "the server allocated a malformed nameplate".into(),
+            ))
+        }
+    }
+    .await;
+    match allocated {
+        Ok(nameplate) => {
+            let code = Code::with_nameplate(&nameplate, &code::choose_words(words));
+            Pending::start(conn, side, welcome, code, config).await
+        }
+        Err(e) => {
+            conn.shutdown().await;
+            Err(e)
+        }
+    }
 }
 
-pub async fn connect(config: &Config, code: Code) -> Result<Wormhole, Error> {
+pub async fn join(config: &Config, code: Code) -> Result<Pending, Error> {
     let (conn, side, welcome) = bind(config).await?;
-    Pending::start(conn, side, welcome, code, config)
-        .await?
-        .pair()
-        .await
+    Pending::start(conn, side, welcome, code, config).await
 }
 
 async fn bind(config: &Config) -> Result<(Connection, String, Welcome), Error> {
     let side = hex::encode(rand::random::<[u8; 5]>());
     let (mut conn, welcome) = Connection::open(&config.relay_url, side.clone()).await?;
-    let Inbound::Welcome { welcome } = welcome else {
-        unreachable!("Connection::open returns the welcome message");
-    };
     if let Some(error) = welcome.get("error") {
         conn.shutdown().await;
         return Err(Error::Welcome(
@@ -98,12 +116,17 @@ async fn bind(config: &Config) -> Result<(Connection, String, Welcome), Error> {
             .and_then(Value::as_str)
             .map(str::to_owned),
     };
-    conn.send(&Outbound::Bind {
-        appid: config.appid.clone(),
-        side: side.clone(),
-        client_version: ("wyrmyon".into(), env!("CARGO_PKG_VERSION").into()),
-    })
-    .await?;
+    let bound = conn
+        .send(&Outbound::Bind {
+            appid: config.appid.clone(),
+            side: side.clone(),
+            client_version: ("wyrmyon".into(), env!("CARGO_PKG_VERSION").into()),
+        })
+        .await;
+    if let Err(e) = bound {
+        conn.shutdown().await;
+        return Err(e);
+    }
     Ok((conn, side, welcome))
 }
 
@@ -116,38 +139,37 @@ impl Pending {
         config: &Config,
     ) -> Result<Self, Error> {
         let nameplate = code.nameplate().to_owned();
-        conn.send(&Outbound::Claim {
-            nameplate: nameplate.clone(),
-        })
-        .await?;
-        let mailbox = conn
-            .expect(|msg| match msg {
-                Inbound::Claimed { mailbox } => Some(mailbox),
-                _ => None,
-            })
-            .await?;
-        conn.send(&Outbound::Open {
-            mailbox: mailbox.clone(),
-        })
-        .await?;
+        let mailbox = match claim_and_open(&mut conn, &nameplate).await {
+            Ok(mailbox) => mailbox,
+            Err(e) => {
+                let mood = e.mood();
+                close_session(conn, Some(nameplate), None, mood).await;
+                return Err(e);
+            }
+        };
         let password: String = code.as_str().nfc().collect();
         let (spake, outbound) = Spake2::<Ed25519Group>::start_symmetric(
             &Password::new(password.as_bytes()),
             &Identity::new(config.appid.as_bytes()),
         );
         let pake = json!({ "pake_v1": hex::encode(outbound) }).to_string();
-        conn.send(&Outbound::Add {
-            phase: "pake".into(),
-            body: hex::encode(pake),
-        })
-        .await?;
+        let added = conn
+            .send(&Outbound::Add {
+                phase: "pake".into(),
+                body: hex::encode(pake),
+            })
+            .await;
+        if let Err(e) = added {
+            close_session(conn, Some(nameplate), Some(mailbox), e.mood()).await;
+            return Err(e);
+        }
         Ok(Self {
             conn,
             side,
             code,
             nameplate: Some(nameplate),
             mailbox,
-            spake,
+            spake: Some(spake),
             app_versions: config.app_versions.clone(),
             welcome,
         })
@@ -164,6 +186,26 @@ impl Pending {
     }
 
     pub async fn pair(mut self) -> Result<Wormhole, Error> {
+        match self.exchange().await {
+            Ok((inbox, their_app_versions)) => Ok(Wormhole {
+                conn: self.conn,
+                side: self.side,
+                mailbox: self.mailbox,
+                key: inbox.key.clone(),
+                inbox,
+                their_app_versions,
+                welcome: self.welcome,
+                next_tx: 0,
+            }),
+            Err(e) => {
+                let mood = e.mood();
+                close_session(self.conn, self.nameplate, Some(self.mailbox), mood).await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn exchange(&mut self) -> Result<(Inbox, Value), Error> {
         let (their_side, their_pake) = loop {
             let msg = self.conn.next_message().await?;
             if msg.phase == "pake" {
@@ -181,6 +223,8 @@ impl Pending {
             .ok_or_else(|| Error::Protocol("PAKE message without pake_v1".into()))?;
         let shared = self
             .spake
+            .take()
+            .expect("exchange runs once")
             .finish(&their_pake)
             .map_err(|_| Error::Protocol("invalid PAKE message".into()))?;
         let key = Key::from_bytes(
@@ -199,50 +243,65 @@ impl Pending {
             })
             .await?;
 
-        let mut wormhole = Wormhole {
-            conn: self.conn,
-            side: self.side,
+        let mut inbox = Inbox {
             their_side,
-            mailbox: self.mailbox,
             key,
-            their_app_versions: Value::Null,
-            welcome: self.welcome,
-            next_tx: 0,
             next_rx: 0,
             received: BTreeMap::new(),
         };
         let their_versions = loop {
-            let msg = wormhole.conn.next_message().await?;
-            if msg.side != wormhole.their_side {
+            let msg = self.conn.next_message().await?;
+            if msg.side != inbox.their_side {
                 continue;
             }
             if msg.phase == "version" {
                 break msg.body;
             }
-            wormhole.stash(&msg.phase, &msg.body)?;
+            inbox.stash(&msg.phase, &msg.body)?;
         };
-        let Some(their_versions) = wormhole
+        let their_versions = inbox
             .key
-            .derive_phase(&wormhole.their_side, "version")
+            .derive_phase(&inbox.their_side, "version")
             .decrypt(&their_versions)
-        else {
-            wormhole.close(Mood::Scary).await;
-            return Err(Error::WrongCode);
-        };
+            .ok_or(Error::WrongCode)?;
         let their_versions: Value = serde_json::from_slice(&their_versions)
             .map_err(|_| Error::Protocol("unreadable version message".into()))?;
-        wormhole.their_app_versions = their_versions
+        let their_app_versions = their_versions
             .get("app_versions")
             .cloned()
             .unwrap_or(Value::Object(Map::new()));
-        Ok(wormhole)
+        Ok((inbox, their_app_versions))
     }
 
-    pub async fn abandon(mut self) {
-        if let Some(nameplate) = self.nameplate.take() {
-            let _ = self.conn.send(&Outbound::Release { nameplate }).await;
+    pub async fn abandon(self) {
+        close_session(self.conn, self.nameplate, Some(self.mailbox), Mood::Lonely).await;
+    }
+}
+
+impl Inbox {
+    fn stash(&mut self, phase: &str, body: &[u8]) -> Result<(), Error> {
+        let Ok(index) = phase.parse::<u64>() else {
+            return Ok(());
+        };
+        if index < self.next_rx || self.received.contains_key(&index) {
+            return Ok(());
         }
-        close_mailbox(self.conn, &self.mailbox, Mood::Lonely).await;
+        if self.received.len() >= MAX_EARLY_PHASES {
+            return Err(Error::Protocol("too many out-of-order messages".into()));
+        }
+        let plaintext = self
+            .key
+            .derive_phase(&self.their_side, phase)
+            .decrypt(body)
+            .ok_or(Error::Tampered)?;
+        self.received.insert(index, plaintext);
+        Ok(())
+    }
+
+    fn take_next(&mut self) -> Option<Vec<u8>> {
+        let plaintext = self.received.remove(&self.next_rx)?;
+        self.next_rx += 1;
+        Some(plaintext)
     }
 }
 
@@ -253,6 +312,11 @@ impl Wormhole {
     }
 
     #[must_use]
+    pub fn transit_key(&self) -> Key {
+        self.key.derive(format!("{APPID}/transit-key").as_bytes())
+    }
+
+    #[must_use]
     pub fn verifier(&self) -> [u8; KEY_LEN] {
         *self.key.derive(b"wormhole:verifier").as_bytes()
     }
@@ -260,11 +324,6 @@ impl Wormhole {
     #[must_use]
     pub fn their_app_versions(&self) -> &Value {
         &self.their_app_versions
-    }
-
-    #[must_use]
-    pub fn side(&self) -> &str {
-        &self.side
     }
 
     #[must_use]
@@ -290,13 +349,12 @@ impl Wormhole {
 
     pub async fn receive(&mut self) -> Result<Vec<u8>, Error> {
         loop {
-            if let Some(plaintext) = self.received.remove(&self.next_rx) {
-                self.next_rx += 1;
+            if let Some(plaintext) = self.inbox.take_next() {
                 return Ok(plaintext);
             }
             let msg = self.conn.next_message().await?;
-            if msg.side == self.their_side {
-                self.stash(&msg.phase, &msg.body)?;
+            if msg.side == self.inbox.their_side {
+                self.inbox.stash(&msg.phase, &msg.body)?;
             }
         }
     }
@@ -307,36 +365,45 @@ impl Wormhole {
             .map_err(|_| Error::Protocol("peer sent a message that is not JSON".into()))
     }
 
-    fn stash(&mut self, phase: &str, body: &[u8]) -> Result<(), Error> {
-        let Ok(index) = phase.parse::<u64>() else {
-            return Ok(());
-        };
-        if index < self.next_rx || self.received.contains_key(&index) {
-            return Ok(());
-        }
-        let Some(plaintext) = self.key.derive_phase(&self.their_side, phase).decrypt(body) else {
-            return Err(Error::Protocol(
-                "a message from the peer failed to decrypt".into(),
-            ));
-        };
-        self.received.insert(index, plaintext);
-        Ok(())
-    }
-
     pub async fn close(self, mood: Mood) {
-        close_mailbox(self.conn, &self.mailbox, mood).await;
+        close_session(self.conn, None, Some(self.mailbox), mood).await;
     }
 }
 
-async fn close_mailbox(mut conn: Connection, mailbox: &str, mood: Mood) {
-    let closing = async {
-        conn.send(&Outbound::Close {
-            mailbox: mailbox.to_owned(),
-            mood,
+async fn claim_and_open(conn: &mut Connection, nameplate: &str) -> Result<String, Error> {
+    conn.send(&Outbound::Claim {
+        nameplate: nameplate.to_owned(),
+    })
+    .await?;
+    let mailbox = conn
+        .expect(|msg| match msg {
+            Inbound::Claimed { mailbox } => Some(mailbox),
+            _ => None,
         })
         .await?;
-        conn.expect(|msg| matches!(msg, Inbound::Closed).then_some(()))
-            .await
+    conn.send(&Outbound::Open {
+        mailbox: mailbox.clone(),
+    })
+    .await?;
+    Ok(mailbox)
+}
+
+async fn close_session(
+    mut conn: Connection,
+    nameplate: Option<String>,
+    mailbox: Option<String>,
+    mood: Mood,
+) {
+    let closing = async {
+        if let Some(nameplate) = nameplate {
+            conn.send(&Outbound::Release { nameplate }).await?;
+        }
+        if let Some(mailbox) = mailbox {
+            conn.send(&Outbound::Close { mailbox, mood }).await?;
+            conn.expect(|msg| matches!(msg, Inbound::Closed).then_some(()))
+                .await?;
+        }
+        Ok::<_, Error>(())
     };
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, closing).await;
     conn.shutdown().await;

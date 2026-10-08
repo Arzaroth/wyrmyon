@@ -11,7 +11,7 @@ pub struct Key(pub(crate) [u8; KEY_LEN]);
 
 impl Key {
     #[must_use]
-    pub fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
+    pub(crate) fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
         Self(bytes)
     }
 
@@ -70,7 +70,7 @@ impl std::fmt::Debug for Key {
 }
 
 #[must_use]
-pub fn hkdf(key: &[u8], info: &[u8]) -> [u8; KEY_LEN] {
+pub(crate) fn hkdf(key: &[u8], info: &[u8]) -> [u8; KEY_LEN] {
     let mut out = [0u8; KEY_LEN];
     Hkdf::<Sha256>::new(None, key)
         .expand(info, &mut out)

@@ -3,10 +3,16 @@ use std::collections::VecDeque;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message as Frame;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+use serde_json::{Map, Value};
 
 use crate::Error;
 use crate::server::{Inbound, Outbound};
+
+const MAX_FRAME: usize = 1 << 20;
+const MAX_BUFFERED: usize = 64;
 
 pub(crate) struct MailboxMessage {
     pub side: String,
@@ -21,17 +27,27 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    pub async fn open(url: &str, side: String) -> Result<(Self, Inbound), Error> {
-        let (ws, _) = tokio_tungstenite::connect_async(url)
-            .await
-            .map_err(|e| Error::Connection(format!("mailbox server {url}: {e}")))?;
+    pub async fn open(url: &str, side: String) -> Result<(Self, Map<String, Value>), Error> {
+        let config = WebSocketConfig::default()
+            .max_message_size(Some(MAX_FRAME))
+            .max_frame_size(Some(MAX_FRAME));
+        let (ws, _) = Box::pin(tokio_tungstenite::connect_async_with_config(
+            url,
+            Some(config),
+            false,
+        ))
+        .await
+        .map_err(|e| Error::Connection(format!("mailbox server {url}: {e}")))?;
         let mut conn = Self {
             ws: Box::new(ws),
             side,
             buffered: VecDeque::new(),
         };
         let welcome = conn
-            .expect(|msg| matches!(msg, Inbound::Welcome { .. }).then_some(msg))
+            .expect(|msg| match msg {
+                Inbound::Welcome { welcome } => Some(welcome),
+                _ => None,
+            })
             .await?;
         Ok((conn, welcome))
     }
@@ -96,6 +112,11 @@ impl Connection {
     fn buffer(&mut self, side: String, phase: String, body: &str) -> Result<(), Error> {
         if side == self.side {
             return Ok(());
+        }
+        if self.buffered.len() >= MAX_BUFFERED {
+            return Err(Error::Protocol(
+                "the mailbox flooded us with messages".into(),
+            ));
         }
         let body =
             hex::decode(body).map_err(|_| Error::Protocol("mailbox body is not hex".into()))?;

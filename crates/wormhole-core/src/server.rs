@@ -70,8 +70,6 @@ pub enum Inbound {
     Closed,
     Error {
         error: String,
-        #[serde(default)]
-        orig: Value,
     },
     #[serde(other)]
     Unknown,

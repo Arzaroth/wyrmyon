@@ -19,7 +19,10 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         Some(code) => code.parse()?,
         None => prompt_code().await?,
     };
-    let mut wormhole = wyrmyon_wormhole::connect(&global.config(), code).await?;
+    let mut wormhole = wyrmyon_wormhole::join(&global.config(), code)
+        .await?
+        .pair()
+        .await?;
     show_welcome(wormhole.welcome());
 
     loop {

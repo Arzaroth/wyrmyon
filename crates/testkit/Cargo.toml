@@ -1,6 +1,6 @@
 [package]
 name = "wyrmyon-testkit"
-description = "In-process mailbox server and transit relay for wyrmyon's tests"
+description = "In-process mailbox server for wyrmyon's tests"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

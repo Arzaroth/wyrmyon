@@ -21,7 +21,14 @@ async fn two_peers_agree_on_a_key_and_exchange_messages_in_order() {
 
     let receiver = tokio::spawn({
         let config = config(&server, json!({"b": 2}));
-        async move { wyrmyon_wormhole::connect(&config, code).await.unwrap() }
+        async move {
+            wyrmyon_wormhole::join(&config, code)
+                .await
+                .unwrap()
+                .pair()
+                .await
+                .unwrap()
+        }
     });
     let mut sender = pending.pair().await.unwrap();
     let mut receiver = receiver.await.unwrap();
@@ -53,7 +60,7 @@ async fn a_wrong_code_fails_the_key_exchange() {
         .unwrap();
     let receiver = tokio::spawn({
         let config = config(&server, json!({}));
-        async move { wyrmyon_wormhole::connect(&config, wrong).await }
+        async move { wyrmyon_wormhole::join(&config, wrong).await?.pair().await }
     });
     assert!(matches!(pending.pair().await, Err(Error::WrongCode)));
     assert!(matches!(receiver.await.unwrap(), Err(Error::WrongCode)));

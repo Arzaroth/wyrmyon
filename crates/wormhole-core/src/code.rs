@@ -26,7 +26,7 @@ impl Code {
     }
 
     #[must_use]
-    pub fn with_nameplate(nameplate: &str, words: &str) -> Self {
+    pub(crate) fn with_nameplate(nameplate: &str, words: &str) -> Self {
         Self(format!("{nameplate}-{words}"))
     }
 }
@@ -41,7 +41,7 @@ impl FromStr for Code {
         let Some((nameplate, words)) = s.split_once('-') else {
             return Err(CodeError::Malformed);
         };
-        if !is_nameplate(nameplate) || words.is_empty() {
+        if !is_nameplate(nameplate) || words.split('-').any(str::is_empty) {
             return Err(CodeError::Malformed);
         }
         Ok(Self(s.to_owned()))
@@ -122,6 +122,8 @@ mod tests {
         );
         assert_eq!("7-".parse::<Code>(), Err(CodeError::Malformed));
         assert_eq!("7".parse::<Code>(), Err(CodeError::Malformed));
+        assert_eq!("7--revenge".parse::<Code>(), Err(CodeError::Malformed));
+        assert_eq!("7-guitarist-".parse::<Code>(), Err(CodeError::Malformed));
     }
 
     #[test]
