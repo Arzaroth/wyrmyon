@@ -325,3 +325,54 @@ async fn an_existing_output_directory_receives_the_file_inside() {
     assert!(finish(sender).await.0);
     assert_eq!(std::fs::read(to.path().join("in.txt")).unwrap(), b"inside");
 }
+
+async fn transfer_with(
+    server: &MailboxServer,
+    send_flags: &[&str],
+    receive_flags: &[&str],
+) -> (bool, String) {
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("t.bin"), vec![5u8; 100_000]).unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(send_flags)
+        .args(["send", "t.bin"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(receive_flags)
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    let sent = finish(sender).await.0;
+    let same = std::fs::read(to.path().join("t.bin")).is_ok_and(|d| d == vec![5u8; 100_000]);
+    (ok && sent && same, stderr)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_wyrms_pick_iroh_unless_either_forces_classic() {
+    let server = MailboxServer::start().await;
+    let (ok, stderr) = transfer_with(&server, &[], &[]).await;
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("Receiving (iroh"), "{stderr}");
+    for (send_flags, receive_flags) in [
+        (&["--force-classic"][..], &[][..]),
+        (&[][..], &["--force-classic"][..]),
+    ] {
+        let (ok, stderr) = transfer_with(&server, send_flags, receive_flags).await;
+        assert!(ok, "{stderr}");
+        assert!(stderr.contains("Receiving (directly"), "{stderr}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn force_iroh_refuses_a_legacy_peer() {
+    let server = MailboxServer::start().await;
+    let (ok, stderr) = transfer_with(&server, &["--force-iroh"], &["--force-classic"]).await;
+    assert!(!ok, "{stderr}");
+}
