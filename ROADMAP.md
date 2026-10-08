@@ -1,0 +1,87 @@
+# Roadmap
+
+The agreed backlog, in delivery order, with the decisions taken on each item so
+they are not lost. Vocabulary follows [brain/glossary.md](brain/glossary.md);
+the reasons behind the shape are in [brain/decisions.md](brain/decisions.md).
+Small fixes and open questions go in [TODO.md](TODO.md).
+
+The legacy path comes first, because the Python `wormhole` CLI tests it for
+free; the iroh path is then a pure upgrade on top of it.
+
+## M0 - Foundation
+
+- [x] Cargo workspace: `wormhole-core`, `transport-classic`, `transport-iroh`,
+      `cli`; the `wyrmyon` and `wyrm` binaries; CI on x86_64 and aarch64.
+- [x] Name chosen: wyrmyon, free on crates.io, PyPI, npm and Homebrew. `wyrm`
+      ships only as the second binary, never as a package name (taken on
+      crates.io and PyPI).
+
+## M1 - Wormhole core
+
+- [ ] Mailbox client over WebSocket (tokio-tungstenite): bind, allocate or
+      claim a nameplate, open the mailbox, add and receive messages, close.
+- [ ] SPAKE2 on the code, HKDF phase keys, secretbox, the version exchange.
+- [ ] Text send and receive against the Python `wormhole` CLI in both
+      directions. This is the first interop test.
+
+## M2 - Classic transit on the LAN
+
+- [ ] Transit handshake and direct TCP from the peer's hints, records
+      encrypted with the transit key.
+- [ ] File offer and answer, one file end to end against the Python CLI.
+
+## M3 - Full legacy transfer
+
+- [ ] Transit relay fallback (`transit.magic-wormhole.io`) and connection
+      racing across hints.
+- [ ] Directories (zipped, as the Python client does) and progress.
+- [ ] Receiver-first codes work with a legacy sender
+      (`wormhole send --code ...`).
+
+## M4 - The iroh-v1 transport
+
+- [ ] Advertise `{"wyrmyon": {"transports": ["iroh-v1"]}}` in `app_versions`;
+      both sides pick the transport from the two adverts at the same time.
+      Decided: detection happens after PAKE, never before.
+- [ ] Exchange NodeAddrs through the encrypted mailbox and pin the peer's
+      Ed25519 node ID.
+- [ ] Channel binding: HKDF a confirm key (`wyrmyon/iroh-v1/confirm`) from the
+      wormhole key and exchange MACs on the first stream. ALPN `wyrmyon/1`.
+- [ ] A control stream plus one stream per file; n0's public relays at first.
+- [ ] `--force-classic` / `--force-iroh` for testing.
+
+## M5 - Verified, resumable transfers
+
+- [ ] iroh-blobs: BLAKE3 verified streaming, resume from the last verified
+      chunk after a drop.
+
+## M6 - CLI polish
+
+- [ ] The argument decides the action: paths send, a code receives, piped
+      stdin sends text, nothing prompts. An argument that is both a code and a
+      path on disk is refused until a subcommand says which.
+- [ ] Code prompt with word completion; prefer it over codes on the command
+      line, which leak into `ps` and shell history.
+- [ ] Receiver-first mode (`wyrm receive --new`), indicatif progress bars.
+
+## M7 - Packaging
+
+- [ ] maturin with `bindings = "bin"`: wheels on PyPI, so `uvx wyrmyon` and
+      `pipx install wyrmyon` work without a Python runtime.
+- [ ] cargo-dist: GitHub release archives, shell and PowerShell installers, a
+      Homebrew tap. The release workflow and `scripts/release.sh` land here.
+
+## Later
+
+- [ ] Fallback mailbox of our own, used only when the public one is
+      unreachable; its codes carry a prefix (`m7-guitarist-revenge`) that
+      legacy clients reject as malformed, which is correct.
+- [ ] Dilation on the legacy side, for Python clients that support it.
+- [ ] Self-hosted iroh relays; a client default change, since the relay URL
+      travels inside the encrypted NodeAddr.
+
+## Not planned
+
+- Our own mailbox as the default rendezvous: the sender cannot know which
+  client the receiver runs, so codes must live where everyone looks.
+- A protocol choice exposed to the user beyond the debugging flags.
