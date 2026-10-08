@@ -30,9 +30,10 @@ address with neither is refused.
 
 On the connection:
 
-1. The sender dials the receiver's address with ALPN `wyrmyon/1`. The receiver
-   accepts only a connection whose remote node ID is the one the sender
-   announced; any other is closed and it keeps waiting.
+1. The sender dials the receiver's address with ALPN `wyrmyon/1`; iroh's TLS
+   only completes against the node ID dialled, so the sender's side of the pin
+   is iroh's own. The receiver accepts only a connection whose remote node ID
+   is the one the sender announced; any other is closed and it keeps waiting.
 2. The sender opens one bidirectional stream. Each side writes a 32-byte tag,
    HKDF of `wormhole_key.derive("wyrmyon/iroh-v1/confirm")` with info
    `<role>:<sender id>:<receiver id>`, and reads the other's. Tags are compared

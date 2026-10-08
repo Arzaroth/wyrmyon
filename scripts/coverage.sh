@@ -5,7 +5,7 @@
 #
 #   scripts/coverage.sh              summary, then the files with the most
 #                                    uncovered lines
-#   scripts/coverage.sh --check      fail below WYRMYON_COVERAGE_FLOOR (90)
+#   scripts/coverage.sh --check      fail below WYRMYON_COVERAGE_FLOOR (98)
 #   scripts/coverage.sh --html       write and open target/llvm-cov/html
 #   scripts/coverage.sh --lcov       write target/llvm-cov/lcov.info
 #   scripts/coverage.sh -- ARGS      everything after -- goes to cargo-llvm-cov
@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TOP="${WYRMYON_COVERAGE_TOP:-15}"
-FLOOR="${WYRMYON_COVERAGE_FLOOR:-90}"
+FLOOR="${WYRMYON_COVERAGE_FLOOR:-98}"
 IGNORE='crates/testkit/'
 
 if [[ -t 1 ]]; then B="\033[0;34m"; G="\033[0;32m"; Y="\033[0;33m"; R="\033[0;31m"; Z="\033[0m"; else B=""; G=""; Y=""; R=""; Z=""; fi

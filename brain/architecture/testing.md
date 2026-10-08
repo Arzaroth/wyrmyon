@@ -12,7 +12,7 @@ cargo test --locked
 
 ```bash
 scripts/coverage.sh            # summary, then files ranked by uncovered lines
-scripts/coverage.sh --check    # fails below 90% of lines (WYRMYON_COVERAGE_FLOOR)
+scripts/coverage.sh --check    # fails below 98% of lines (WYRMYON_COVERAGE_FLOOR)
 scripts/coverage.sh --html     # browsable report
 ```
 
@@ -20,6 +20,16 @@ scripts/coverage.sh --html     # browsable report
 binaries included; `crates/testkit` is left out, being test infrastructure.
 CI's `coverage` job runs `--check`, so a branch that drops line coverage under
 the floor fails. The toolchain pin carries `llvm-tools-preview` for it.
+
+What stays uncovered is what no test can provoke on demand: a UDP or TCP bind
+failure, an `accept` error, a write failing in the instant after a handshake,
+iroh waiting for a home relay. Everything a peer or a server can do wrong is
+reached on purpose: `tests/peers.rs` drives `wyrm` against hand-written library
+peers (bad offers and answers, forged acks, oversized zips over iroh, a closed
+stdout, prompts answered through a pty from Python's `pty.spawn`), and
+`MailboxServer::start_with(Quirks { .. })` makes the fake server allocate a
+malformed nameplate, refuse allocation, flood messages, hang up after the
+welcome, or chatter between replies.
 
 ## Off the public servers
 
@@ -42,6 +52,7 @@ its nameplate and closed with the right mood. It is a dev-dependency only.
 | `crates/transport-iroh/tests/iroh.rs` | Two iroh endpoints on localhost, relays disabled: data and an ack over a bound channel, a different wormhole key refused by both sides, a stranger turned away while the real sender still connects, unusable addresses failing at once |
 | `crates/cli/src/zipdir.rs` unit tests | A directory round-trips through zip with permissions and empty directories; extraction stops past the offered bytes or count; an entry leaving the directory is refused; directory symlinks followed but loops not; an empty top directory still has an entry; symlink entries skipped; cancelling stops building and extracting and removes the new directory |
 | `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text and files (empty and 300 kB) between two `wyrm` processes, a refused offer, a file refused without confirmation and over an existing one, non-regular files refused, a hand-written sender that sends more than it offered, a directory through the relay only, a receiver-allocated code, conflicting code flags refused, `-o` naming an existing directory, two wyrms on iroh (a file and a directory) unless either forces classic, `--force-iroh` refused against a legacy peer on either side with the reason on both |
+| `crates/cli/tests/peers.rs` | `wyrm` against scripted library peers: every refusal both ways, unknown messages and offers, a destination appearing mid-transfer, a zip larger than its offer over iroh, bad acks, a closed stdout, stdin text, the MOTD, and the code and consent prompts through a pty |
 | `crates/cli/tests/interop.rs` | Against the Python client; `#[ignore]`d, see below |
 
 ## Interop with the Python client

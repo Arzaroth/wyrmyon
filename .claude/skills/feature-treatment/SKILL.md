@@ -104,7 +104,7 @@ resolve.
 cargo fmt --all --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
-scripts/coverage.sh                  # at or above the 90% floor, and look for a logic file drifting down the list
+scripts/coverage.sh                  # at or above the 98% floor, and look for a logic file drifting down the list
 ```
 
 Every commit must pass on its own, not just the tip; check from clean exports
