@@ -1,0 +1,12 @@
+[package]
+name = "wyrmyon-transport-iroh"
+description = "The iroh-v1 transport: iroh QUIC endpoint, NodeAddr exchange, verified blobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

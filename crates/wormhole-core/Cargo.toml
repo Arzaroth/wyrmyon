@@ -1,0 +1,12 @@
+[package]
+name = "wyrmyon-wormhole"
+description = "Magic-wormhole mailbox client, SPAKE2 and the encrypted version exchange"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

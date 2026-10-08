@@ -1,0 +1,23 @@
+[package]
+name = "wyrmyon"
+description = "A magic-wormhole client that switches to iroh when both peers run wyrmyon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "wyrmyon"
+path = "src/main.rs"
+
+[[bin]]
+name = "wyrm"
+path = "src/bin/wyrm.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
