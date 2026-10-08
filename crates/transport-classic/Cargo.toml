@@ -10,3 +10,15 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+hex = "0.4.3"
+if-addrs = "0.15.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+tokio = { version = "1.53.2", features = ["net", "io-util", "time", "rt", "macros", "sync"] }
+wyrmyon-wormhole = { version = "0.0.0", path = "../wormhole-core" }
+
+[dev-dependencies]
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros"] }
