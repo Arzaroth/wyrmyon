@@ -11,7 +11,7 @@ use support::{finish, read_code, wyrm};
 use tokio::process::{Child, Command};
 
 struct PythonMailbox {
-    _child: Child,
+    child: Child,
     url: String,
     _dir: tempfile::TempDir,
 }
@@ -39,6 +39,7 @@ impl PythonMailbox {
             .current_dir(dir.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .process_group(0)
             .kill_on_drop(true)
             .spawn()
             .expect("uvx on PATH");
@@ -48,7 +49,7 @@ impl PythonMailbox {
                 .is_ok()
             {
                 return Self {
-                    _child: child,
+                    child,
                     url: format!("ws://127.0.0.1:{port}/v1"),
                     _dir: dir,
                 };
@@ -56,6 +57,16 @@ impl PythonMailbox {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         panic!("the Python mailbox server did not start");
+    }
+}
+
+impl Drop for PythonMailbox {
+    fn drop(&mut self) {
+        if let Some(group) = self.child.id() {
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", "--", &format!("-{group}")])
+                .status();
+        }
     }
 }
 
