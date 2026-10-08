@@ -10,35 +10,25 @@ transports are interchangeable behind it.
 | --- | --- | --- |
 | `crates/wormhole-core` | `wyrmyon-wormhole` | Mailbox client, SPAKE2, HKDF, secretbox, the version exchange |
 | `crates/transport-classic` | `wyrmyon-transport-classic` | TCP hint racing, transit relay, encrypted records |
-| `crates/transport-iroh` | `wyrmyon-transport-iroh` | iroh endpoint, NodeAddr exchange, blobs |
+| `crates/transport-iroh` | `wyrmyon-transport-iroh` | iroh endpoint, address exchange, peer pinning, channel binding |
 | `crates/cli` | `wyrmyon` | clap, progress, offer and answer; the `wyrmyon` and `wyrm` binaries |
 | `crates/testkit` | `wyrmyon-testkit` | In-process mailbox server for tests; never shipped |
 
-`wormhole-core` ([wormhole-core.md](wormhole-core.md)) and
-`transport-classic` ([transit-classic.md](transit-classic.md)) are built;
-`transport-iroh` is still empty. The CLI sends and receives text and files
+All three are built: `wormhole-core` ([wormhole-core.md](wormhole-core.md)),
+`transport-classic` ([transit-classic.md](transit-classic.md)) and
+`transport-iroh` ([iroh-v1.md](iroh-v1.md)). The CLI sends and receives text and files
 (`send.rs`, `receive.rs`, the app messages in `protocol.rs`, streaming and
 progress in `transfer.rs`, directories in `zipdir.rs`), on a multi-threaded tokio runtime started in
 `wyrmyon::main`. Both binaries are thin `main`s over that function, returning
 its exit status, so they cannot drift apart.
 
-## The Transport trait (Planned)
+## One pipe, two transports
 
-```rust
-#[async_trait]
-trait Transport {
-    async fn send_offer(&mut self, offer: Offer) -> Result<Answer>;
-    async fn send_file(&mut self, f: FileSource, p: Progress) -> Result<()>;
-    async fn receive(&mut self) -> Result<Incoming>;
-}
-```
-
-After the version exchange, `negotiate` returns an `IrohTransport` when the
-peer advertises `iroh-v1` and a `ClassicTransit` otherwise
-([negotiation.md](negotiation.md)).
-
-Planned dependencies: tokio, tokio-tungstenite, spake2, crypto_secretbox, hkdf,
-sha2, serde_json, clap, indicatif, rand, iroh, iroh-blobs.
+There is no `Transport` trait: `transfer::Pipe` is an enum over the classic
+`RecordPipe` and the `IrohPipe`, and `send_stream`, `receive_stream`,
+`await_ack` and `send_ack` work on either. The choice between them is made
+once per transfer ([negotiation.md](negotiation.md)); everything after it,
+offers, progress, hashing and the ack, is shared.
 
 ## Sources
 

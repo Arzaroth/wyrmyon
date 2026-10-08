@@ -16,3 +16,7 @@
 - Progress bars (`--hide-progress` turns them off).
 - Receiver-first codes: `wyrm receive --new` allocates the code, and
   `wyrm send --code CODE` (or `wormhole send --code`) uses it.
+- The iroh-v1 transport: when both sides run wyrmyon, files and directories
+  travel over iroh QUIC with hole-punching and n0's relays, bound to the code.
+  `--force-classic` and `--force-iroh` override the choice; `--iroh-relays
+  disabled` keeps iroh to direct connections.

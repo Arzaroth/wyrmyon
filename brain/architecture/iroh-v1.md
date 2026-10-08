@@ -1,27 +1,57 @@
-# The iroh-v1 transport (Planned)
+# The iroh-v1 transport
 
-Once both peers agree on `iroh-v1` ([negotiation.md](negotiation.md)), file
-data moves over iroh QUIC, authenticated by identities exchanged through the
-PAKE channel.
+`crates/transport-iroh` (package `wyrmyon-transport-iroh`, on iroh 1.3) moves
+file data over iroh QUIC when both peers advertise `iroh-v1`
+([negotiation.md](negotiation.md)). The endpoint is authenticated by node IDs
+exchanged through the PAKE channel and bound to the code by a MAC exchange.
 
-| Aspect | Design |
+## API
+
+| Item | What it does |
 | --- | --- |
-| Endpoint auth | Each side sends its NodeAddr over the encrypted mailbox, pinning the peer's Ed25519 node ID. QUIC/TLS only succeeds against that ID |
-| Channel binding | HKDF a confirm key (`wyrmyon/iroh-v1/confirm`) from the wormhole key; both sides exchange MACs on the first stream |
-| Connectivity | Hole-punching, relay fallback, connection migration across network changes |
-| Multiplexing | A control stream plus one stream per file, both directions, no head-of-line blocking. Covers what Dilation was designed to add |
-| Integrity and resume | iroh-blobs: BLAKE3 verified streaming, resuming from the last verified chunk |
-| Versioning | ALPN `wyrmyon/1` |
+| `IrohTransport::bind(Role, Relays)` | A fresh endpoint with a fresh secret key, ALPN `wyrmyon/1`, the `Minimal` preset (no pkarr or DNS publishing: addresses only ever travel through the mailbox), n0's default relays or none |
+| `IrohTransport::info()` | Our `IrohInfo`, after waiting up to 5 s for the home relay (when relays are on) and a direct address |
+| `IrohTransport::connect(&their_info, wormhole_key)` | Sender dials, receiver accepts; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s |
+| `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` | Raw bytes on the stream; the last message finishes it; `finish` closes in order |
 
-The node ID pin proves the connection reaches the endpoint the peer announced;
-the channel binding proves that endpoint belongs to whoever knows the code.
-Both are needed: the first alone would trust a NodeAddr a compromised peer
-process handed out, the second alone would run over an unauthenticated
-connection.
+## Wire format
 
-The names `iroh-v1`, `wyrmyon/1` and `wyrmyon/iroh-v1/confirm` are wire format;
-changing one breaks older peers.
+On the mailbox, after the version exchange showed both sides speak `iroh-v1`,
+each side sends one app message, the sender first:
+
+```json
+{"wyrmyon-iroh-v1": {"id": "<node id hex>", "relays": ["https://..."], "direct": ["192.168.1.5:41234"]}}
+```
+
+This is our own shape, not iroh's serde form of `EndpointAddr`, so an iroh
+upgrade cannot change the wire. Unparsable relays and addresses are skipped; an
+address with neither is refused.
+
+On the connection:
+
+1. The sender dials the receiver's address with ALPN `wyrmyon/1`. The receiver
+   accepts only a connection whose remote node ID is the one the sender
+   announced; any other is closed and it keeps waiting.
+2. The sender opens one bidirectional stream. Each side writes a 32-byte tag,
+   HKDF of `wormhole_key.derive("wyrmyon/iroh-v1/confirm")` with info
+   `<role>:<sender id>:<receiver id>`, and reads the other's. Tags are compared
+   in constant time; a mismatch closes the connection with `WrongPeer`.
+3. The sender writes the file bytes, as many as offered. The receiver writes
+   `{"ack": "ok", "sha256": ...}` and finishes its side; the sender reads it to
+   the end (at most 4 KiB).
+4. The sender closes the connection; the receiver waits up to 5 s for that
+   close before closing its endpoint, so the ack is never lost to an early
+   exit. Every failed `connect` also closes its endpoint, which flushes the
+   QUIC close to the peer instead of leaving it to a 30 s idle timeout.
+
+The node ID pin proves the connection reaches the endpoint the peer announced
+through the encrypted mailbox; the binding proves that endpoint belongs to
+whoever knows the code. QUIC encrypts and authenticates the bytes, so there is
+no record layer on top.
 
 ## Sources
 
-None yet: lands with M4 and M5 in [ROADMAP.md](../../ROADMAP.md).
+- [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs)
+- [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
+- [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
+- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)

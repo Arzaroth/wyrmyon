@@ -46,7 +46,8 @@ readable by every other client. These rules follow:
 Tests never reach the public servers: they run against `crates/testkit`'s
 in-process mailbox. The interop suite against the Python `wormhole` CLI runs
 only when asked: `cargo test -p wyrmyon --test interop -- --ignored` (needs
-`wormhole` and `uvx`); run it whenever a change touches the wire.
+`wormhole` and `uvx`); run it whenever a change touches the wire. Tests also
+never touch n0's iroh relays: `tests/support` disables them.
 
 ## Conventions
 
@@ -58,5 +59,8 @@ only when asked: `cargo test -p wyrmyon --test interop -- --ignored` (needs
   `cargo test`. CI runs the same on x86_64 and aarch64.
 - Protocol identifiers are part of the wire format; changing any of them breaks
   older wyrmyon peers: the `app_versions` key `wyrmyon`, the transport name
-  `iroh-v1`, the ALPN `wyrmyon/1`, the HKDF label `wyrmyon/iroh-v1/confirm`.
+  `iroh-v1`, the app message `wyrmyon-iroh-v1` and its `IrohInfo` fields, the
+  ALPN `wyrmyon/1`, the HKDF label `wyrmyon/iroh-v1/confirm` and the binding
+  tag info `<role>:<sender id>:<receiver id>`.
+- Close iroh endpoints, never just drop them (see `brain/decisions.md`).
 - Releases go through the `release` skill.

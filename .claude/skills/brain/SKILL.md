@@ -47,8 +47,8 @@ doc disagrees with reality, fix the doc.
   `brain/BRAIN.md` (and a Find-by-question row if it answers a new question).
 - Mailbox, PAKE or version message changed -> `brain/architecture/negotiation.md`
   and `servers.md`.
-- Any wire identifier changed (`app_versions` key, `iroh-v1`, ALPN, HKDF
-  labels) -> `brain/architecture/iroh-v1.md`, the list in `CLAUDE.md`, and a
+- Any wire identifier changed (`app_versions` key, `iroh-v1`, the
+  `wyrmyon-iroh-v1` message, ALPN, HKDF labels) -> `brain/architecture/iroh-v1.md`, the list in `CLAUDE.md`, and a
   `decisions.md` entry saying how older peers are handled.
 - Release, packaging or CI changed -> `brain/architecture/distribution.md`.
 - New non-obvious decision -> append it to `brain/decisions.md` with its "why".

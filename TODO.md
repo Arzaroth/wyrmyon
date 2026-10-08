@@ -13,11 +13,6 @@ done.
 
 ## Decisions before roadmap work
 
-- [ ] M4: whether a transport needs to send and receive on the mailbox
-      at the same time (split `Wormhole` into halves, or a driver task).
 
-- [ ] M4: pin the iroh and iroh-blobs versions, and check which NodeAddr
-      serialisation is stable enough to put on the wire.
-- [ ] M4: what the iroh side does when hole-punching and n0's relays both fail:
-      fall back to classic transit on the same wormhole, or report and stop.
+- [ ] M5: pin the iroh-blobs version that matches iroh 1.3.
 - [ ] Pronunciation: one line in the README once settled ("WURM-yon").

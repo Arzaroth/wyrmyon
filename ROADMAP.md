@@ -48,15 +48,19 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M4 - The iroh-v1 transport
 
-- [ ] Advertise `{"wyrmyon": {"transports": ["iroh-v1"]}}` in `app_versions`;
+- [x] Advertise `{"wyrmyon": {"transports": ["iroh-v1"]}}` in `app_versions`;
       both sides pick the transport from the two adverts at the same time.
       Decided: detection happens after PAKE, never before.
-- [ ] Exchange NodeAddrs through the encrypted mailbox and pin the peer's
-      Ed25519 node ID.
-- [ ] Channel binding: HKDF a confirm key (`wyrmyon/iroh-v1/confirm`) from the
+- [x] Exchange addresses through the encrypted mailbox and pin the peer's
+      Ed25519 node ID. Decided: our own `IrohInfo` wire form, not iroh's
+      `EndpointAddr` serde; no pkarr publishing.
+- [x] Channel binding: HKDF a confirm key (`wyrmyon/iroh-v1/confirm`) from the
       wormhole key and exchange MACs on the first stream. ALPN `wyrmyon/1`.
-- [ ] A control stream plus one stream per file; n0's public relays at first.
-- [ ] `--force-classic` / `--force-iroh` for testing.
+- [x] One stream per transfer; n0's public relays (`--iroh-relays disabled`
+      turns them off). A transfer is one offer today, so one stream is all it
+      needs; a control stream comes with multi-file transfers.
+- [x] `--force-classic` / `--force-iroh` for testing. Decided: no fallback to
+      classic transit when iroh fails.
 
 ## M5 - Verified, resumable transfers
 

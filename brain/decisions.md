@@ -47,6 +47,29 @@ stops past either: the offer is what the user said yes to, and a zip's own
 headers can claim anything. Symlink entries are skipped on both sides, as the
 Python receiver never recreates them either.
 
+## No fallback from iroh to classic transit
+
+When both peers chose iroh-v1 and iroh cannot connect, the transfer fails
+with a message, rather than falling back to classic transit on the same
+wormhole. A fallback needs both sides to agree when to give up and what to
+try next, a second negotiation that can itself go wrong; iroh already falls
+back to its relays, which reach almost anywhere. `--force-classic` is the
+manual way out.
+
+## Our own wire form for iroh addresses
+
+`IrohInfo` (`id`, `relays`, `direct`) is defined here rather than serialising
+iroh's `EndpointAddr`, whose serde form is iroh's to change between releases.
+The endpoint uses the `Minimal` preset: no pkarr or DNS publishing, since the
+address only ever needs to reach the one peer, through the encrypted mailbox.
+
+## Close iroh endpoints, never drop them
+
+Dropping an iroh endpoint does not send the QUIC close: the peer only notices
+after the 30 s idle timeout, and an ack still in flight is lost. Every path
+out of `IrohTransport::connect` and `IrohPipe::finish` closes the endpoint, and
+the side that writes the ack waits for the other's close first.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

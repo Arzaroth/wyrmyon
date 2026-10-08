@@ -1,4 +1,4 @@
-# Negotiation (Planned)
+# Negotiation
 
 Detection happens after the key exchange, not before. Rendezvous and PAKE are
 the same for every client; only the data transport differs.
@@ -28,9 +28,26 @@ The version messages are encrypted and authenticated with the PAKE key. A
 malicious mailbox server cannot strip or alter the advert without knowing the
 code, so it cannot push two wyrmyon peers onto classic transit.
 
-`--force-classic` and `--force-iroh` override the decision for testing and
-debugging only.
+## In the code
+
+`Global::config` puts the advert in `app_versions` unless `--force-classic`;
+`Global::use_iroh` reads the peer's from `Wormhole::their_app_versions()`.
+Each side decides on its own from the same two adverts:
+
+| Our flags | Peer advertises `iroh-v1` | Transport |
+| --- | --- | --- |
+| none | yes | iroh-v1 |
+| none | no | classic transit |
+| `--force-classic` | either | classic transit (and no advert, so the peer agrees) |
+| `--force-iroh` | no | refused: an `error` to the peer, then a failing exit |
+
+Only a side that saw the peer's advert sends `{"wyrmyon-iroh-v1": ...}`
+([iroh-v1.md](iroh-v1.md)), so a legacy client never receives it. When iroh
+cannot connect, the transfer fails; it does not fall back to classic transit
+on the same wormhole ([decisions.md](../decisions.md)).
 
 ## Sources
 
-None yet: lands with M4 in [ROADMAP.md](../../ROADMAP.md).
+- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`config`, `use_iroh`)
+- [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
+- [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)

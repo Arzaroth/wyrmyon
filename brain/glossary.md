@@ -35,8 +35,10 @@ sender joins it (`send --code`).
 **iroh-v1**: wyrmyon's own transport, used only when both peers advertise it.
 See [architecture/iroh-v1.md](architecture/iroh-v1.md).
 
-**NodeAddr**: an iroh endpoint's address: its Ed25519 node ID, a relay URL and
-direct addresses. Exchanged through the mailbox.
+**Node ID**: an iroh endpoint's Ed25519 public key. Fresh for every transfer.
+
+**IrohInfo**: our wire form of an iroh endpoint's address: its node ID, relay
+URLs and direct socket addresses, sent as `wyrmyon-iroh-v1` through the mailbox.
 
 **Channel binding**: the MAC exchange on the first iroh stream, keyed from the
 wormhole key, that ties the iroh connection to the code.
