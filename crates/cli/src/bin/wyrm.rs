@@ -1,3 +1,3 @@
-fn main() {
-    wyrmyon::main();
+fn main() -> std::process::ExitCode {
+    wyrmyon::main()
 }
