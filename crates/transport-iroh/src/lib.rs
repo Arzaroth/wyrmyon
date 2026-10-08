@@ -1,3 +1,5 @@
+mod blobs;
+
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -5,6 +7,8 @@ use iroh::endpoint::{Connection, RecvStream, SendStream, presets};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr};
 use serde::{Deserialize, Serialize};
 use wyrmyon_wormhole::Key;
+
+pub use blobs::{Fetched, Offered};
 
 pub const TRANSPORT: &str = "iroh-v1";
 pub const ALPN: &[u8] = b"wyrmyon/1";
@@ -39,6 +43,8 @@ pub enum Error {
     WrongPeer,
     #[error("iroh: {0}")]
     Stream(String),
+    #[error("iroh blobs: {0}")]
+    Blob(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +101,7 @@ pub struct IrohPipe {
     connection: Connection,
     endpoint: Endpoint,
     description: String,
+    server: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl IrohTransport {
@@ -139,6 +146,7 @@ impl IrohTransport {
                 connection,
                 endpoint: self.endpoint,
                 description,
+                server: None,
             }),
             Err(e) => {
                 self.endpoint.close().await;
@@ -282,12 +290,18 @@ impl IrohPipe {
             .map_err(|e| Error::Stream(e.to_string()))
     }
 
-    pub async fn abort(self) {
+    pub async fn abort(mut self) {
+        if let Some(server) = self.server.take() {
+            server.abort();
+        }
         self.connection.close(3u8.into(), b"failed");
         self.endpoint.close().await;
     }
 
     pub async fn finish(mut self) {
+        if let Some(server) = self.server.take() {
+            server.abort();
+        }
         match self.role {
             Role::Sender => self.connection.close(0u8.into(), b"done"),
             Role::Receiver => {
