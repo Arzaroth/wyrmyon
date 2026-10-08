@@ -98,6 +98,10 @@ pub struct IrohPipe {
 }
 
 impl IrohTransport {
+    pub async fn close(self) {
+        self.endpoint.close().await;
+    }
+
     pub async fn bind(role: Role, relays: Relays) -> Result<Self, Error> {
         let relay_mode = match relays {
             Relays::Default => iroh::endpoint::default_relay_mode(),
@@ -225,7 +229,7 @@ impl IrohTransport {
             .into_iter()
             .find(iroh::endpoint::Path::is_selected)
         {
-            Some(path) if path.is_relay() => "iroh, via relay".to_owned(),
+            Some(path) if path.is_relay() => "iroh, via relay until a direct path opens".to_owned(),
             Some(_) => "iroh, direct".to_owned(),
             None => "iroh".to_owned(),
         };
@@ -276,6 +280,11 @@ impl IrohPipe {
             .read_to_end(MAX_ACK)
             .await
             .map_err(|e| Error::Stream(e.to_string()))
+    }
+
+    pub async fn abort(self) {
+        self.connection.close(3u8.into(), b"failed");
+        self.endpoint.close().await;
     }
 
     pub async fn finish(mut self) {
