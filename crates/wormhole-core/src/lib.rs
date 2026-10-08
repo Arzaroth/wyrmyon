@@ -1,11 +1,30 @@
 pub mod code;
+mod connection;
 pub mod crypto;
 pub mod server;
 mod wordlist_data;
+mod wormhole;
 
 pub use code::{Code, CodeError};
 pub use crypto::Key;
 pub use server::Mood;
+pub use wormhole::{Config, Pending, Welcome, Wormhole, connect, create};
 
 pub const APPID: &str = "lothar.com/wormhole/text-or-file-xfer";
 pub const PUBLIC_RELAY: &str = "ws://relay.magic-wormhole.io:4000/v1";
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("the mailbox server refused us: {0}")]
+    Welcome(String),
+    #[error("the mailbox server reported an error: {0}")]
+    Server(String),
+    #[error("the mailbox server closed the connection")]
+    ServerClosed,
+    #[error("{0}")]
+    Connection(String),
+    #[error("the key exchange failed: the code was mistyped, or someone tried to guess it")]
+    WrongCode,
+    #[error("protocol error: {0}")]
+    Protocol(String),
+}
