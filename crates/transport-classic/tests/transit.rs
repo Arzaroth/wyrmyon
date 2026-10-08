@@ -18,7 +18,7 @@ async fn sender_and_receiver_meet_and_exchange_records_both_ways() {
     let sender = Transit::new(Role::Sender, key(7)).await;
     let receiver = Transit::new(Role::Receiver, key(7)).await;
     let (sender_info, receiver_info) = (sender.info(), receiver.info());
-    assert!(!sender_info.direct_hints().is_empty());
+    assert_ne!(sender_info.direct_hints(), []);
 
     let (upstream, downstream) = within(async {
         tokio::join!(
@@ -72,7 +72,7 @@ async fn with_no_way_to_reach_the_peer_connect_gives_up() {
         .await
         .without_listener()
         .with_timeout(Duration::from_millis(200));
-    assert!(receiver.info().direct_hints().is_empty());
+    assert_eq!(receiver.info().direct_hints(), []);
     let result = within(receiver.connect(&TransitInfo::default())).await;
     assert!(matches!(result, Err(Error::NoConnection)));
 }
