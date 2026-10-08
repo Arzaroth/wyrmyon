@@ -150,6 +150,6 @@ mod tests {
             completions("7-guitarist-reven", 2),
             vec!["7-guitarist-revenge".to_owned()]
         );
-        assert!(completions("7", 2).is_empty());
+        assert_eq!(completions("7", 2), Vec::<String>::new());
     }
 }

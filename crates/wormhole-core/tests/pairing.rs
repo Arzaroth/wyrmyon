@@ -62,7 +62,7 @@ async fn two_peers_agree_on_a_key_and_exchange_messages_in_order() {
 
     within(sender.close(Mood::Happy)).await;
     within(receiver.close(Mood::Happy)).await;
-    assert!(server.claimed_nameplates().is_empty());
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
     assert_eq!(server.moods(), ["happy", "happy"]);
 }
 
@@ -84,7 +84,7 @@ async fn a_wrong_code_fails_the_key_exchange_and_closes_scary() {
         Err(Error::WrongCode)
     ));
     assert!(matches!(receiver.await.unwrap(), Err(Error::WrongCode)));
-    assert!(server.claimed_nameplates().is_empty());
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
     assert_eq!(server.moods(), ["scary", "scary"]);
 }
 
@@ -98,7 +98,7 @@ async fn the_welcome_message_reaches_the_caller() {
         .unwrap();
     assert_eq!(pending.welcome().motd.as_deref(), Some("be nice"));
     within(pending.abandon()).await;
-    assert!(server.claimed_nameplates().is_empty());
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
     assert_eq!(server.moods(), ["lonely"]);
 
     let mut refusing = Map::new();
@@ -120,7 +120,7 @@ async fn a_third_side_on_the_nameplate_is_turned_away() {
     assert!(matches!(third, Err(Error::Server(e)) if e == "crowded"));
     within(first.abandon()).await;
     within(second.abandon()).await;
-    assert!(server.claimed_nameplates().is_empty());
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
 }
 
 #[tokio::test]
