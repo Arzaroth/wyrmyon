@@ -224,12 +224,16 @@ fn relay_line(key: &Key, side: &str) -> Vec<u8> {
 }
 
 fn local_addresses() -> Vec<IpAddr> {
-    let addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|i| i.ip())
-        .filter(|ip| ip.is_ipv4() && !ip.is_loopback())
-        .collect();
+    usable_addresses(
+        if_addrs::get_if_addrs()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|i| i.ip()),
+    )
+}
+
+fn usable_addresses(all: impl Iterator<Item = IpAddr>) -> Vec<IpAddr> {
+    let addresses: Vec<IpAddr> = all.filter(|ip| ip.is_ipv4() && !ip.is_loopback()).collect();
     if addresses.is_empty() {
         vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
     } else {
@@ -302,6 +306,15 @@ mod tests {
             relay_line(&transit_key(), "0123456789abcdef"),
             b"please relay ecd85f320731169f5768239a248b8b0f3e7834f1c05937a5939b13d6bfa933e1 for side 0123456789abcdef\n"
         );
+    }
+
+    #[test]
+    fn hints_use_lan_ipv4_addresses_or_fall_back_to_loopback() {
+        let lan: IpAddr = "192.168.1.5".parse().unwrap();
+        let v6: IpAddr = "fe80::1".parse().unwrap();
+        let lo: IpAddr = "127.0.0.1".parse().unwrap();
+        assert_eq!(usable_addresses([lo, v6, lan].into_iter()), [lan]);
+        assert_eq!(usable_addresses([lo, v6].into_iter()), [lo]);
     }
 
     #[test]

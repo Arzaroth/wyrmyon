@@ -54,7 +54,6 @@ pub struct Wormhole {
     key: Key,
     inbox: Inbox,
     their_app_versions: Value,
-    welcome: Welcome,
     next_tx: u64,
 }
 
@@ -194,7 +193,6 @@ impl Pending {
                 key: inbox.key.clone(),
                 inbox,
                 their_app_versions,
-                welcome: self.welcome,
                 next_tx: 0,
             }),
             Err(e) => {
@@ -212,9 +210,8 @@ impl Pending {
                 break (msg.side, msg.body);
             }
         };
-        if let Some(nameplate) = self.nameplate.take() {
-            self.conn.send(&Outbound::Release { nameplate }).await?;
-        }
+        let nameplate = self.nameplate.take().expect("pairing runs once");
+        self.conn.send(&Outbound::Release { nameplate }).await?;
         let their_pake: Value = serde_json::from_slice(&their_pake)
             .map_err(|_| Error::Protocol("unreadable PAKE message".into()))?;
         let their_pake = their_pake["pake_v1"]
@@ -326,11 +323,6 @@ impl Wormhole {
         &self.their_app_versions
     }
 
-    #[must_use]
-    pub fn welcome(&self) -> &Welcome {
-        &self.welcome
-    }
-
     pub async fn send(&mut self, plaintext: &[u8]) -> Result<(), Error> {
         let phase = self.next_tx.to_string();
         self.next_tx += 1;
@@ -407,4 +399,54 @@ async fn close_session(
     };
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, closing).await;
     conn.shutdown().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inbox() -> Inbox {
+        Inbox {
+            their_side: "them".into(),
+            key: Key::from_bytes([5; 32]),
+            next_rx: 0,
+            received: BTreeMap::new(),
+        }
+    }
+
+    fn sealed(inbox: &Inbox, phase: u64, body: &[u8]) -> Vec<u8> {
+        inbox
+            .key
+            .derive_phase(&inbox.their_side, &phase.to_string())
+            .encrypt(body)
+    }
+
+    #[test]
+    fn phases_arrive_in_order_once_each() {
+        let mut inbox = inbox();
+        let (zero, one) = (sealed(&inbox, 0, b"zero"), sealed(&inbox, 1, b"one"));
+        inbox.stash("pake", b"ignored").unwrap();
+        inbox.stash("1", &one).unwrap();
+        assert_eq!(inbox.take_next(), None);
+        inbox.stash("0", &zero).unwrap();
+        inbox.stash("0", &zero).unwrap();
+        assert_eq!(inbox.take_next().as_deref(), Some(&b"zero"[..]));
+        inbox.stash("0", &zero).unwrap();
+        assert_eq!(inbox.take_next().as_deref(), Some(&b"one"[..]));
+        assert_eq!(inbox.take_next(), None);
+    }
+
+    #[test]
+    fn forged_and_flooding_phases_are_refused() {
+        let mut inbox = inbox();
+        let mut forged = sealed(&inbox, 0, b"zero");
+        *forged.last_mut().unwrap() ^= 1;
+        assert!(matches!(inbox.stash("0", &forged), Err(Error::Tampered)));
+        for phase in 1..=64 {
+            let body = sealed(&inbox, phase, b"early");
+            inbox.stash(&phase.to_string(), &body).unwrap();
+        }
+        let body = sealed(&inbox, 65, b"early");
+        assert!(matches!(inbox.stash("65", &body), Err(Error::Protocol(_))));
+    }
 }

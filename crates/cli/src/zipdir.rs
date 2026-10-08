@@ -124,13 +124,11 @@ impl Walk<'_> {
                 zip.start_file(arcname(&name)?, options)?;
                 let source =
                     File::open(&path).with_context(|| format!("opening {}", path.display()))?;
-                let copied = io::copy(
-                    &mut Checked {
-                        inner: source,
-                        cancel: self.cancel,
-                    },
-                    zip,
-                )?;
+                let mut reader = Checked {
+                    inner: source,
+                    cancel: self.cancel,
+                };
+                let copied = io::copy(&mut reader, zip)?;
                 self.totals.0 += copied;
                 self.totals.1 += 1;
             } else {
@@ -189,9 +187,7 @@ pub fn extract(
                 limits.numfiles
             );
         }
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        std::fs::create_dir_all(target.parent().unwrap_or(dest))?;
         let mode = entry.unix_mode().map_or(0o644, |m| m & 0o777);
         let mut out = std::fs::OpenOptions::new()
             .write(true)
@@ -405,5 +401,27 @@ mod tests {
         assert!(extract(built.file.path(), &target, &limits(), &cancel).is_err());
         drop(made);
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn a_cancelled_read_stops_mid_file() {
+        let cancel = Cancel::default();
+        let mut reader = Checked {
+            inner: &b"data"[..],
+            cancel: &cancel,
+        };
+        let mut buf = [0u8; 2];
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        drop(cancel.on_drop());
+        assert!(reader.read(&mut buf).is_err());
+    }
+
+    #[test]
+    fn sockets_and_other_special_files_are_left_out() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("kept"), b"k").unwrap();
+        let _socket = std::os::unix::net::UnixListener::bind(src.path().join("sock")).unwrap();
+        let built = build(src.path(), &Cancel::default()).unwrap();
+        assert_eq!(built.numfiles, 1);
     }
 }

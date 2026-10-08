@@ -162,3 +162,32 @@ pub async fn send_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()> 
     let ack = json!({"ack": "ok", "sha256": hex::encode(digest)}).to_string();
     pipe.send_last(ack.as_bytes()).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wyrmyon_transport_classic::{Role, Transit};
+    use wyrmyon_wormhole::Key;
+
+    async fn pair() -> (Pipe, Pipe) {
+        let sender = Transit::new(Role::Sender, Key::from_bytes([2; 32])).await;
+        let receiver = Transit::new(Role::Receiver, Key::from_bytes([2; 32])).await;
+        let (sender_info, receiver_info) = (sender.info(), receiver.info());
+        let (a, b) = tokio::join!(
+            sender.connect(&receiver_info),
+            receiver.connect(&sender_info)
+        );
+        (Pipe::Classic(a.unwrap()), Pipe::Classic(b.unwrap()))
+    }
+
+    #[tokio::test]
+    async fn a_source_that_does_not_match_its_offer_fails_the_send() {
+        let (mut pipe, _other) = pair().await;
+        let bar = progress(0, true);
+        let grew = send_stream(&mut pipe, &b"longer than offered"[..], 4, &bar).await;
+        assert!(grew.unwrap_err().to_string().contains("grew"));
+        let (mut pipe, _other) = pair().await;
+        let shrank = send_stream(&mut pipe, &b"ab"[..], 4, &bar).await;
+        assert!(shrank.unwrap_err().to_string().contains("shrank"));
+    }
+}

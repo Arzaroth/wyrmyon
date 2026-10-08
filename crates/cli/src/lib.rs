@@ -53,6 +53,15 @@ enum IrohRelays {
     Disabled,
 }
 
+impl From<IrohRelays> for wyrmyon_transport_iroh::Relays {
+    fn from(relays: IrohRelays) -> Self {
+        match relays {
+            IrohRelays::Default => Self::Default,
+            IrohRelays::Disabled => Self::Disabled,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Send a text message or a file
@@ -82,12 +91,16 @@ impl Global {
         theirs && !self.force_classic
     }
 
-    async fn iroh(&self, role: wyrmyon_transport_iroh::Role) -> anyhow::Result<IrohTransport> {
-        let relays = match self.iroh_relays {
-            IrohRelays::Default => wyrmyon_transport_iroh::Relays::Default,
-            IrohRelays::Disabled => wyrmyon_transport_iroh::Relays::Disabled,
-        };
-        Ok(IrohTransport::bind(role, relays).await?)
+    async fn iroh_or_tell(
+        &self,
+        wormhole: &mut wyrmyon_wormhole::Wormhole,
+        role: wyrmyon_transport_iroh::Role,
+    ) -> anyhow::Result<IrohTransport> {
+        let bound = IrohTransport::bind(role, self.iroh_relays.into()).await;
+        if bound.is_err() {
+            protocol::send_error(wormhole, "cannot open an iroh endpoint").await?;
+        }
+        Ok(bound?)
     }
 
     async fn transit(&self, role: Role, key: Key) -> Transit {
@@ -144,5 +157,17 @@ fn mood_for(result: &anyhow::Result<()>) -> Mood {
         Err(e) => e
             .downcast_ref::<wyrmyon_wormhole::Error>()
             .map_or(Mood::Happy, wyrmyon_wormhole::Error::mood),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iroh_relay_flags_map_to_the_transport() {
+        use wyrmyon_transport_iroh::Relays;
+        assert_eq!(Relays::from(IrohRelays::Default), Relays::Default);
+        assert_eq!(Relays::from(IrohRelays::Disabled), Relays::Disabled);
     }
 }

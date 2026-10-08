@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
-use wyrmyon_transport_classic::{Role, TransitInfo};
-use wyrmyon_transport_iroh::Role as IrohRole;
+use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
+use wyrmyon_transport_iroh::{IrohTransport, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
@@ -35,18 +35,10 @@ enum Payload {
 
 pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
-    let payload = match (args.text, args.path) {
-        (Some(text), _) if text == "-" => {
-            let mut text = String::new();
-            tokio::io::stdin()
-                .read_to_string(&mut text)
-                .await
-                .context("reading stdin")?;
-            Payload::Text(text)
-        }
-        (Some(text), _) => Payload::Text(text),
-        (None, Some(path)) => path_payload(path).await?,
-        (None, None) => unreachable!("clap requires text or a path"),
+    let payload = match args.text {
+        Some(text) if text == "-" => Payload::Text(stdin_text().await?),
+        Some(text) => Payload::Text(text),
+        None => path_payload(args.path.context("nothing to send")?).await?,
     };
 
     let pending = if let Some(code) = code {
@@ -81,6 +73,20 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     };
     wormhole.close(mood_for(&result)).await;
     result
+}
+
+async fn stdin_text() -> anyhow::Result<String> {
+    let mut text = String::new();
+    tokio::io::stdin()
+        .read_to_string(&mut text)
+        .await
+        .context("reading stdin")?;
+    Ok(text)
+}
+
+enum Prepared {
+    Iroh(IrohTransport),
+    Classic(Transit),
 }
 
 async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
@@ -155,20 +161,14 @@ async fn send_data(
         protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
         bail!("the other side does not speak iroh-v1 (--force-iroh)");
     }
-    let (iroh, transit) = if use_iroh {
-        let iroh = match global.iroh(IrohRole::Sender).await {
-            Ok(iroh) => iroh,
-            Err(e) => {
-                protocol::send_error(wormhole, "the sender cannot open an iroh endpoint").await?;
-                return Err(e);
-            }
-        };
+    let prepared = if use_iroh {
+        let iroh = global.iroh_or_tell(wormhole, IrohRole::Sender).await?;
         protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
-        (Some(iroh), None)
+        Prepared::Iroh(iroh)
     } else {
         let transit = global.transit(Role::Sender, wormhole.transit_key()).await;
         protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
-        (None, Some(transit))
+        Prepared::Classic(transit)
     };
     protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
 
@@ -189,22 +189,22 @@ async fn send_data(
         }
     }
     .await;
-    let mut pipe = match (answered, iroh, transit) {
-        (Ok((Some(theirs), _)), Some(iroh), _) => {
+    let mut pipe = match (answered, prepared) {
+        (Ok((Some(theirs), _)), Prepared::Iroh(iroh)) => {
             Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
         }
-        (Ok(_), Some(iroh), _) => {
+        (Ok((_, theirs)), Prepared::Classic(transit)) => {
+            Pipe::Classic(transit.connect(&theirs).await?)
+        }
+        (Ok(_), Prepared::Iroh(iroh)) => {
             iroh.close().await;
             bail!("the receiver accepted without an iroh address");
         }
-        (Ok((_, theirs)), None, Some(transit)) => Pipe::Classic(transit.connect(&theirs).await?),
-        (Err(e), iroh, _) => {
-            if let Some(iroh) = iroh {
-                iroh.close().await;
-            }
+        (Err(e), Prepared::Iroh(iroh)) => {
+            iroh.close().await;
             return Err(e);
         }
-        (Ok(_), None, None) => unreachable!("one transport is always prepared"),
+        (Err(e), Prepared::Classic(_)) => return Err(e),
     };
     eprintln!("Sending ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);

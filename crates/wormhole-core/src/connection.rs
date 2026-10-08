@@ -67,11 +67,7 @@ impl Connection {
                 .await
                 .ok_or(Error::ServerClosed)?
                 .map_err(|e| Error::Connection(format!("mailbox server: {e}")))?;
-            let text = match frame {
-                Frame::Text(text) => text,
-                Frame::Close(_) => return Err(Error::ServerClosed),
-                _ => continue,
-            };
+            let Frame::Text(text) = frame else { continue };
             let msg: Inbound = serde_json::from_str(&text)
                 .map_err(|e| Error::Protocol(format!("unreadable server message: {e}")))?;
             match msg {

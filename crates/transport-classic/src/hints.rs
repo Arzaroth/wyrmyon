@@ -141,6 +141,11 @@ mod tests {
         let hint: DirectHint = "tcp:relay.example:4001:priority=0.5".parse().unwrap();
         assert_eq!((hint.hostname.as_str(), hint.port), ("relay.example", 4001));
         assert!("tcp:host".parse::<DirectHint>().is_err());
+        let info = TransitInfo {
+            abilities: vec![],
+            hints: vec![json!({"type": "direct-tcp-v1", "hostname": "", "port": 1})],
+        };
+        assert_eq!(info.direct_hints(), []);
         assert!("tcp::80".parse::<DirectHint>().is_err());
     }
 

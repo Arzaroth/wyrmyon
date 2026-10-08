@@ -71,14 +71,7 @@ async fn receive_offer(
                 connection = Some(Connection::Classic(transit, info));
             }
             Ok(AppMessage::Iroh(info)) if iroh_allowed && connection.is_none() => {
-                let iroh = match global.iroh(IrohRole::Receiver).await {
-                    Ok(iroh) => iroh,
-                    Err(e) => {
-                        protocol::send_error(wormhole, "the receiver cannot open an iroh endpoint")
-                            .await?;
-                        return Err(e);
-                    }
-                };
+                let iroh = global.iroh_or_tell(wormhole, IrohRole::Receiver).await?;
                 protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
                 connection = Some(Connection::Iroh(iroh, info));
             }
@@ -362,21 +355,23 @@ impl Partial {
     }
 
     fn finish(self, dest: &Path) -> anyhow::Result<()> {
-        let appeared = || {
-            format!(
-                "{} appeared during the transfer; the data is discarded",
-                dest.display()
-            )
-        };
-        match std::fs::hard_link(&self.path, dest) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                Err(e).with_context(appeared)
-            }
-            Err(_) if dest.symlink_metadata().is_ok() => bail!(appeared()),
-            Err(_) => std::fs::rename(&self.path, dest)
-                .with_context(|| format!("moving the file to {}", dest.display())),
-        }
+        settle(std::fs::hard_link(&self.path, dest), &self.path, dest)
+    }
+}
+
+fn settle(linked: std::io::Result<()>, partial: &Path, dest: &Path) -> anyhow::Result<()> {
+    let appeared = || {
+        format!(
+            "{} appeared during the transfer; the data is discarded",
+            dest.display()
+        )
+    };
+    match linked {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(e).with_context(appeared),
+        Err(_) if dest.symlink_metadata().is_ok() => bail!(appeared()),
+        Err(_) => std::fs::rename(partial, dest)
+            .with_context(|| format!("moving the file to {}", dest.display())),
     }
 }
 
@@ -424,6 +419,23 @@ async fn prompt_code() -> anyhow::Result<Code> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn without_hard_links_the_partial_file_is_renamed_unless_something_appeared() {
+        let dir = tempfile::tempdir().unwrap();
+        let (partial, dest) = (dir.path().join("p"), dir.path().join("d"));
+        let unsupported = || Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+        std::fs::write(&partial, b"data").unwrap();
+        settle(unsupported(), &partial, &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"data");
+
+        std::fs::write(&partial, b"more").unwrap();
+        assert!(settle(unsupported(), &partial, &dest).is_err());
+        let exists = Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+        assert!(settle(exists, &partial, &dest).is_err());
+        assert!(settle(unsupported(), &partial, &dir.path().join("no/such")).is_err());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"data");
+    }
 
     #[test]
     fn offered_names_lose_their_directories_and_control_characters() {

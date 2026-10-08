@@ -103,14 +103,10 @@ impl IrohTransport {
     }
 
     pub async fn bind(role: Role, relays: Relays) -> Result<Self, Error> {
-        let relay_mode = match relays {
-            Relays::Default => iroh::endpoint::default_relay_mode(),
-            Relays::Disabled => RelayMode::Disabled,
-        };
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::generate())
             .alpns(vec![ALPN.to_vec()])
-            .relay_mode(relay_mode)
+            .relay_mode(relay_mode(relays))
             .bind()
             .await
             .map_err(|e| Error::Bind(e.to_string()))?;
@@ -167,9 +163,6 @@ impl IrohTransport {
                         .connect(addr.clone(), ALPN)
                         .await
                         .map_err(|e| Error::Connect(e.to_string()))?;
-                    if connection.remote_id() != addr.id {
-                        return Err(Error::WrongPeer);
-                    }
                     let (send, recv) = connection
                         .open_bi()
                         .await
@@ -237,6 +230,13 @@ impl IrohTransport {
     }
 }
 
+fn relay_mode(relays: Relays) -> RelayMode {
+    match relays {
+        Relays::Default => iroh::endpoint::default_relay_mode(),
+        Relays::Disabled => RelayMode::Disabled,
+    }
+}
+
 fn constant_time_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
@@ -296,5 +296,27 @@ impl IrohPipe {
             }
         }
         self.endpoint.close().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relays_map_to_iroh_relay_modes() {
+        assert_eq!(relay_mode(Relays::Disabled), RelayMode::Disabled);
+        assert_eq!(
+            relay_mode(Relays::Default),
+            iroh::endpoint::default_relay_mode()
+        );
+    }
+
+    #[test]
+    fn tags_compare_whole() {
+        assert!(constant_time_eq(&[7; 32], &[7; 32]));
+        let mut other = [7; 32];
+        other[31] = 8;
+        assert!(!constant_time_eq(&[7; 32], &other));
     }
 }
