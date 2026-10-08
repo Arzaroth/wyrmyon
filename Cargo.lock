@@ -1187,6 +1187,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "wyrmyon-testkit",
  "wyrmyon-wormhole",
 ]
 

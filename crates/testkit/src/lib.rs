@@ -198,3 +198,62 @@ async fn serve(stream: TcpStream, state: Arc<Mutex<State>>, welcome: Value) {
         }
     }
 }
+
+pub struct TransitRelay {
+    addr: SocketAddr,
+}
+
+type Waiting = Arc<Mutex<HashMap<String, (String, TcpStream)>>>;
+
+impl TransitRelay {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let waiting: Waiting = Arc::default();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                tokio::spawn(relay(stream, waiting.clone()));
+            }
+        });
+        Self { addr }
+    }
+
+    pub fn hint(&self) -> String {
+        format!("tcp:127.0.0.1:{}", self.addr.port())
+    }
+}
+
+async fn relay(mut stream: TcpStream, waiting: Waiting) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    while line.len() < 256 {
+        if stream.read_exact(&mut byte).await.is_err() {
+            return;
+        }
+        if byte[0] == b'\n' {
+            break;
+        }
+        line.push(byte[0]);
+    }
+    let line = String::from_utf8_lossy(&line).into_owned();
+    let Some(rest) = line.strip_prefix("please relay ") else {
+        return;
+    };
+    let (token, side) = rest.split_once(" for side ").unwrap_or((rest, ""));
+    let partner = {
+        let mut waiting = waiting.lock().unwrap();
+        match waiting.remove(token) {
+            Some((other_side, other)) if other_side != side => Some(other),
+            _ => {
+                waiting.insert(token.to_owned(), (side.to_owned(), stream));
+                return;
+            }
+        }
+    };
+    let Some(mut other) = partner else { return };
+    if stream.write_all(b"ok\n").await.is_err() || other.write_all(b"ok\n").await.is_err() {
+        return;
+    }
+    let _ = tokio::io::copy_bidirectional(&mut stream, &mut other).await;
+}

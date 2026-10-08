@@ -76,3 +76,34 @@ async fn with_no_way_to_reach_the_peer_connect_gives_up() {
     let result = within(receiver.connect(&TransitInfo::default())).await;
     assert!(matches!(result, Err(Error::NoConnection)));
 }
+
+#[tokio::test]
+async fn peers_that_cannot_reach_each_other_meet_through_the_relay() {
+    let relay = wyrmyon_testkit::TransitRelay::start().await;
+    let hint: wyrmyon_transport_classic::DirectHint = relay.hint().parse().unwrap();
+    let sender = Transit::new(Role::Sender, key(5))
+        .await
+        .without_listener()
+        .with_relays(vec![hint]);
+    let receiver = Transit::new(Role::Receiver, key(5))
+        .await
+        .without_listener();
+    let (sender_info, receiver_info) = (sender.info(), receiver.info());
+    assert_eq!(receiver_info.relay_hints(), []);
+
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info),
+            receiver.connect(&sender_info)
+        )
+    })
+    .await;
+    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    assert!(upstream.describe().starts_with("via relay"));
+    upstream.send_record(b"relayed").await.unwrap();
+    upstream.flush().await.unwrap();
+    assert_eq!(
+        within(downstream.receive_record()).await.unwrap(),
+        b"relayed"
+    );
+}
