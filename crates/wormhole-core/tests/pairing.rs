@@ -4,7 +4,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Map, Value, json};
 use tokio_tungstenite::tungstenite::Message as Frame;
-use wyrmyon_testkit::MailboxServer;
+use wyrmyon_testkit::{MailboxServer, Quirks};
 use wyrmyon_wormhole::{Code, Config, Error, Mood};
 
 async fn within<T>(future: impl Future<Output = T>) -> T {
@@ -166,4 +166,141 @@ async fn a_malformed_pake_message_fails_cleanly() {
     let result = within(pending.pair()).await;
     assert!(matches!(result, Err(Error::Protocol(_))));
     assert_eq!(server.moods(), ["scary"]);
+}
+
+#[tokio::test]
+async fn a_misbehaving_server_fails_the_session_cleanly() {
+    for quirks in [
+        Quirks {
+            allocate_as: Some("1; rm -rf".into()),
+            ..Quirks::default()
+        },
+        Quirks {
+            refuse_allocate: true,
+            ..Quirks::default()
+        },
+        Quirks {
+            flood_on_claim: 100,
+            ..Quirks::default()
+        },
+        Quirks {
+            hang_up_after_welcome: true,
+            ..Quirks::default()
+        },
+    ] {
+        let server = MailboxServer::start_with(quirks).await;
+        let result = within(wyrmyon_wormhole::create(&config(&server, json!({})), 2)).await;
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn codes_and_keys_never_print_their_secrets() {
+    let code: Code = "7-guitarist-revenge".parse().unwrap();
+    assert_eq!(format!("{code:?}"), "Code(..)");
+    assert_eq!(
+        format!("{:?}", wyrmyon_wormhole::Key::from_bytes([1; 32])),
+        "Key(..)"
+    );
+}
+
+#[tokio::test]
+async fn a_chatty_server_and_a_stranger_in_the_mailbox_do_not_disturb_the_peers() {
+    let server = MailboxServer::start_with(Quirks {
+        chatty: true,
+        ..Quirks::default()
+    })
+    .await;
+    let first = within(wyrmyon_wormhole::create(&config(&server, json!({})), 2))
+        .await
+        .unwrap();
+    let code = first.code().clone();
+
+    let (mut stranger, _) = tokio_tungstenite::connect_async(server.url())
+        .await
+        .unwrap();
+    let say = |v: Value| Frame::text(v.to_string());
+    for msg in [
+        json!({"type": "bind", "appid": "x", "side": "stranger", "id": "1"}),
+        json!({"type": "open", "mailbox": "mb1", "id": "2"}),
+        json!({"type": "add", "phase": "noise", "body": "00", "id": "3"}),
+    ] {
+        stranger.send(say(msg)).await.unwrap();
+    }
+
+    let second = tokio::spawn({
+        let config = config(&server, json!({}));
+        async move { within(async { wyrmyon_wormhole::join(&config, code).await?.pair().await }).await }
+    });
+    let mut first = within(first.pair()).await.unwrap();
+    let mut second = second.await.unwrap().unwrap();
+    stranger
+        .send(say(
+            json!({"type": "add", "phase": "0", "body": "00", "id": "4"}),
+        ))
+        .await
+        .unwrap();
+    first.send(b"hello").await.unwrap();
+    assert_eq!(within(second.receive()).await.unwrap(), b"hello");
+    within(first.close(Mood::Happy)).await;
+    within(second.close(Mood::Happy)).await;
+}
+
+async fn raw_peer(
+    server: &MailboxServer,
+    side: &str,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+    let (mut ws, _) = tokio_tungstenite::connect_async(server.url())
+        .await
+        .unwrap();
+    for msg in [
+        json!({"type": "bind", "appid": "x", "side": side, "id": "1"}),
+        json!({"type": "open", "mailbox": "mb1", "id": "2"}),
+    ] {
+        ws.send(Frame::text(msg.to_string())).await.unwrap();
+    }
+    ws
+}
+
+#[tokio::test]
+async fn a_forged_phase_under_the_peers_side_fails_as_tampering() {
+    let server = MailboxServer::start().await;
+    let first = within(wyrmyon_wormhole::create(&config(&server, json!({})), 2))
+        .await
+        .unwrap();
+    let second = within(wyrmyon_wormhole::join(
+        &config(&server, json!({})),
+        first.code().clone(),
+    ))
+    .await
+    .unwrap();
+
+    let mut watcher = raw_peer(&server, "watcher").await;
+    let mut sides = Vec::new();
+    while sides.len() < 2 {
+        let Some(Ok(Frame::Text(text))) = within(watcher.next()).await else {
+            panic!("the watcher lost the mailbox");
+        };
+        let msg: Value = serde_json::from_str(&text).unwrap();
+        if msg["type"] == "message" && msg["phase"] == "pake" {
+            sides.push(msg["side"].as_str().unwrap().to_owned());
+        }
+    }
+    let mut impostor = raw_peer(&server, &sides[1]).await;
+    impostor
+        .send(Frame::text(
+            json!({"type": "add", "phase": "0", "body": "00", "id": "3"}).to_string(),
+        ))
+        .await
+        .unwrap();
+    while let Some(Ok(Frame::Text(text))) = within(impostor.next()).await {
+        if text.contains("\"phase\":\"0\"") || text.contains("\"phase\": \"0\"") {
+            break;
+        }
+    }
+
+    let second = tokio::spawn(async move { within(second.pair()).await });
+    let first = within(first.pair()).await;
+    assert!(matches!(first, Err(Error::Tampered)), "{:?}", first.err());
+    let _ = second.await;
 }

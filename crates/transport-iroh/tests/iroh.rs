@@ -127,3 +127,64 @@ async fn unusable_addresses_fail_at_once() {
     }
     real.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_that_ends_early_is_an_error_and_abort_is_prompt() {
+    let key = Key::from_bytes([6; 32]);
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let (sender_info, receiver_info) = (sender.info().await, receiver.info().await);
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info, &key),
+            receiver.connect(&sender_info, &key)
+        )
+    })
+    .await;
+    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    upstream.send_last(b"short").await.unwrap();
+    assert_eq!(
+        within(downstream.receive_chunk(16)).await.unwrap(),
+        b"short"
+    );
+    assert!(matches!(
+        within(downstream.receive_chunk(16)).await,
+        Err(Error::Stream(_))
+    ));
+    within(upstream.abort()).await;
+    within(downstream.finish()).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connection_for_another_protocol_is_ignored() {
+    let key = Key::from_bytes([7; 32]);
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let (sender_info, receiver_info) = (sender.info().await, receiver.info().await);
+    let waiting = tokio::spawn(async move { receiver.connect(&sender_info, &key).await });
+    let other = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .relay_mode(iroh::RelayMode::Disabled)
+        .bind()
+        .await
+        .unwrap();
+    let addr = iroh::EndpointAddr::from_parts(
+        receiver_info.id.parse().unwrap(),
+        receiver_info
+            .direct
+            .iter()
+            .map(|d| iroh::TransportAddr::Ip(d.parse().unwrap())),
+    );
+    assert!(other.connect(addr, b"not-wyrmyon").await.is_err());
+    other.close().await;
+    let upstream = within(sender.connect(&receiver_info, &Key::from_bytes([7; 32]))).await;
+    assert!(upstream.is_ok());
+    assert!(within(waiting).await.unwrap().is_ok());
+}

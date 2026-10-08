@@ -81,10 +81,14 @@ async fn with_no_way_to_reach_the_peer_connect_gives_up() {
 async fn peers_that_cannot_reach_each_other_meet_through_the_relay() {
     let relay = wyrmyon_testkit::TransitRelay::start().await;
     let hint: wyrmyon_transport_classic::DirectHint = relay.hint().parse().unwrap();
+    let dead = wyrmyon_transport_classic::DirectHint {
+        hostname: "127.0.0.1".into(),
+        port: 9,
+    };
     let sender = Transit::new(Role::Sender, key(5))
         .await
         .without_listener()
-        .with_relays(vec![hint]);
+        .with_relays(vec![dead, hint]);
     let receiver = Transit::new(Role::Receiver, key(5))
         .await
         .without_listener();
@@ -135,4 +139,26 @@ async fn the_relay_takes_over_when_direct_hints_are_dead() {
     .await;
     assert!(upstream.unwrap().describe().starts_with("via relay"));
     downstream.unwrap();
+}
+
+#[tokio::test]
+async fn a_flooded_listener_still_lets_the_other_direction_through() {
+    let sender = Transit::new(Role::Sender, key(11)).await;
+    let receiver = Transit::new(Role::Receiver, key(11)).await;
+    let (sender_info, receiver_info) = (sender.info(), receiver.info());
+    let target = &receiver_info.direct_hints()[0];
+    let mut idle = Vec::new();
+    for _ in 0..40 {
+        idle.push(
+            tokio::net::TcpStream::connect((target.hostname.as_str(), target.port))
+                .await
+                .unwrap(),
+        );
+    }
+    let nothing = TransitInfo::default();
+    let (upstream, downstream) =
+        within(async { tokio::join!(sender.connect(&nothing), receiver.connect(&sender_info)) })
+            .await;
+    assert!(upstream.is_ok() && downstream.is_ok());
+    drop(idle);
 }
