@@ -150,52 +150,74 @@ async fn send_data(
     source: tokio::fs::File,
     size: u64,
 ) -> anyhow::Result<()> {
-    let use_iroh = match global.use_iroh(wormhole) {
-        Ok(use_iroh) => use_iroh,
-        Err(e) => {
-            protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
-            return Err(e);
-        }
-    };
-    let mut pipe = if use_iroh {
-        let iroh = global.iroh(IrohRole::Sender).await?;
-        protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
-        protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
-        let mut theirs = None;
-        loop {
-            match protocol::next(wormhole, "receiver").await? {
-                AppMessage::Iroh(info) => theirs = Some(info),
-                AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => break,
-                AppMessage::Answer(answer) => {
-                    bail!("unexpected answer from the receiver: {answer:?}")
-                }
-                _ => {}
+    let use_iroh = global.use_iroh(wormhole);
+    if global.force_iroh && !use_iroh {
+        protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
+        bail!("the other side does not speak iroh-v1 (--force-iroh)");
+    }
+    let (iroh, transit) = if use_iroh {
+        let iroh = match global.iroh(IrohRole::Sender).await {
+            Ok(iroh) => iroh,
+            Err(e) => {
+                protocol::send_error(wormhole, "the sender cannot open an iroh endpoint").await?;
+                return Err(e);
             }
-        }
-        let theirs = theirs.context("the receiver accepted without an iroh address")?;
-        Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
+        };
+        protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
+        (Some(iroh), None)
     } else {
         let transit = global.transit(Role::Sender, wormhole.transit_key()).await;
         protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
-        protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
-        let mut theirs = TransitInfo::default();
+        (None, Some(transit))
+    };
+    protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
+
+    let answered = async {
+        let (mut their_iroh, mut their_transit) = (None, TransitInfo::default());
         loop {
             match protocol::next(wormhole, "receiver").await? {
-                AppMessage::Transit(info) => theirs = info,
-                AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => break,
+                AppMessage::Iroh(info) => their_iroh = Some(info),
+                AppMessage::Transit(info) => their_transit = info,
+                AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => {
+                    return Ok((their_iroh, their_transit));
+                }
                 AppMessage::Answer(answer) => {
                     bail!("unexpected answer from the receiver: {answer:?}")
                 }
                 _ => {}
             }
         }
-        Pipe::Classic(transit.connect(&theirs).await?)
+    }
+    .await;
+    let mut pipe = match (answered, iroh, transit) {
+        (Ok((Some(theirs), _)), Some(iroh), _) => {
+            Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
+        }
+        (Ok(_), Some(iroh), _) => {
+            iroh.close().await;
+            bail!("the receiver accepted without an iroh address");
+        }
+        (Ok((_, theirs)), None, Some(transit)) => Pipe::Classic(transit.connect(&theirs).await?),
+        (Err(e), iroh, _) => {
+            if let Some(iroh) = iroh {
+                iroh.close().await;
+            }
+            return Err(e);
+        }
+        (Ok(_), None, None) => unreachable!("one transport is always prepared"),
     };
     eprintln!("Sending ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);
-    let digest = transfer::send_stream(&mut pipe, source, size, &bar).await?;
-    eprintln!("File sent.. waiting for confirmation");
-    transfer::await_ack(&mut pipe, &digest).await?;
+    let sent = async {
+        let digest = transfer::send_stream(&mut pipe, source, size, &bar).await?;
+        eprintln!("File sent.. waiting for confirmation");
+        transfer::await_ack(&mut pipe, &digest).await
+    }
+    .await;
+    if let Err(e) = sent {
+        pipe.abort().await;
+        return Err(e);
+    }
     pipe.shutdown().await;
     eprintln!("Confirmation received. Transfer complete.");
     Ok(())

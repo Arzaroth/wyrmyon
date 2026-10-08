@@ -43,6 +43,31 @@ impl Pipe {
         Ok(())
     }
 
+    async fn send_last(&mut self, data: &[u8]) -> anyhow::Result<()> {
+        match self {
+            Self::Classic(pipe) => {
+                pipe.send_record(data).await?;
+                pipe.flush().await?;
+            }
+            Self::Iroh(pipe) => pipe.send_last(data).await?,
+        }
+        Ok(())
+    }
+
+    async fn receive_last(&mut self) -> anyhow::Result<Vec<u8>> {
+        Ok(match self {
+            Self::Classic(pipe) => pipe.receive_record().await?,
+            Self::Iroh(pipe) => pipe.receive_last().await?,
+        })
+    }
+
+    pub async fn abort(self) {
+        match self {
+            Self::Classic(pipe) => pipe.shutdown().await,
+            Self::Iroh(pipe) => pipe.abort().await,
+        }
+    }
+
     pub async fn shutdown(self) {
         match self {
             Self::Classic(pipe) => pipe.shutdown().await,
@@ -119,10 +144,7 @@ pub async fn receive_stream(
 }
 
 pub async fn await_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()> {
-    let raw = match pipe {
-        Pipe::Classic(pipe) => pipe.receive_record().await?,
-        Pipe::Iroh(pipe) => pipe.receive_last().await?,
-    };
+    let raw = pipe.receive_last().await?;
     let ack: Value =
         serde_json::from_slice(&raw).context("the receiver's confirmation is not JSON")?;
     if ack["ack"] != "ok" {
@@ -138,12 +160,5 @@ pub async fn await_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()>
 
 pub async fn send_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()> {
     let ack = json!({"ack": "ok", "sha256": hex::encode(digest)}).to_string();
-    match pipe {
-        Pipe::Classic(pipe) => {
-            pipe.send_record(ack.as_bytes()).await?;
-            pipe.flush().await?;
-        }
-        Pipe::Iroh(pipe) => pipe.send_last(ack.as_bytes()).await?,
-    }
-    Ok(())
+    pipe.send_last(ack.as_bytes()).await
 }

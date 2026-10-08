@@ -75,14 +75,11 @@ impl Global {
         }
     }
 
-    fn use_iroh(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> anyhow::Result<bool> {
+    fn use_iroh(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
         let theirs = wormhole.their_app_versions()["wyrmyon"]["transports"]
             .as_array()
             .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT));
-        if self.force_iroh && !theirs {
-            anyhow::bail!("the other side does not speak iroh-v1 (--force-iroh)");
-        }
-        Ok(theirs && !self.force_classic)
+        theirs && !self.force_classic
     }
 
     async fn iroh(&self, role: wyrmyon_transport_iroh::Role) -> anyhow::Result<IrohTransport> {
