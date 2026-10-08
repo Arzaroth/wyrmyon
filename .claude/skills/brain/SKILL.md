@@ -29,7 +29,7 @@ Structure:
 ```
 brain/BRAIN.md                 root index + find-by-question
 brain/glossary.md  decisions.md
-brain/architecture/index.md    overview negotiation servers iroh-v1 distribution testing
+brain/architecture/index.md    overview wormhole-core negotiation servers iroh-v1 distribution testing
 brain/features/index.md        one doc per user-facing feature
 ```
 

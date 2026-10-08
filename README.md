@@ -9,8 +9,9 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: not usable yet.** The workspace builds and the CLI prints its
-version; the protocol work follows [ROADMAP.md](ROADMAP.md).
+**Status: early.** Text messages work with any magic-wormhole client
+(`wyrm send --text`, `wyrm receive`); files and the iroh transport follow
+[ROADMAP.md](ROADMAP.md).
 
 ## Usage (planned)
 

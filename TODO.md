@@ -6,12 +6,9 @@ done.
 
 ## Decisions before roadmap work
 
-- [ ] M1: write the mailbox, SPAKE2 and transit code ourselves, or build on the
-      `magic-wormhole` crate (magic-wormhole.rs, EUPL-1.2). Its licence and
-      its async runtime decide most of it.
-- [ ] M1: how the test suite gets a mailbox and a transit relay: the Python
-      `magic-wormhole-mailbox-server` and `magic-wormhole-transit-relay` in a
-      container, or a minimal in-process fake.
+- [ ] M3: the test transit relay: extend `crates/testkit` with an in-process
+      fake, as for the mailbox, and use the Python
+      `magic-wormhole-transit-relay` in the interop suite.
 - [ ] M4: pin the iroh and iroh-blobs versions, and check which NodeAddr
       serialisation is stable enough to put on the wire.
 - [ ] M4: what the iroh side does when hole-punching and n0's relays both fail:

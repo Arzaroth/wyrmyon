@@ -2,6 +2,23 @@
 
 Each entry is a choice a reader might want to undo, with the reason not to.
 
+## Our own protocol code, not magic-wormhole.rs
+
+magic-wormhole.rs is EUPL-1.2, a copyleft licence; linking it would make the
+shipped binary EUPL while wyrmyon is MIT. The client side of the protocol is
+small (a few WebSocket messages, SPAKE2, HKDF, secretbox) and the Python client
+is a precise reference, so `wormhole-core` implements it and the interop suite
+holds it to the reference.
+
+## One reader on the mailbox connection
+
+The mailbox connection is read by whoever is waiting, never by a background
+task. The protocol is a strict request/response dance with the peer's messages
+in between, so buffering those messages while waiting for a server reply is
+enough, and there is no task to cancel or channel to drain on close. The cost:
+no reconnection after a dropped mailbox connection, which the Python client
+does handle. Revisit if transfers fail on flaky networks.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

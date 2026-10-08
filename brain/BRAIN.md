@@ -25,6 +25,8 @@ wyrmyon.
 | Question | Go to |
 | --- | --- |
 | Which crate does what? | [architecture/overview.md](architecture/overview.md) |
+| How do two peers meet and agree on a key? | [architecture/wormhole-core.md](architecture/wormhole-core.md) |
+| Which HKDF purposes derive which keys? | [architecture/wormhole-core.md](architecture/wormhole-core.md) |
 | How do two peers decide between classic transit and iroh? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Can a malicious mailbox downgrade the connection? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Which servers does it talk to, and why always the public mailbox? | [architecture/servers.md](architecture/servers.md) |
@@ -35,4 +37,8 @@ wyrmyon.
 
 ## Features
 
-None shipped yet; the order they come in is [ROADMAP.md](../ROADMAP.md).
+| Feature | Doc |
+| --- | --- |
+| Text messages | [features/text.md](features/text.md) |
+
+What comes next is in [ROADMAP.md](../ROADMAP.md).

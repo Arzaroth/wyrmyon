@@ -12,10 +12,13 @@ transports are interchangeable behind it.
 | `crates/transport-classic` | `wyrmyon-transport-classic` | TCP hint racing, transit relay, encrypted records |
 | `crates/transport-iroh` | `wyrmyon-transport-iroh` | iroh endpoint, NodeAddr exchange, blobs |
 | `crates/cli` | `wyrmyon` | clap, progress, offer and answer; the `wyrmyon` and `wyrm` binaries |
+| `crates/testkit` | `wyrmyon-testkit` | In-process mailbox server for tests; never shipped |
 
-Today the three library crates are empty and the CLI only parses `--version`
-and `--help`. Both binaries are thin `main`s over `wyrmyon::main` in
-`crates/cli/src/lib.rs`, so they cannot drift apart.
+`wormhole-core` is built ([wormhole-core.md](wormhole-core.md)); the two
+transport crates are still empty. The CLI has `send --text` and `receive`
+(`send.rs`, `receive.rs`), on a multi-threaded tokio runtime started in
+`wyrmyon::main`. Both binaries are thin `main`s over that function, returning
+its exit status, so they cannot drift apart.
 
 ## The Transport trait (Planned)
 
@@ -40,3 +43,4 @@ sha2, serde_json, clap, indicatif, rand, iroh, iroh-blobs.
 - [Cargo.toml](../../Cargo.toml)
 - [crates/cli/Cargo.toml](../../crates/cli/Cargo.toml)
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs)
+- [crates/testkit/src/lib.rs](../../crates/testkit/src/lib.rs)

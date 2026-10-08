@@ -43,9 +43,10 @@ readable by every other client. These rules follow:
 - Never put a code or a key in a log line, an error message or a command line
   wyrmyon spawns.
 
-Tests never reach the public servers: they run against a local mailbox and
-transit relay, and the interop suite against the Python `wormhole` CLI runs
-only when asked.
+Tests never reach the public servers: they run against `crates/testkit`'s
+in-process mailbox. The interop suite against the Python `wormhole` CLI runs
+only when asked: `cargo test -p wyrmyon --test interop -- --ignored` (needs
+`wormhole` and `uvx`); run it whenever a change touches the wire.
 
 ## Conventions
 

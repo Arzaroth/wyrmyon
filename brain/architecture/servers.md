@@ -1,6 +1,7 @@
-# Servers (Planned)
+# Servers
 
-The mailbox is always the public one. Data relays are negotiated in-band, so
+The mailbox client is built ([wormhole-core.md](wormhole-core.md)); the relays
+and the fallback mailbox are still planned. The mailbox is always the public one. Data relays are negotiated in-band, so
 they need no discovery.
 
 | Server | Used for | How it is chosen |
@@ -22,4 +23,5 @@ The mailbox is a community service; the rules are in [CLAUDE.md](../../CLAUDE.md
 
 ## Sources
 
-None yet: the mailbox client lands with M1 in [ROADMAP.md](../../ROADMAP.md).
+- [crates/wormhole-core/src/lib.rs](../../crates/wormhole-core/src/lib.rs) (`PUBLIC_RELAY`, `APPID`)
+- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`--relay-url`, MOTD display)

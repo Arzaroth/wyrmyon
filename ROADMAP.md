@@ -18,11 +18,14 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M1 - Wormhole core
 
-- [ ] Mailbox client over WebSocket (tokio-tungstenite): bind, allocate or
+- [x] Mailbox client over WebSocket (tokio-tungstenite): bind, allocate or
       claim a nameplate, open the mailbox, add and receive messages, close.
-- [ ] SPAKE2 on the code, HKDF phase keys, secretbox, the version exchange.
-- [ ] Text send and receive against the Python `wormhole` CLI in both
-      directions. This is the first interop test.
+      Decided: our own implementation, not magic-wormhole.rs (EUPL-1.2).
+- [x] SPAKE2 on the code, HKDF phase keys, secretbox, the version exchange.
+- [x] Text send and receive against the Python `wormhole` CLI in both
+      directions. This is the first interop test. Decided: CI runs against an
+      in-process fake mailbox (`crates/testkit`); the interop suite starts the
+      real Python mailbox through `uvx` and runs on demand.
 
 ## M2 - Classic transit on the LAN
 
