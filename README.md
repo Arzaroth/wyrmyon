@@ -12,7 +12,8 @@ familiar `7-guitarist-revenge` shape.
 **Status: early.** Text, files and directories work with any magic-wormhole
 client, directly or through the transit relay (`wyrm send --text`,
 `wyrm send PATH`, `wyrm receive`, `wyrm receive --new`), and over iroh between
-two wyrms. Resumable transfers and packaging follow [ROADMAP.md](ROADMAP.md).
+two wyrms, verified chunk by chunk and resumable after an interruption.
+Packaging follows [ROADMAP.md](ROADMAP.md).
 
 ## Usage (planned)
 

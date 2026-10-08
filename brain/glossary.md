@@ -40,6 +40,10 @@ See [architecture/iroh-v1.md](architecture/iroh-v1.md).
 **IrohInfo**: our wire form of an iroh endpoint's address: its node ID, relay
 URLs and direct socket addresses, sent as `wyrmyon-iroh-v1` through the mailbox.
 
+**Blob**: data addressed by its BLAKE3 hash and transferred with iroh-blobs,
+checked chunk by chunk; partial blobs live in the receiver's cache until
+complete.
+
 **Channel binding**: the MAC exchange on the first iroh stream, keyed from the
 wormhole key, that ties the iroh connection to the code.
 

@@ -64,8 +64,10 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M5 - Verified, resumable transfers
 
-- [ ] iroh-blobs: BLAKE3 verified streaming, resume from the last verified
-      chunk after a drop.
+- [x] iroh-blobs: BLAKE3 verified streaming, resume from the last verified
+      chunk after a drop. Decided: iroh-blobs 0.103 inside the bound
+      connection (no blobs ALPN), the hash on the control stream, one cache
+      store per hash under `~/.cache/wyrmyon/partial`.
 
 ## M6 - CLI polish
 

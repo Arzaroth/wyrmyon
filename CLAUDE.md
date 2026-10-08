@@ -63,7 +63,10 @@ never touch n0's iroh relays: `tests/support` disables them.
 - Protocol identifiers are part of the wire format; changing any of them breaks
   older wyrmyon peers: the `app_versions` key `wyrmyon`, the transport name
   `iroh-v1`, the app message `wyrmyon-iroh-v1` and its `IrohInfo` fields, the
-  ALPN `wyrmyon/1`, the HKDF label `wyrmyon/iroh-v1/confirm` and the binding
-  tag info `<role>:<sender id>:<receiver id>`.
+  ALPN `wyrmyon/1`, the HKDF label `wyrmyon/iroh-v1/confirm`, the binding
+  tag info `<role>:<sender id>:<receiver id>`, and what follows the tags on
+  the control stream: the 32-byte BLAKE3 hash, then the ack.
+- Never put an `iroh-blobs` ALPN on the endpoint: blobs are served only on the
+  bound connection.
 - Close iroh endpoints, never just drop them (see `brain/decisions.md`).
 - Releases go through the `release` skill.

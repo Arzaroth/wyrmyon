@@ -38,9 +38,12 @@ On the connection:
    HKDF of `wormhole_key.derive("wyrmyon/iroh-v1/confirm")` with info
    `<role>:<sender id>:<receiver id>`, and reads the other's. Tags are compared
    in constant time; a mismatch closes the connection with `WrongPeer`.
-3. The sender writes the file bytes, as many as offered. The receiver writes
-   `{"ack": "ok", "sha256": ...}` and finishes its side; the sender reads it to
-   the end (at most 4 KiB).
+3. The sender writes the 32-byte BLAKE3 hash of the data on that stream and
+   serves iroh-blobs requests on further bidirectional streams of the same
+   connection; the receiver fetches the blob, verified and resumable
+   ([features/resume.md](../features/resume.md)). The receiver then writes
+   `{"ack": "ok"}` on the first stream and finishes its side; the sender reads
+   it to the end (at most 4 KiB).
 4. The sender closes the connection; the receiver waits up to 5 s for that
    close before closing its endpoint, so the ack is never lost to an early
    exit. Every failed `connect` closes its endpoint, and any error after the
@@ -53,12 +56,15 @@ direct path by itself once hole-punching succeeds.
 
 The node ID pin proves the connection reaches the endpoint the peer announced
 through the encrypted mailbox; the binding proves that endpoint belongs to
-whoever knows the code. QUIC encrypts and authenticates the bytes, so there is
-no record layer on top.
+whoever knows the code. QUIC encrypts and authenticates the bytes and BLAKE3
+verifies them, so there is no record layer on top. iroh-blobs runs inside this
+connection only: there is no `iroh-blobs` ALPN on the endpoint, so the blob
+store cannot be reached by anyone who has not passed the pin and the binding.
 
 ## Sources
 
 - [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs)
+- [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
 - [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)

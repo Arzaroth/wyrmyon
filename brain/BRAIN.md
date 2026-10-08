@@ -34,6 +34,7 @@ wyrmyon.
 | How do two peers decide between classic transit and iroh? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Can a malicious mailbox downgrade the connection? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Which servers does it talk to, and why always the public mailbox? | [architecture/servers.md](architecture/servers.md) |
+| How does an interrupted transfer resume, and where is the cache? | [features/resume.md](features/resume.md) |
 | How is the iroh connection authenticated? | [architecture/iroh-v1.md](architecture/iroh-v1.md) |
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |
 | How do tests avoid the public servers? | [architecture/testing.md](architecture/testing.md) |
@@ -46,5 +47,6 @@ wyrmyon.
 | Text messages | [features/text.md](features/text.md) |
 | Files, relays, receiver-first codes | [features/files.md](features/files.md) |
 | Directories | [features/directories.md](features/directories.md) |
+| Verified, resumable transfers | [features/resume.md](features/resume.md) |
 
 What comes next is in [ROADMAP.md](../ROADMAP.md).

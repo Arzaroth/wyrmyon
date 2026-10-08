@@ -70,6 +70,19 @@ after the 30 s idle timeout, and an ack still in flight is lost. Every path
 out of `IrohTransport::connect` and `IrohPipe::finish` closes the endpoint, and
 the side that writes the ack waits for the other's close first.
 
+## iroh-blobs inside the bound connection, one store per hash
+
+The receiver fetches with iroh-blobs over the very connection that passed the
+node ID pin and the channel binding: the sender serves blob requests on that
+connection's streams and has no `iroh-blobs` ALPN on its endpoint, so nobody
+else can ask for anything. The hash travels on the bound control stream, not
+the mailbox, so the mailbox protocol did not change. The sender imports by
+reference, so a large file is hashed but not copied. The receiver keeps one
+store per hash under the cache directory: resuming is reopening it, and a
+finished or failed transfer removes one directory, so the cache never grows
+with old data. Two receivers fetching the same content on one machine at once
+would contend for the same store; the second fails rather than corrupting it.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

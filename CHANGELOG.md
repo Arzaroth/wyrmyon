@@ -20,3 +20,7 @@
   travel over iroh QUIC with hole-punching and n0's relays, bound to the code.
   `--force-classic` and `--force-iroh` override the choice; `--iroh-relays
   disabled` keeps iroh to direct connections.
+- Between two wyrms, transfers are verified chunk by chunk (BLAKE3) and
+  resume after an interruption: sending the same file again, with a new code,
+  fetches only what the receiver does not have yet. Partial data waits in
+  `~/.cache/wyrmyon/partial` (or `WYRMYON_CACHE_DIR`).

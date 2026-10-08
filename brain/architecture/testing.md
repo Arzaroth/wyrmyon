@@ -49,6 +49,7 @@ its nameplate and closed with the right mood. It is a dev-dependency only.
 | `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same keys and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message, a crowded nameplate, a malicious peer's malformed PAKE; nameplates released and moods recorded every time. Every await has a 10 s timeout |
 | `crates/transport-classic/src/records.rs` unit tests | Oversized length, replayed record and tampered record all refused |
 | `crates/transport-classic/tests/transit.rs` | Two transits on localhost: handshake, records both ways including a 4 MiB one, mismatched keys never connecting, `NoConnection` when nothing is reachable, peers meeting only through `TransitRelay`, the relay taking over after the delay when the direct hints are dead |
+| `crates/transport-iroh/tests/blobs.rs` | A verified blob over a bound connection with the cache cleared after, a size that does not match the offer, a 64 MiB transfer cut mid-way that resumes from the cache on a fresh connection, a failed export that clears the cache |
 | `crates/transport-iroh/tests/iroh.rs` | Two iroh endpoints on localhost, relays disabled: data and an ack over a bound channel, a different wormhole key refused by both sides, a stranger turned away while the real sender still connects, unusable addresses failing at once |
 | `crates/cli/src/zipdir.rs` unit tests | A directory round-trips through zip with permissions and empty directories; extraction stops past the offered bytes or count; an entry leaving the directory is refused; directory symlinks followed but loops not; an empty top directory still has an entry; symlink entries skipped; cancelling stops building and extracting and removes the new directory |
 | `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text and files (empty and 300 kB) between two `wyrm` processes, a refused offer, a file refused without confirmation and over an existing one, non-regular files refused, a hand-written sender that sends more than it offered, a directory through the relay only, a receiver-allocated code, conflicting code flags refused, `-o` naming an existing directory, two wyrms on iroh (a file and a directory) unless either forces classic, `--force-iroh` refused against a legacy peer on either side with the reason on both |
@@ -68,7 +69,8 @@ directory each way through the real Python transit relay with both sides
 `--no-listen`, and a Python sender using a code wyrm allocated. Both clients
 get a local or dead `--transit-helper`, so nothing reaches the public transit
 relay; `tests/support` sets `WYRMYON_TRANSIT_HELPER=tcp:127.0.0.1:9` and
-`WYRMYON_IROH_RELAYS=disabled` for every `wyrm` it starts, so wyrm-to-wyrm
+`WYRMYON_IROH_RELAYS=disabled` and a fresh `WYRMYON_CACHE_DIR` for every `wyrm`
+it starts, so wyrm-to-wyrm
 tests use iroh over localhost only. The server
 runs in its own process group, killed whole when the test ends: killing only
 `uvx` would orphan the `twist` process it starts. It is the real

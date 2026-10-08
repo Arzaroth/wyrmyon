@@ -10,7 +10,7 @@ transports are interchangeable behind it.
 | --- | --- | --- |
 | `crates/wormhole-core` | `wyrmyon-wormhole` | Mailbox client, SPAKE2, HKDF, secretbox, the version exchange |
 | `crates/transport-classic` | `wyrmyon-transport-classic` | TCP hint racing, transit relay, encrypted records |
-| `crates/transport-iroh` | `wyrmyon-transport-iroh` | iroh endpoint, address exchange, peer pinning, channel binding |
+| `crates/transport-iroh` | `wyrmyon-transport-iroh` | iroh endpoint, address exchange, peer pinning, channel binding, verified blobs (iroh-blobs) |
 | `crates/cli` | `wyrmyon` | clap, progress, offer and answer; the `wyrmyon` and `wyrm` binaries |
 | `crates/testkit` | `wyrmyon-testkit` | In-process mailbox server for tests; never shipped |
 

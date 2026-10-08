@@ -14,5 +14,4 @@ done.
 ## Decisions before roadmap work
 
 
-- [ ] M5: pin the iroh-blobs version that matches iroh 1.3.
 - [ ] Pronunciation: one line in the README once settled ("WURM-yon").
