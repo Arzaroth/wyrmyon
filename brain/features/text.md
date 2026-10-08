@@ -13,7 +13,14 @@ with a trailing newline, acks, and both close the mailbox `happy`.
 
 An `{"error": ...}` from either side ends the transfer with a failing exit
 status. An offer the receiver cannot handle yet (files, directories) is
-answered with an `error`, as the Python client does.
+answered with an `error`, as the Python client does, and so is a message the
+receiver could not write to stdout, so the sender never waits forever. Such an
+application-level refusal still closes the mailbox `happy`, as Python does;
+only protocol and server failures close it `scary` or `errory`.
+
+Both commands print the server's MOTD as soon as they are connected, before
+waiting for the peer. Server-supplied text (MOTD, errors) has control
+characters stripped before it reaches the terminal.
 
 `--relay-url` (or `WYRMYON_RELAY_URL`) points both commands at another mailbox
 server.

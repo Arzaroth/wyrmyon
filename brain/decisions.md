@@ -19,6 +19,16 @@ enough, and there is no task to cancel or channel to drain on close. The cost:
 no reconnection after a dropped mailbox connection, which the Python client
 does handle. Revisit if transfers fail on flaky networks.
 
+## Close the mailbox on every failure
+
+On the real server a dropped connection frees nothing: a claimed nameplate and
+an open mailbox stay until pruning, 11 to 16 minutes later, on a shared
+community server. So every failure after the claim releases and closes, with
+the mood the Python client would send: `scary` when the peer's messages do not
+check out (the server's signal of someone guessing codes), `errory` for server
+errors, and `happy` for an application-level refusal, which is not an error of
+the protocol.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

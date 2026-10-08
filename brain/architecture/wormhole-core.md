@@ -11,13 +11,20 @@ implementation, checked against the Python client (`wormhole` 0.22); see
 | Item | What it does |
 | --- | --- |
 | `create(&Config, words)` | Binds, allocates a nameplate, claims it, opens the mailbox, sends the PAKE message. Returns a `Pending` holding the generated `Code` |
-| `connect(&Config, Code)` | The same with a known code, then `pair()` |
+| `join(&Config, Code)` | The same with a known code, without allocating |
 | `Pending::pair()` | Waits for the peer's PAKE message, releases the nameplate, derives the key, exchanges version messages. Returns a `Wormhole` |
 | `Pending::abandon()` | Releases the nameplate and closes the mailbox `lonely` |
 | `Wormhole::send` / `receive` (and `_json`) | Numbered phases `0, 1, 2...`, encrypted, delivered in order |
 | `Wormhole::their_app_versions()` | The peer's `app_versions`, where capability adverts live |
-| `Wormhole::key()` / `verifier()` | The wormhole key, for transports to derive their own keys from; the verifier both sides can compare |
+| `Wormhole::key()` / `transit_key()` / `verifier()` | The wormhole key, for transports to derive their own keys from with `Key::derive`; the transit key; the verifier both sides can compare |
 | `Wormhole::close(Mood)` | Closes the mailbox with a mood (`happy`, `lonely`, `scary`, `errory`) and waits up to 5 s for `closed` |
+
+`create` and `join` both return before the peer shows up, so the caller can
+show the code and the server's MOTD first. Every failure after the claim
+releases the nameplate and closes the mailbox before returning, with the mood
+`Error::mood` gives: `scary` for a wrong code, an unreadable or forged peer
+message (`WrongCode`, `Tampered`, `Protocol`), `errory` for server and
+connection errors. Nothing is left claimed on the shared server.
 
 `Config` carries the relay URL (`PUBLIC_RELAY` by default), the appid (`APPID`,
 `lothar.com/wormhole/text-or-file-xfer`) and our `app_versions`.
@@ -57,7 +64,7 @@ All derivations are HKDF-SHA256 with no salt, 32 bytes, from the wormhole key
 | --- | --- |
 | Phase key | `wormhole:phase:` + SHA256(side) + SHA256(phase), with the *sender's* side |
 | Verifier | `wormhole:verifier` |
-| Transit key | `<appid>/transit-key` (used by the transit crates) |
+| Transit key | `lothar.com/wormhole/text-or-file-xfer/transit-key`, always the default appid, as the Python client does (its issue 339) |
 
 Messages are NaCl secretbox (XSalsa20-Poly1305) with a random 24-byte nonce
 prepended. The unit tests pin these derivations to values printed by the
@@ -71,9 +78,15 @@ sequential: whoever waits for a server reply (`expect`) buffers any mailbox
 Server `error` frames become `Error::Server`. There is no reconnection: a dropped
 mailbox connection fails the transfer.
 
+A hostile server cannot exhaust memory: frames are capped at 1 MiB, at most 64
+peer messages are buffered while waiting for a server reply, and at most 64
+out-of-order phases are held. Past either limit the session fails with
+`Error::Protocol`. An allocated nameplate that is not all digits is refused.
+
 ## Codes
 
-`code.rs`: `Code` parses `<digits>-<words>` and refuses whitespace; its `Debug`
+`code.rs`: `Code` parses `<digits>-<words>` and refuses whitespace and empty
+words (`7--x`, `7-x-`); its `Debug`
 hides the value. `choose_words` alternates the PGP word list's odd and even
 words starting with odd, as the Python client does; `completions` follows the
 same rule. `wordlist_data.rs` is generated from the Python client's list.

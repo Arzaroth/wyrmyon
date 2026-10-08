@@ -14,13 +14,16 @@ Tests never reach `relay.magic-wormhole.io`, `transit.magic-wormhole.io` or
 n0's relays. `crates/testkit` provides `MailboxServer`, an in-process fake of
 the mailbox server (welcome, bind, allocate, claim, open, add, release, close,
 acks) on a random localhost port; `start_with_welcome` sets the MOTD or a
-refusal. It is a dev-dependency only.
+refusal. Like the real server it answers `error` to a third side on a
+nameplate (`crowded`), to anything before `bind` and to `add` before `open`.
+`claimed_nameplates()` and `moods()` let tests check that a session released
+its nameplate and closed with the right mood. It is a dev-dependency only.
 
 | Suite | What it covers |
 | --- | --- |
 | `crates/wormhole-core/src/*` unit tests | Key derivations pinned to the Python client's values, secretbox, code parsing and word choice, server message shapes |
-| `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same key and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message |
-| `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text between two `wyrm` processes |
+| `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same keys and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message, a crowded nameplate, a malicious peer's malformed PAKE; nameplates released and moods recorded every time. Every await has a 10 s timeout |
+| `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text between two `wyrm` processes, a sender whose offer is refused |
 | `crates/cli/tests/interop.rs` | Against the Python client; `#[ignore]`d, see below |
 
 ## Interop with the Python client
@@ -31,7 +34,9 @@ cargo test -p wyrmyon --test interop -- --ignored
 
 Needs `wormhole` (the Python CLI) and `uvx` on PATH. Each test starts the real
 Python mailbox server (`uvx --from magic-wormhole-mailbox-server twist
-wormhole-mailbox`) on a free port and runs one transfer each way. It is the real
+wormhole-mailbox`) on a free port and runs one transfer each way. The server
+runs in its own process group, killed whole when the test ends: killing only
+`uvx` would orphan the `twist` process it starts. It is the real
 test of the legacy path; run it whenever a change touches the wire. CI does not
 run it.
 
