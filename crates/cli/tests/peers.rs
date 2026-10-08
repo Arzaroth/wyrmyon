@@ -302,6 +302,12 @@ async fn a_zip_bigger_than_its_offer_over_iroh_leaves_nothing_behind() {
         .await
         .unwrap();
     let zip = zip_with(10_000);
+    let zip_path = dir.path().join("big.zip");
+    std::fs::write(&zip_path, &zip).unwrap();
+    let offered = wyrmyon_transport_iroh::Offered::import(&zip_path)
+        .await
+        .unwrap();
+    std::fs::remove_file(&zip_path).unwrap();
     sender
         .send_json(&json!({"wyrmyon-iroh-v1": serde_json::to_value(iroh.info().await).unwrap()}))
         .await
@@ -316,10 +322,11 @@ async fn a_zip_bigger_than_its_offer_over_iroh_leaves_nothing_behind() {
         serde_json::from_value(until(&mut sender, "wyrmyon-iroh-v1").await).unwrap();
     until(&mut sender, "answer").await;
     let mut pipe = iroh.connect(&theirs, sender.key()).await.unwrap();
-    pipe.send_chunk(&zip).await.unwrap();
+    pipe.provide(&offered).await.unwrap();
     assert!(fails(receiver).await.contains("more than"));
     assert!(!dir.path().join("d").exists());
     pipe.abort().await;
+    offered.close().await;
     sender.close(Mood::Happy).await;
 }
 
@@ -445,6 +452,7 @@ async fn in_a_terminal(
         .env("WYRMYON_RELAY_URL", server.url())
         .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
         .env("WYRMYON_IROH_RELAYS", "disabled")
+        .env("WYRMYON_CACHE_DIR", support::cache_dir())
         .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

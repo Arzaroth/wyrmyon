@@ -147,6 +147,31 @@ fn show_welcome(welcome: &Welcome) {
     }
 }
 
+fn cache_dir() -> anyhow::Result<std::path::PathBuf> {
+    cache_dir_from(
+        std::env::var_os("WYRMYON_CACHE_DIR"),
+        std::env::var_os("XDG_CACHE_HOME"),
+        std::env::var_os("HOME"),
+    )
+}
+
+fn cache_dir_from(
+    ours: Option<std::ffi::OsString>,
+    xdg: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> anyhow::Result<std::path::PathBuf> {
+    use std::path::PathBuf;
+    if let Some(dir) = ours {
+        return Ok(dir.into());
+    }
+    let base = match (xdg, home) {
+        (Some(xdg), _) => PathBuf::from(xdg),
+        (None, Some(home)) => PathBuf::from(home).join(".cache"),
+        (None, None) => anyhow::bail!("no HOME to keep partial transfers in"),
+    };
+    Ok(base.join("wyrmyon").join("partial"))
+}
+
 fn printable(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
@@ -163,6 +188,25 @@ fn mood_for(result: &anyhow::Result<()>) -> Mood {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn partial_transfers_go_where_the_environment_says() {
+        use std::path::Path;
+        let os = |s: &str| Some(std::ffi::OsString::from(s));
+        assert_eq!(
+            cache_dir_from(os("/c"), os("/x"), os("/h")).unwrap(),
+            Path::new("/c")
+        );
+        assert_eq!(
+            cache_dir_from(None, os("/x"), os("/h")).unwrap(),
+            Path::new("/x/wyrmyon/partial")
+        );
+        assert_eq!(
+            cache_dir_from(None, None, os("/h")).unwrap(),
+            Path::new("/h/.cache/wyrmyon/partial")
+        );
+        assert!(cache_dir_from(None, None, None).is_err());
+    }
 
     #[test]
     fn iroh_relay_flags_map_to_the_transport() {

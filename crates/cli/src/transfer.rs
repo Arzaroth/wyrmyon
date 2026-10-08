@@ -21,28 +21,6 @@ impl Pipe {
         }
     }
 
-    async fn send_chunk(&mut self, data: &[u8]) -> anyhow::Result<()> {
-        match self {
-            Self::Classic(pipe) => pipe.send_record(data).await?,
-            Self::Iroh(pipe) => pipe.send_chunk(data).await?,
-        }
-        Ok(())
-    }
-
-    async fn receive_chunk(&mut self) -> anyhow::Result<Vec<u8>> {
-        Ok(match self {
-            Self::Classic(pipe) => pipe.receive_record().await?,
-            Self::Iroh(pipe) => pipe.receive_chunk(CHUNK).await?,
-        })
-    }
-
-    async fn flush(&mut self) -> anyhow::Result<()> {
-        if let Self::Classic(pipe) = self {
-            pipe.flush().await?;
-        }
-        Ok(())
-    }
-
     async fn send_last(&mut self, data: &[u8]) -> anyhow::Result<()> {
         match self {
             Self::Classic(pipe) => {
@@ -91,7 +69,7 @@ pub fn progress(size: u64, hidden: bool) -> ProgressBar {
 }
 
 pub async fn send_stream(
-    pipe: &mut Pipe,
+    pipe: &mut RecordPipe,
     mut source: impl AsyncRead + Unpin,
     size: u64,
     bar: &ProgressBar,
@@ -109,7 +87,7 @@ pub async fn send_stream(
             bail!("the data grew while it was being sent");
         }
         hasher.update(&buf[..n]);
-        pipe.send_chunk(&buf[..n]).await?;
+        pipe.send_record(&buf[..n]).await?;
         bar.inc(n as u64);
     }
     if sent != size {
@@ -121,7 +99,7 @@ pub async fn send_stream(
 }
 
 pub async fn receive_stream(
-    pipe: &mut Pipe,
+    pipe: &mut RecordPipe,
     mut sink: impl AsyncWrite + Unpin,
     size: u64,
     bar: &ProgressBar,
@@ -129,7 +107,7 @@ pub async fn receive_stream(
     let mut hasher = Sha256::new();
     let mut received = 0u64;
     while received < size {
-        let chunk = pipe.receive_chunk().await?;
+        let chunk = pipe.receive_record().await?;
         received += chunk.len() as u64;
         if received > size {
             bail!("the sender sent more than the {size} bytes it offered");
@@ -143,14 +121,14 @@ pub async fn receive_stream(
     Ok(hasher.finalize().into())
 }
 
-pub async fn await_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()> {
+pub async fn await_ack(pipe: &mut Pipe, digest: Option<&[u8; 32]>) -> anyhow::Result<()> {
     let raw = pipe.receive_last().await?;
     let ack: Value =
         serde_json::from_slice(&raw).context("the receiver's confirmation is not JSON")?;
     if ack["ack"] != "ok" {
         bail!("transfer failed, the receiver says: {ack}");
     }
-    if let Some(theirs) = ack["sha256"].as_str()
+    if let (Some(theirs), Some(digest)) = (ack["sha256"].as_str(), digest)
         && theirs != hex::encode(digest)
     {
         bail!("transfer failed: the receiver got different data");
@@ -158,8 +136,12 @@ pub async fn await_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()>
     Ok(())
 }
 
-pub async fn send_ack(pipe: &mut Pipe, digest: &[u8; 32]) -> anyhow::Result<()> {
-    let ack = json!({"ack": "ok", "sha256": hex::encode(digest)}).to_string();
+pub async fn send_ack(pipe: &mut Pipe, digest: Option<&[u8; 32]>) -> anyhow::Result<()> {
+    let ack = match digest {
+        Some(digest) => json!({"ack": "ok", "sha256": hex::encode(digest)}),
+        None => json!({"ack": "ok"}),
+    }
+    .to_string();
     pipe.send_last(ack.as_bytes()).await
 }
 
@@ -169,7 +151,7 @@ mod tests {
     use wyrmyon_transport_classic::{Role, Transit};
     use wyrmyon_wormhole::Key;
 
-    async fn pair() -> (Pipe, Pipe) {
+    async fn pair() -> (RecordPipe, RecordPipe) {
         let sender = Transit::new(Role::Sender, Key::from_bytes([2; 32])).await;
         let receiver = Transit::new(Role::Receiver, Key::from_bytes([2; 32])).await;
         let (sender_info, receiver_info) = (sender.info(), receiver.info());
@@ -177,7 +159,7 @@ mod tests {
             sender.connect(&receiver_info),
             receiver.connect(&sender_info)
         );
-        (Pipe::Classic(a.unwrap()), Pipe::Classic(b.unwrap()))
+        (a.unwrap(), b.unwrap())
     }
 
     #[tokio::test]

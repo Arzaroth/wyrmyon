@@ -4,7 +4,7 @@ use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
-use wyrmyon_transport_iroh::{IrohTransport, Role as IrohRole};
+use wyrmyon_transport_iroh::{IrohTransport, Offered, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
@@ -59,16 +59,18 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
         Payload::Text(text) => send_text(&mut wormhole, text).await,
         Payload::File(path, offer) => {
             let size = offer.filesize;
-            let source = tokio::fs::File::open(&path)
-                .await
-                .with_context(|| format!("opening {}", path.display()))?;
-            send_data(&mut wormhole, global, Offer::File(offer), source, size).await
+            send_data(&mut wormhole, global, Offer::File(offer), &path, size).await
         }
         Payload::Directory(built, offer) => {
             let size = offer.zipsize;
-            let source =
-                tokio::fs::File::from_std(built.file.reopen().context("opening the zip file")?);
-            send_data(&mut wormhole, global, Offer::Directory(offer), source, size).await
+            send_data(
+                &mut wormhole,
+                global,
+                Offer::Directory(offer),
+                built.file.path(),
+                size,
+            )
+            .await
         }
     };
     wormhole.close(mood_for(&result)).await;
@@ -153,7 +155,7 @@ async fn send_data(
     wormhole: &mut Wormhole,
     global: &Global,
     offer: Offer,
-    source: tokio::fs::File,
+    path: &Path,
     size: u64,
 ) -> anyhow::Result<()> {
     let use_iroh = global.use_iroh(wormhole);
@@ -161,7 +163,28 @@ async fn send_data(
         protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
         bail!("the other side does not speak iroh-v1 (--force-iroh)");
     }
-    let prepared = if use_iroh {
+    let offered = if use_iroh {
+        eprintln!("Hashing..");
+        Some(Offered::import(path).await?)
+    } else {
+        None
+    };
+    let result = send_over(wormhole, global, offer, path, size, offered.as_ref()).await;
+    if let Some(offered) = offered {
+        offered.close().await;
+    }
+    result
+}
+
+async fn send_over(
+    wormhole: &mut Wormhole,
+    global: &Global,
+    offer: Offer,
+    path: &Path,
+    size: u64,
+    offered: Option<&Offered>,
+) -> anyhow::Result<()> {
+    let prepared = if offered.is_some() {
         let iroh = global.iroh_or_tell(wormhole, IrohRole::Sender).await?;
         protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
         Prepared::Iroh(iroh)
@@ -209,9 +232,21 @@ async fn send_data(
     eprintln!("Sending ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);
     let sent = async {
-        let digest = transfer::send_stream(&mut pipe, source, size, &bar).await?;
-        eprintln!("File sent.. waiting for confirmation");
-        transfer::await_ack(&mut pipe, &digest).await
+        let digest = match &mut pipe {
+            Pipe::Iroh(iroh) => {
+                iroh.provide(offered.expect("iroh pipes carry a blob"))
+                    .await?;
+                None
+            }
+            Pipe::Classic(records) => {
+                let source = tokio::fs::File::open(path)
+                    .await
+                    .with_context(|| format!("opening {}", path.display()))?;
+                Some(transfer::send_stream(records, source, size, &bar).await?)
+            }
+        };
+        eprintln!("Sent.. waiting for confirmation");
+        transfer::await_ack(&mut pipe, digest.as_ref()).await
     }
     .await;
     if let Err(e) = sent {

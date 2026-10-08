@@ -13,6 +13,7 @@ pub fn wyrm(relay: &str) -> Command {
     cmd.env("WYRMYON_RELAY_URL", relay)
         .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
         .env("WYRMYON_IROH_RELAYS", "disabled")
+        .env("WYRMYON_CACHE_DIR", cache_dir())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -49,4 +50,12 @@ pub async fn finish(child: Child) -> (bool, String, String) {
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     )
+}
+
+pub fn cache_dir() -> std::path::PathBuf {
+    tempfile::Builder::new()
+        .prefix("wyrmyon-test-cache")
+        .tempdir()
+        .unwrap()
+        .keep()
 }
