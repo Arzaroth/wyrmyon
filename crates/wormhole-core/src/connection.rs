@@ -126,6 +126,6 @@ impl Connection {
     }
 
     pub async fn shutdown(mut self) {
-        let _ = self.ws.close(None).await;
+        let _ = WebSocketStream::close(&mut *self.ws, None).await;
     }
 }
