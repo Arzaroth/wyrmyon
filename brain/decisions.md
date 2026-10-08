@@ -29,6 +29,14 @@ check out (the server's signal of someone guessing codes), `errory` for server
 errors, and `happy` for an application-level refusal, which is not an error of
 the protocol.
 
+## Refuse rather than ask without a terminal
+
+The Python receiver asks before accepting a file and fails when stdin is not a
+terminal, which leaves its sender waiting. `wyrm receive` refuses with an
+`error` message instead, and `--accept-file` is the way to receive
+unattended. Writing into a fresh `.<name>.wyrm-part` and renaming at the end
+means a failed or hostile transfer never leaves a file that looks complete.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

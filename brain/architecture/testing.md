@@ -23,7 +23,8 @@ its nameplate and closed with the right mood. It is a dev-dependency only.
 | --- | --- |
 | `crates/wormhole-core/src/*` unit tests | Key derivations pinned to the Python client's values, secretbox, code parsing and word choice, server message shapes |
 | `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same keys and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message, a crowded nameplate, a malicious peer's malformed PAKE; nameplates released and moods recorded every time. Every await has a 10 s timeout |
-| `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text between two `wyrm` processes, a sender whose offer is refused |
+| `crates/transport-classic/tests/transit.rs` | Two transits on localhost: handshake, records both ways including a 4 MiB one, mismatched keys never connecting |
+| `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text and a file between two `wyrm` processes, a refused offer, a file refused without confirmation and over an existing one |
 | `crates/cli/tests/interop.rs` | Against the Python client; `#[ignore]`d, see below |
 
 ## Interop with the Python client
@@ -34,7 +35,9 @@ cargo test -p wyrmyon --test interop -- --ignored
 
 Needs `wormhole` (the Python CLI) and `uvx` on PATH. Each test starts the real
 Python mailbox server (`uvx --from magic-wormhole-mailbox-server twist
-wormhole-mailbox`) on a free port and runs one transfer each way. The server
+wormhole-mailbox`) on a free port and runs text and a 3 MB file each way. The
+Python client gets `--transit-helper tcp:127.0.0.1:9` so it never reaches the
+public transit relay. The server
 runs in its own process group, killed whole when the test ends: killing only
 `uvx` would orphan the `twist` process it starts. It is the real
 test of the legacy path; run it whenever a change touches the wire. CI does not

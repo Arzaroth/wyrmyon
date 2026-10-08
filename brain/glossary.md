@@ -21,6 +21,11 @@ is derived from it with HKDF.
 **Classic transit**: the data transport every magic-wormhole client speaks:
 direct TCP from exchanged hints, or the transit relay, with encrypted records.
 
+**Hint**: an address a peer can be reached at, sent in the `transit` message:
+`direct-tcp-v1` (host and port) or `relay-v1` (a transit relay).
+
+**Record**: one encrypted, length-prefixed message on a transit connection.
+
 **iroh-v1**: wyrmyon's own transport, used only when both peers advertise it.
 See [architecture/iroh-v1.md](architecture/iroh-v1.md).
 

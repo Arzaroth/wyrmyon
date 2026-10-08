@@ -29,9 +29,11 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M2 - Classic transit on the LAN
 
-- [ ] Transit handshake and direct TCP from the peer's hints, records
+- [x] Transit handshake and direct TCP from the peer's hints, records
       encrypted with the transit key.
-- [ ] File offer and answer, one file end to end against the Python CLI.
+- [x] File offer and answer, one file end to end against the Python CLI.
+      Decided: typed app messages (`crates/cli/src/protocol.rs`); unattended
+      receiving needs `--accept-file`; partial files never overwrite.
 
 ## M3 - Full legacy transfer
 

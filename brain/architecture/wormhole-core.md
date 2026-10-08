@@ -64,7 +64,7 @@ All derivations are HKDF-SHA256 with no salt, 32 bytes, from the wormhole key
 | --- | --- |
 | Phase key | `wormhole:phase:` + SHA256(side) + SHA256(phase), with the *sender's* side |
 | Verifier | `wormhole:verifier` |
-| Transit key | `lothar.com/wormhole/text-or-file-xfer/transit-key`, always the default appid, as the Python client does (its issue 339) |
+| Transit key | `lothar.com/wormhole/text-or-file-xfer/transit-key`, always the default appid, as the Python client does (its issue 339). Transports derive their own keys from it ([transit-classic.md](transit-classic.md)) |
 
 Messages are NaCl secretbox (XSalsa20-Poly1305) with a random 24-byte nonce
 prepended. The unit tests pin these derivations to values printed by the
