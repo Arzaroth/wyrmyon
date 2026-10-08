@@ -25,7 +25,7 @@ struct Global {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Send a text message
+    /// Send a text message or a file
     Send(send::SendArgs),
     /// Receive what the other side sends
     Receive(receive::ReceiveArgs),

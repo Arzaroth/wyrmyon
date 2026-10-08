@@ -1,6 +1,7 @@
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use wyrmyon_transport_classic::TransitInfo;
 use wyrmyon_wormhole::Wormhole;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +9,7 @@ use wyrmyon_wormhole::Wormhole;
 pub enum AppMessage {
     Offer(Offer),
     Answer(Answer),
+    Transit(TransitInfo),
     Error(Value),
 }
 
@@ -15,14 +17,32 @@ pub enum AppMessage {
 #[serde(rename_all = "lowercase")]
 pub enum Offer {
     Message(String),
+    File(FileOffer),
+    Directory(DirectoryOffer),
     #[serde(untagged)]
     Other(Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileOffer {
+    pub filename: String,
+    pub filesize: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectoryOffer {
+    pub mode: String,
+    pub dirname: String,
+    pub zipsize: u64,
+    pub numbytes: u64,
+    pub numfiles: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     MessageAck(String),
+    FileAck(String),
     #[serde(untagged)]
     Other(Value),
 }
@@ -77,6 +97,10 @@ mod tests {
         let msg: AppMessage =
             serde_json::from_value(json!({"offer": {"hologram": {"size": 3}}})).unwrap();
         assert!(matches!(msg, AppMessage::Offer(Offer::Other(_))));
+        let msg: AppMessage =
+            serde_json::from_value(json!({"offer": {"file": {"filename": "a", "filesize": 3}}}))
+                .unwrap();
+        assert!(matches!(msg, AppMessage::Offer(Offer::File(f)) if f.filesize == 3));
         let msg: AppMessage = serde_json::from_value(json!({"answer": {"maybe": 1}})).unwrap();
         assert!(matches!(msg, AppMessage::Answer(Answer::Other(_))));
         assert!(serde_json::from_value::<AppMessage>(json!({"chat": 1})).is_err());
