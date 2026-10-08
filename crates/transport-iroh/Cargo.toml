@@ -20,3 +20,4 @@ wyrmyon-wormhole = { version = "0.0.0", path = "../wormhole-core" }
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros"] }
+wyrmyon-wormhole = { path = "../wormhole-core" }
