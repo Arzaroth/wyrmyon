@@ -23,8 +23,9 @@ its nameplate and closed with the right mood. It is a dev-dependency only.
 | --- | --- |
 | `crates/wormhole-core/src/*` unit tests | Key derivations pinned to the Python client's values, secretbox, code parsing and word choice, server message shapes |
 | `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same keys and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message, a crowded nameplate, a malicious peer's malformed PAKE; nameplates released and moods recorded every time. Every await has a 10 s timeout |
-| `crates/transport-classic/tests/transit.rs` | Two transits on localhost: handshake, records both ways including a 4 MiB one, mismatched keys never connecting |
-| `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text and a file between two `wyrm` processes, a refused offer, a file refused without confirmation and over an existing one |
+| `crates/transport-classic/src/records.rs` unit tests | Oversized length, replayed record and tampered record all refused |
+| `crates/transport-classic/tests/transit.rs` | Two transits on localhost: handshake, records both ways including a 4 MiB one, mismatched keys never connecting, `NoConnection` when nothing is reachable |
+| `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text and files (empty and 300 kB) between two `wyrm` processes, a refused offer, a file refused without confirmation and over an existing one, non-regular files refused, a hand-written sender that sends more than it offered |
 | `crates/cli/tests/interop.rs` | Against the Python client; `#[ignore]`d, see below |
 
 ## Interop with the Python client

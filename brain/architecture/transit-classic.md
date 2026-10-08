@@ -11,8 +11,9 @@ used yet (M3).
 | Item | What it does |
 | --- | --- |
 | `Transit::new(Role, transit_key)` | Binds a listener on `0.0.0.0:<random port>` and builds direct hints from the machine's non-loopback IPv4 addresses (loopback only when there are none) |
-| `Transit::info()` | Our `TransitInfo`, sent to the peer as `{"transit": ...}` |
-| `Transit::connect(&their_info)` | Races inbound connections against outbound ones to each of their direct hints; returns the first `RecordPipe` that completes the handshake, within 120 s |
+| `Transit::without_listener()` / `with_timeout(d)` | No inbound connections and no direct hints of our own; a connect window other than 120 s |
+| `Transit::info()` | Our `TransitInfo`, sent to the peer as `{"transit": ...}`. It advertises only `direct-tcp-v1` until relays are built |
+| `Transit::connect(&their_info)` | Races inbound connections against outbound ones to each of their direct hints; returns the first `RecordPipe` that completes the handshake, or `NoConnection` when the window closes |
 | `RecordPipe::send_record` / `flush` / `receive_record` | Encrypted records, at most `MAX_RECORD` (4 MiB) of plaintext each |
 | `TransitInfo::direct_hints()` / `relay_hints()` | Parse the peer's hints leniently: unknown types, bad ports and empty hostnames are skipped, never fatal |
 
@@ -46,6 +47,15 @@ record out of order is an error. Keys: HKDF of the transit key with
 sending with the first.
 
 A record bigger than 4 MiB of plaintext is refused before it is read.
+
+## Limits
+
+The listener on `0.0.0.0` answers anyone on the network, so it only ever
+holds 32 handshakes at once (more connections are dropped on arrival), each
+handshake has 30 s to complete, and an `accept` error is waited out rather than
+ending the listener. A connection is used only after the peer sent the exact
+line derived from the transit key. If writing `go\n` fails on the first
+connection to finish, the sender moves on to the next one.
 
 ## Sources
 
