@@ -4,9 +4,9 @@ use anyhow::{Context, bail};
 use clap::Args;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use wyrmyon_wormhole::{Code, Mood, Wormhole};
+use wyrmyon_wormhole::{Code, Wormhole};
 
-use crate::{Global, show_welcome};
+use crate::{Global, mood_for, show_welcome};
 
 #[derive(Args)]
 pub struct ReceiveArgs {
@@ -19,40 +19,40 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         Some(code) => code.parse()?,
         None => prompt_code().await?,
     };
-    let mut wormhole = wyrmyon_wormhole::join(&global.config(), code)
-        .await?
-        .pair()
-        .await?;
-    show_welcome(wormhole.welcome());
+    let pending = wyrmyon_wormhole::join(&global.config(), code).await?;
+    show_welcome(pending.welcome());
+    let mut wormhole = pending.pair().await?;
+    let result = receive_offer(&mut wormhole).await;
+    wormhole.close(mood_for(&result)).await;
+    result
+}
 
-    loop {
+async fn receive_offer(wormhole: &mut Wormhole) -> anyhow::Result<()> {
+    let offer = loop {
         let msg = wormhole.receive_json().await?;
         if let Some(error) = msg.get("error") {
-            wormhole.close(Mood::Errory).await;
             bail!("the sender reported an error: {error}");
         }
         if let Some(offer) = msg.get("offer") {
-            return handle_offer(wormhole, offer).await;
+            break offer.clone();
         }
-    }
-}
-
-async fn handle_offer(mut wormhole: Wormhole, offer: &Value) -> anyhow::Result<()> {
-    if let Some(text) = offer.get("message").and_then(Value::as_str) {
-        let mut stdout = std::io::stdout().lock();
-        writeln!(stdout, "{text}").context("writing to stdout")?;
-        drop(stdout);
+    };
+    let Some(text) = offer.get("message").and_then(Value::as_str) else {
         wormhole
-            .send_json(&json!({ "answer": { "message_ack": "ok" } }))
+            .send_json(&json!({ "error": "wyrmyon cannot receive this kind of offer yet" }))
             .await?;
-        wormhole.close(Mood::Happy).await;
-        return Ok(());
+        bail!("the sender offered something this version cannot receive");
+    };
+    if let Err(e) = writeln!(std::io::stdout().lock(), "{text}") {
+        wormhole
+            .send_json(&json!({ "error": "the receiver could not write the message out" }))
+            .await?;
+        return Err(e).context("writing to stdout");
     }
     wormhole
-        .send_json(&json!({ "error": "wyrmyon cannot receive this kind of offer yet" }))
+        .send_json(&json!({ "answer": { "message_ack": "ok" } }))
         .await?;
-    wormhole.close(Mood::Errory).await;
-    bail!("the sender offered something this version cannot receive")
+    Ok(())
 }
 
 async fn prompt_code() -> anyhow::Result<Code> {

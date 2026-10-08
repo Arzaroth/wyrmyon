@@ -4,7 +4,7 @@ mod send;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use wyrmyon_wormhole::{Config, PUBLIC_RELAY, Welcome};
+use wyrmyon_wormhole::{Config, Mood, PUBLIC_RELAY, Welcome};
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -51,7 +51,7 @@ pub fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("error: {e:#}");
+            eprintln!("error: {}", printable(&format!("{e:#}")));
             ExitCode::FAILURE
         }
     }
@@ -60,7 +60,20 @@ pub fn main() -> ExitCode {
 fn show_welcome(welcome: &Welcome) {
     if let Some(motd) = &welcome.motd {
         for line in motd.lines() {
-            eprintln!("Server (at relay): {line}");
+            eprintln!("Server (at relay): {}", printable(line));
         }
+    }
+}
+
+fn printable(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
+fn mood_for(result: &anyhow::Result<()>) -> Mood {
+    match result {
+        Ok(()) => Mood::Happy,
+        Err(e) => e
+            .downcast_ref::<wyrmyon_wormhole::Error>()
+            .map_or(Mood::Happy, wyrmyon_wormhole::Error::mood),
     }
 }

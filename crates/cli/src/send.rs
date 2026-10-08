@@ -2,9 +2,9 @@ use anyhow::{Context, bail};
 use clap::Args;
 use serde_json::json;
 use tokio::io::AsyncReadExt;
-use wyrmyon_wormhole::Mood;
+use wyrmyon_wormhole::Wormhole;
 
-use crate::{Global, show_welcome};
+use crate::{Global, mood_for, show_welcome};
 
 #[derive(Args)]
 pub struct SendArgs {
@@ -34,22 +34,25 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     eprintln!("On the other computer, please run:\n\n  wyrm receive\n\n(or: wormhole receive)\n");
 
     let mut wormhole = pending.pair().await?;
+    let result = send_text(&mut wormhole, text).await;
+    wormhole.close(mood_for(&result)).await;
+    result
+}
+
+async fn send_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> {
     wormhole
         .send_json(&json!({ "offer": { "message": text } }))
         .await?;
     loop {
         let msg = wormhole.receive_json().await?;
         if let Some(error) = msg.get("error") {
-            wormhole.close(Mood::Errory).await;
             bail!("the receiver refused: {error}");
         }
         if let Some(answer) = msg.get("answer") {
             if answer.get("message_ack").and_then(|a| a.as_str()) == Some("ok") {
                 eprintln!("text message sent");
-                wormhole.close(Mood::Happy).await;
                 return Ok(());
             }
-            wormhole.close(Mood::Errory).await;
             bail!("unexpected answer from the receiver: {answer}");
         }
     }
