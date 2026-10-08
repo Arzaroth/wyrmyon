@@ -3,23 +3,28 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use clap::Args;
-use serde_json::json;
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_wormhole::{Code, Wormhole};
 
-use crate::protocol::{self, Answer, AppMessage, FileOffer, Offer};
-use crate::{Global, mood_for, printable, show_welcome};
+use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
+use crate::{Global, mood_for, printable, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
 pub struct ReceiveArgs {
     /// The code the sender gave you; asked for when left out
+    #[arg(conflicts_with = "new")]
     code: Option<String>,
-    /// Accept a file without asking
+    /// Allocate a code here, for the sender to use with `send --code`
+    #[arg(long)]
+    new: bool,
+    /// Number of words in the code `--new` allocates
+    #[arg(long, default_value_t = 2, requires = "new", value_parser = clap::value_parser!(u8).range(1..=8))]
+    code_length: u8,
+    /// Accept a file or directory without asking
     #[arg(long)]
     accept_file: bool,
-    /// Where to write a received file, instead of its name in the current directory
+    /// Where to write a received file or directory, instead of its name in the current directory
     #[arg(long, short = 'o')]
     output_file: Option<PathBuf>,
 }
@@ -30,19 +35,35 @@ struct Peer {
 }
 
 pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
-    let code: Code = match &args.code {
-        Some(code) => code.parse()?,
-        None => prompt_code().await?,
+    let pending = if args.new {
+        let pending =
+            wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
+        eprintln!("Wormhole code is: {}", pending.code());
+        eprintln!(
+            "On the other computer, please run:\n\n  wyrm send --code {} FILE\n\n(or: wormhole send --code {} FILE)\n",
+            pending.code(),
+            pending.code()
+        );
+        pending
+    } else {
+        let code: Code = match &args.code {
+            Some(code) => code.parse()?,
+            None => prompt_code().await?,
+        };
+        wyrmyon_wormhole::join(&global.config(), code).await?
     };
-    let pending = wyrmyon_wormhole::join(&global.config(), code).await?;
     show_welcome(pending.welcome());
     let mut wormhole = pending.pair().await?;
-    let result = receive_offer(&mut wormhole, &args).await;
+    let result = receive_offer(&mut wormhole, global, &args).await;
     wormhole.close(mood_for(&result)).await;
     result
 }
 
-async fn receive_offer(wormhole: &mut Wormhole, args: &ReceiveArgs) -> anyhow::Result<()> {
+async fn receive_offer(
+    wormhole: &mut Wormhole,
+    global: &Global,
+    args: &ReceiveArgs,
+) -> anyhow::Result<()> {
     let mut peer = Peer {
         transit: None,
         theirs: None,
@@ -52,7 +73,7 @@ async fn receive_offer(wormhole: &mut Wormhole, args: &ReceiveArgs) -> anyhow::R
             AppMessage::Transit(info) => {
                 peer.theirs = Some(info);
                 if peer.transit.is_none() {
-                    let transit = Transit::new(Role::Receiver, wormhole.transit_key()).await;
+                    let transit = global.transit(Role::Receiver, wormhole.transit_key()).await;
                     protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
                     peer.transit = Some(transit);
                 }
@@ -63,8 +84,9 @@ async fn receive_offer(wormhole: &mut Wormhole, args: &ReceiveArgs) -> anyhow::R
     };
     match offer {
         Offer::Message(text) => receive_text(wormhole, &text).await,
-        Offer::File(file) => receive_file(wormhole, file, peer, args).await,
-        Offer::Directory(_) | Offer::Other(_) => {
+        Offer::File(file) => receive_file(wormhole, file, peer, global, args).await,
+        Offer::Directory(dir) => receive_directory(wormhole, dir, peer, global, args).await,
+        Offer::Other(_) => {
             protocol::send_error(wormhole, "wyrmyon cannot receive this kind of offer yet").await?;
             bail!("the sender offered something this version cannot receive");
         }
@@ -88,45 +110,68 @@ async fn refuse(wormhole: &mut Wormhole, why: &str) -> anyhow::Result<()> {
     bail!("{why}")
 }
 
-async fn receive_file(
+struct Accepted {
+    name: String,
+    dest: PathBuf,
+    transit: Transit,
+    theirs: TransitInfo,
+}
+
+async fn accept(
     wormhole: &mut Wormhole,
-    offer: FileOffer,
+    offered_name: &str,
     peer: Peer,
     args: &ReceiveArgs,
-) -> anyhow::Result<()> {
-    let Some(name) = safe_name(&offer.filename) else {
-        return refuse(wormhole, "the offered file name is not usable").await;
+    describe: &str,
+) -> anyhow::Result<Accepted> {
+    let Some(name) = safe_name(offered_name) else {
+        refuse(wormhole, "the offered name is not usable").await?;
+        unreachable!("refuse always fails");
     };
     let (Some(transit), Some(theirs)) = (peer.transit, peer.theirs) else {
-        return refuse(wormhole, "the sender did not offer a transit connection").await;
+        refuse(wormhole, "the sender did not offer a transit connection").await?;
+        unreachable!("refuse always fails");
     };
     let dest = match &args.output_file {
         Some(path) => path.clone(),
         None => PathBuf::from(&name),
     };
     if dest.symlink_metadata().is_ok() {
-        return refuse(
+        refuse(
             wormhole,
             &format!("refusing to overwrite {}", dest.display()),
         )
-        .await;
+        .await?;
     }
-    eprintln!(
-        "Receiving file ({} bytes) into: {}",
-        offer.filesize,
-        dest.display()
-    );
+    eprintln!("Receiving {describe} into: {}", dest.display());
     if !args.accept_file {
         match confirm("ok? (y/N) ").await {
             Ok(true) => {}
-            Ok(false) => return refuse(wormhole, "transfer rejected").await,
+            Ok(false) => refuse(wormhole, "transfer rejected").await?,
             Err(e) => {
                 protocol::send_error(wormhole, "transfer rejected").await?;
                 return Err(e);
             }
         }
     }
-    let (partial, file) = match Partial::create(&dest, &name).await {
+    Ok(Accepted {
+        name,
+        dest,
+        transit,
+        theirs,
+    })
+}
+
+async fn receive_file(
+    wormhole: &mut Wormhole,
+    offer: FileOffer,
+    peer: Peer,
+    global: &Global,
+    args: &ReceiveArgs,
+) -> anyhow::Result<()> {
+    let describe = format!("file ({} bytes)", offer.filesize);
+    let accepted = accept(wormhole, &offer.filename, peer, args, &describe).await?;
+    let (partial, mut file) = match Partial::create(&accepted.dest, &accepted.name).await {
         Ok(created) => created,
         Err(e) => {
             protocol::send_error(wormhole, "the receiver cannot write the file").await?;
@@ -135,15 +180,67 @@ async fn receive_file(
     };
     protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
 
-    let mut pipe = transit.connect(&theirs).await?;
+    let mut pipe = accepted.transit.connect(&accepted.theirs).await?;
     eprintln!("Receiving ({})..", pipe.describe());
-    let digest = write_records(&mut pipe, file, offer.filesize).await?;
-    partial.finish(&dest)?;
-    let ack = json!({"ack": "ok", "sha256": hex::encode(digest)}).to_string();
-    pipe.send_record(ack.as_bytes()).await?;
-    pipe.flush().await?;
+    let bar = transfer::progress(offer.filesize, global.hide_progress);
+    let digest = transfer::receive_stream(&mut pipe, &mut file, offer.filesize, &bar).await?;
+    file.sync_all().await.context("writing the file")?;
+    partial.finish(&accepted.dest)?;
+    transfer::send_ack(&mut pipe, &digest).await?;
     pipe.shutdown().await;
-    eprintln!("Received file written to {}", dest.display());
+    eprintln!("Received file written to {}", accepted.dest.display());
+    Ok(())
+}
+
+async fn receive_directory(
+    wormhole: &mut Wormhole,
+    offer: DirectoryOffer,
+    peer: Peer,
+    global: &Global,
+    args: &ReceiveArgs,
+) -> anyhow::Result<()> {
+    if offer.mode != "zipfile/deflated" {
+        return refuse(wormhole, "unknown directory transfer mode").await;
+    }
+    let describe = format!(
+        "directory ({} files, {} bytes, {} bytes compressed)",
+        offer.numfiles, offer.numbytes, offer.zipsize
+    );
+    let accepted = accept(wormhole, &offer.dirname, peer, args, &describe).await?;
+    let (partial, mut file) = match Partial::create(&accepted.dest, &accepted.name).await {
+        Ok(created) => created,
+        Err(e) => {
+            protocol::send_error(wormhole, "the receiver cannot write the directory").await?;
+            return Err(e);
+        }
+    };
+    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
+
+    let mut pipe = accepted.transit.connect(&accepted.theirs).await?;
+    eprintln!("Receiving ({})..", pipe.describe());
+    let bar = transfer::progress(offer.zipsize, global.hide_progress);
+    let digest = transfer::receive_stream(&mut pipe, &mut file, offer.zipsize, &bar).await?;
+    drop(file);
+
+    eprintln!("Unpacking zipfile..");
+    let dest = accepted.dest.clone();
+    let zip = partial.path.clone();
+    let limits = zipdir::Limits {
+        numbytes: offer.numbytes,
+        numfiles: offer.numfiles,
+    };
+    tokio::task::spawn_blocking(move || {
+        let dir = zipdir::NewDir::create(&dest)?;
+        zipdir::extract(&zip, &dest, &limits)?;
+        dir.keep();
+        anyhow::Ok(())
+    })
+    .await
+    .context("unpacking the zip file")??;
+    drop(partial);
+    transfer::send_ack(&mut pipe, &digest).await?;
+    pipe.shutdown().await;
+    eprintln!("Received files written to {}", accepted.dest.display());
     Ok(())
 }
 
@@ -195,26 +292,6 @@ fn unique_suffix() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.subsec_nanos());
     format!("{:x}{nanos:x}", std::process::id())
-}
-
-async fn write_records(
-    pipe: &mut wyrmyon_transport_classic::RecordPipe,
-    mut file: tokio::fs::File,
-    size: u64,
-) -> anyhow::Result<Vec<u8>> {
-    let mut hasher = Sha256::new();
-    let mut received = 0u64;
-    while received < size {
-        let record = pipe.receive_record().await?;
-        received += record.len() as u64;
-        if received > size {
-            bail!("the sender sent more than the {size} bytes it offered");
-        }
-        hasher.update(&record);
-        file.write_all(&record).await.context("writing the file")?;
-    }
-    file.sync_all().await.context("writing the file")?;
-    Ok(hasher.finalize().to_vec())
 }
 
 fn safe_name(offered: &str) -> Option<String> {
