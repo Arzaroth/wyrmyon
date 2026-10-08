@@ -1,12 +1,66 @@
+mod receive;
+mod send;
+
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
+use wyrmyon_wormhole::{Config, PUBLIC_RELAY, Welcome};
 
 #[derive(Parser)]
 #[command(version, about)]
-struct Cli {}
+struct Cli {
+    #[command(flatten)]
+    global: Global,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Args)]
+struct Global {
+    /// Mailbox server to meet the peer on
+    #[arg(long, global = true, env = "WYRMYON_RELAY_URL", default_value = PUBLIC_RELAY)]
+    relay_url: String,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Send a text message
+    Send(send::SendArgs),
+    /// Receive what the other side sends
+    Receive(receive::ReceiveArgs),
+}
+
+impl Global {
+    fn config(&self) -> Config {
+        Config {
+            relay_url: self.relay_url.clone(),
+            ..Config::default()
+        }
+    }
+}
 
 pub fn main() -> ExitCode {
-    Cli::parse();
-    ExitCode::SUCCESS
+    let cli = Cli::parse();
+    let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
+    let result = runtime.block_on(async {
+        match cli.command {
+            Command::Send(args) => send::run(&cli.global, args).await,
+            Command::Receive(args) => receive::run(&cli.global, args).await,
+        }
+    });
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn show_welcome(welcome: &Welcome) {
+    if let Some(motd) = &welcome.motd {
+        for line in motd.lines() {
+            eprintln!("Server (at relay): {line}");
+        }
+    }
 }
