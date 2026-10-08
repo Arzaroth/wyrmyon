@@ -72,7 +72,7 @@ impl Drop for PythonMailbox {
 
 fn python(relay: &str) -> Command {
     let mut cmd = Command::new("wormhole");
-    cmd.args(["--relay-url", relay])
+    cmd.args(["--relay-url", relay, "--transit-helper", "tcp:127.0.0.1:9"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -115,4 +115,68 @@ async fn text_from_wyrm_to_python() {
     assert!(ok, "{stderr}");
     assert!(stdout.contains("from wyrm"), "{stdout}");
     assert!(finish(sender).await.0);
+}
+
+fn blob(len: usize) -> Vec<u8> {
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state.to_le_bytes()[0]
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Python wormhole CLI and uvx"]
+async fn file_from_wyrm_to_python() {
+    let mailbox = PythonMailbox::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let data = blob(3_000_000);
+    std::fs::write(from.path().join("data.bin"), &data).unwrap();
+    let mut sender = wyrm(&mailbox.url)
+        .args(["send", "data.bin"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        python(&mailbox.url)
+            .args(["receive", "--hide-progress", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_eq!(std::fs::read(to.path().join("data.bin")).unwrap(), data);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Python wormhole CLI and uvx"]
+async fn file_from_python_to_wyrm() {
+    let mailbox = PythonMailbox::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let data = blob(3_000_000);
+    std::fs::write(from.path().join("data.bin"), &data).unwrap();
+    let mut sender = python(&mailbox.url)
+        .args(["send", "--hide-progress", "data.bin"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&mailbox.url)
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_eq!(std::fs::read(to.path().join("data.bin")).unwrap(), data);
 }

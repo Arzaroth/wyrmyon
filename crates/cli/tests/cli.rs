@@ -83,3 +83,65 @@ async fn a_refused_offer_fails_the_sender() {
     assert!(!ok);
     assert_eq!(server.moods(), ["happy", "happy"]);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_travels_between_two_wyrm_processes() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    std::fs::write(from.path().join("notes.txt"), &data).unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "notes.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_eq!(std::fs::read(to.path().join("notes.txt")).unwrap(), data);
+    let leftovers: Vec<_> = std::fs::read_dir(to.path()).unwrap().collect();
+    assert_eq!(leftovers.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_is_refused_without_confirmation_or_over_an_existing_one() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"new").unwrap();
+
+    for (args, kept) in [(vec![], None), (vec!["--accept-file"], Some(&b"old"[..]))] {
+        if let Some(old) = kept {
+            std::fs::write(to.path().join("a.txt"), old).unwrap();
+        }
+        let mut sender = wyrm(&server.url())
+            .args(["send", "a.txt"])
+            .current_dir(from.path())
+            .spawn()
+            .unwrap();
+        let code = read_code(sender.stderr.take().unwrap()).await;
+        let (ok, _, _) = finish(
+            wyrm(&server.url())
+                .arg("receive")
+                .args(&args)
+                .arg(&code)
+                .current_dir(to.path())
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(!ok);
+        assert!(!finish(sender).await.0);
+        match kept {
+            None => assert!(!to.path().join("a.txt").exists()),
+            Some(old) => assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), old),
+        }
+    }
+}
