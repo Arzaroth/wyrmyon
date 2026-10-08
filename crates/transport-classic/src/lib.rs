@@ -14,6 +14,8 @@ pub use hints::{DirectHint, TransitInfo};
 pub use records::{MAX_RECORD, RecordPipe};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_PENDING_HANDSHAKES: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -38,6 +40,7 @@ pub struct Transit {
     key: Key,
     listener: Option<TcpListener>,
     direct: Vec<DirectHint>,
+    timeout: Duration,
 }
 
 type Connected = (TcpStream, Option<SocketAddr>);
@@ -60,12 +63,26 @@ impl Transit {
             key: transit_key,
             listener,
             direct,
+            timeout: CONNECT_TIMEOUT,
         }
     }
 
     #[must_use]
+    pub fn without_listener(mut self) -> Self {
+        self.listener = None;
+        self.direct.clear();
+        self
+    }
+
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    #[must_use]
     pub fn info(&self) -> TransitInfo {
-        TransitInfo::new(&self.direct, &[])
+        TransitInfo::new(&self.direct)
     }
 
     pub async fn connect(self, theirs: &TransitInfo) -> Result<RecordPipe, Error> {
@@ -77,40 +94,52 @@ impl Transit {
         for hint in theirs.direct_hints() {
             let (tx, key, role) = (tx.clone(), self.key.clone(), self.role);
             tasks.spawn(async move {
-                let stream = TcpStream::connect((hint.hostname.as_str(), hint.port)).await?;
-                let peer = stream.peer_addr().ok();
-                let stream = handshake(stream, role, &key).await?;
-                let _ = tx.send((stream, peer)).await;
-                Ok(())
+                let attempt = async {
+                    let stream = TcpStream::connect((hint.hostname.as_str(), hint.port)).await?;
+                    let peer = stream.peer_addr().ok();
+                    let stream =
+                        tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(stream, role, &key))
+                            .await
+                            .map_err(|_| Error::Handshake("timed out"))??;
+                    let _ = tx.send((stream, peer)).await;
+                    Ok::<_, Error>(())
+                };
+                let _ = attempt.await;
             });
         }
         drop(tx);
 
-        let (mut stream, peer) = tokio::time::timeout(CONNECT_TIMEOUT, rx.recv())
-            .await
-            .ok()
-            .flatten()
-            .ok_or(Error::NoConnection)?;
-        if self.role == Role::Sender {
-            stream.write_all(b"go\n").await?;
+        let deadline = tokio::time::Instant::now() + self.timeout;
+        loop {
+            let (mut stream, peer) = tokio::time::timeout_at(deadline, rx.recv())
+                .await
+                .ok()
+                .flatten()
+                .ok_or(Error::NoConnection)?;
+            if self.role == Role::Sender && stream.write_all(b"go\n").await.is_err() {
+                continue;
+            }
+            return Ok(RecordPipe::new(stream, &self.key, self.role, peer));
         }
-        drop(tasks);
-        Ok(RecordPipe::new(stream, &self.key, self.role, peer, false))
     }
 }
 
-async fn accept(
-    listener: TcpListener,
-    role: Role,
-    key: Key,
-    tx: mpsc::Sender<Connected>,
-) -> Result<(), Error> {
+async fn accept(listener: TcpListener, role: Role, key: Key, tx: mpsc::Sender<Connected>) {
     let mut handshakes = JoinSet::new();
     loop {
-        let (stream, peer) = listener.accept().await?;
+        let Ok((stream, peer)) = listener.accept().await else {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            continue;
+        };
+        while handshakes.try_join_next().is_some() {}
+        if handshakes.len() >= MAX_PENDING_HANDSHAKES {
+            continue;
+        }
         let (tx, key) = (tx.clone(), key.clone());
         handshakes.spawn(async move {
-            if let Ok(stream) = handshake(stream, role, &key).await {
+            if let Ok(Ok(stream)) =
+                tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(stream, role, &key)).await
+            {
                 let _ = tx.send((stream, Some(peer))).await;
             }
         });

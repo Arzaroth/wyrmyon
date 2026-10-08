@@ -41,32 +41,12 @@ impl DirectHint {
     }
 }
 
-impl std::fmt::Display for DirectHint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.hostname.contains(':') {
-            write!(f, "[{}]:{}", self.hostname, self.port)
-        } else {
-            write!(f, "{}:{}", self.hostname, self.port)
-        }
-    }
-}
-
 impl TransitInfo {
     #[must_use]
-    pub fn new(direct: &[DirectHint], relays: &[DirectHint]) -> Self {
-        let mut hints: Vec<Value> = direct.iter().map(DirectHint::to_json).collect();
-        if !relays.is_empty() {
-            hints.push(json!({
-                "type": "relay-v1",
-                "hints": relays.iter().map(DirectHint::to_json).collect::<Vec<_>>(),
-            }));
-        }
+    pub fn new(direct: &[DirectHint]) -> Self {
         Self {
-            abilities: vec![
-                json!({"type": "direct-tcp-v1"}),
-                json!({"type": "relay-v1"}),
-            ],
-            hints,
+            abilities: vec![json!({"type": "direct-tcp-v1"})],
+            hints: direct.iter().map(DirectHint::to_json).collect(),
         }
     }
 
@@ -127,14 +107,9 @@ mod tests {
             hostname: "10.0.0.2".into(),
             port: 7,
         }];
-        let relay = [DirectHint {
-            hostname: "relay.example".into(),
-            port: 4001,
-        }];
-        let info = serde_json::to_value(TransitInfo::new(&direct, &relay)).unwrap();
+        let info = serde_json::to_value(TransitInfo::new(&direct)).unwrap();
         assert_eq!(info["hints-v1"][0]["type"], "direct-tcp-v1");
         assert_eq!(info["hints-v1"][0]["port"], 7);
-        assert_eq!(info["hints-v1"][1]["hints"][0]["hostname"], "relay.example");
-        assert_eq!(info["abilities-v1"][1]["type"], "relay-v1");
+        assert_eq!(info["abilities-v1"], json!([{"type": "direct-tcp-v1"}]));
     }
 }

@@ -41,15 +41,13 @@ impl RecordPipe {
         transit_key: &Key,
         role: Role,
         peer: Option<SocketAddr>,
-        relay: bool,
     ) -> Self {
         let (send_key, receive_key) = record_keys(transit_key, role);
         let (reader, writer) = stream.into_split();
-        let description = match (peer, relay) {
-            (Some(peer), true) => format!("via relay {peer}"),
-            (Some(peer), false) => format!("directly to {peer}"),
-            (None, _) => "connected".to_owned(),
-        };
+        let description = peer.map_or_else(
+            || "connected".to_owned(),
+            |peer| format!("directly to {peer}"),
+        );
         Self {
             reader: BufReader::new(reader),
             writer: BufWriter::new(writer),
@@ -110,6 +108,53 @@ impl RecordPipe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::net::TcpListener;
+
+    async fn pair() -> (RecordPipe, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (client, accepted) = tokio::join!(TcpStream::connect(addr), listener.accept());
+        let pipe = RecordPipe::new(
+            accepted.unwrap().0,
+            &Key::from_bytes([9; 32]),
+            Role::Receiver,
+            None,
+        );
+        (pipe, client.unwrap())
+    }
+
+    fn sealed(counter: u128, body: &[u8]) -> Vec<u8> {
+        let (sender_key, _) = record_keys(&Key::from_bytes([9; 32]), Role::Sender);
+        let sealed = sender_key.encrypt_with_nonce(&nonce_bytes(counter), body);
+        let mut frame = u32::try_from(sealed.len()).unwrap().to_be_bytes().to_vec();
+        frame.extend_from_slice(&sealed);
+        frame
+    }
+
+    #[tokio::test]
+    async fn an_oversized_length_is_refused_before_reading() {
+        let (mut pipe, mut raw) = pair().await;
+        raw.write_all(&u32::MAX.to_be_bytes()).await.unwrap();
+        assert!(matches!(pipe.receive_record().await, Err(Error::Record(_))));
+    }
+
+    #[tokio::test]
+    async fn a_replayed_record_is_refused() {
+        let (mut pipe, mut raw) = pair().await;
+        raw.write_all(&sealed(0, b"once")).await.unwrap();
+        raw.write_all(&sealed(0, b"once")).await.unwrap();
+        assert_eq!(pipe.receive_record().await.unwrap(), b"once");
+        assert!(matches!(pipe.receive_record().await, Err(Error::Record(_))));
+    }
+
+    #[tokio::test]
+    async fn a_tampered_record_is_refused() {
+        let (mut pipe, mut raw) = pair().await;
+        let mut frame = sealed(0, b"data");
+        *frame.last_mut().unwrap() ^= 1;
+        raw.write_all(&frame).await.unwrap();
+        assert!(matches!(pipe.receive_record().await, Err(Error::Record(_))));
+    }
 
     #[test]
     fn nonces_are_big_endian_counters() {
