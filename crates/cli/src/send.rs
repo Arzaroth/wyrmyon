@@ -1,9 +1,9 @@
 use anyhow::{Context, bail};
 use clap::Args;
-use serde_json::json;
 use tokio::io::AsyncReadExt;
 use wyrmyon_wormhole::Wormhole;
 
+use crate::protocol::{self, Answer, AppMessage, Offer};
 use crate::{Global, mood_for, show_welcome};
 
 #[derive(Args)]
@@ -40,20 +40,14 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
 }
 
 async fn send_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> {
-    wormhole
-        .send_json(&json!({ "offer": { "message": text } }))
-        .await?;
+    protocol::send(wormhole, &AppMessage::Offer(Offer::Message(text))).await?;
     loop {
-        let msg = wormhole.receive_json().await?;
-        if let Some(error) = msg.get("error") {
-            bail!("the receiver refused: {error}");
-        }
-        if let Some(answer) = msg.get("answer") {
-            if answer.get("message_ack").and_then(|a| a.as_str()) == Some("ok") {
+        if let AppMessage::Answer(answer) = protocol::next(wormhole, "receiver").await? {
+            if answer == Answer::MessageAck("ok".into()) {
                 eprintln!("text message sent");
                 return Ok(());
             }
-            bail!("unexpected answer from the receiver: {answer}");
+            bail!("unexpected answer from the receiver: {answer:?}");
         }
     }
 }
