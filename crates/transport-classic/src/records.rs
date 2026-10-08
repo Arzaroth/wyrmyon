@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -40,14 +38,10 @@ impl RecordPipe {
         stream: TcpStream,
         transit_key: &Key,
         role: Role,
-        peer: Option<SocketAddr>,
+        description: String,
     ) -> Self {
         let (send_key, receive_key) = record_keys(transit_key, role);
         let (reader, writer) = stream.into_split();
-        let description = peer.map_or_else(
-            || "connected".to_owned(),
-            |peer| format!("directly to {peer}"),
-        );
         Self {
             reader: BufReader::new(reader),
             writer: BufWriter::new(writer),
@@ -118,7 +112,7 @@ mod tests {
             accepted.unwrap().0,
             &Key::from_bytes([9; 32]),
             Role::Receiver,
-            None,
+            String::new(),
         );
         (pipe, client.unwrap())
     }

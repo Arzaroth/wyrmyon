@@ -1,7 +1,7 @@
 mod hints;
 mod records;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -16,6 +16,7 @@ pub use records::{MAX_RECORD, RecordPipe};
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PENDING_HANDSHAKES: usize = 32;
+const RELAY_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -40,10 +41,15 @@ pub struct Transit {
     key: Key,
     listener: Option<TcpListener>,
     direct: Vec<DirectHint>,
+    relays: Vec<DirectHint>,
+    side: String,
     timeout: Duration,
 }
 
-type Connected = (TcpStream, Option<SocketAddr>);
+struct Connected {
+    stream: TcpStream,
+    description: String,
+}
 
 impl Transit {
     pub async fn new(role: Role, transit_key: Key) -> Self {
@@ -63,8 +69,16 @@ impl Transit {
             key: transit_key,
             listener,
             direct,
+            relays: Vec::new(),
+            side: hex::encode(rand::random::<[u8; 8]>()),
             timeout: CONNECT_TIMEOUT,
         }
+    }
+
+    #[must_use]
+    pub fn with_relays(mut self, relays: Vec<DirectHint>) -> Self {
+        self.relays = relays;
+        self
     }
 
     #[must_use]
@@ -82,7 +96,7 @@ impl Transit {
 
     #[must_use]
     pub fn info(&self) -> TransitInfo {
-        TransitInfo::new(&self.direct)
+        TransitInfo::new(&self.direct, &self.relays)
     }
 
     pub async fn connect(self, theirs: &TransitInfo) -> Result<RecordPipe, Error> {
@@ -91,35 +105,54 @@ impl Transit {
         if let Some(listener) = self.listener {
             tasks.spawn(accept(listener, self.role, self.key.clone(), tx.clone()));
         }
-        for hint in theirs.direct_hints() {
+        let direct = theirs.direct_hints();
+        let relay_delay = if direct.is_empty() {
+            Duration::ZERO
+        } else {
+            RELAY_DELAY
+        };
+        for hint in direct {
             let (tx, key, role) = (tx.clone(), self.key.clone(), self.role);
             tasks.spawn(async move {
-                let attempt = async {
-                    let stream = TcpStream::connect((hint.hostname.as_str(), hint.port)).await?;
-                    let peer = stream.peer_addr().ok();
-                    let stream =
-                        tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(stream, role, &key))
-                            .await
-                            .map_err(|_| Error::Handshake("timed out"))??;
-                    let _ = tx.send((stream, peer)).await;
-                    Ok::<_, Error>(())
-                };
-                let _ = attempt.await;
+                if let Ok(connected) = dial(&hint, role, &key, None).await {
+                    let _ = tx.send(connected).await;
+                }
+            });
+        }
+        let mut relays = self.relays.clone();
+        for hint in theirs.relay_hints() {
+            if !relays.contains(&hint) {
+                relays.push(hint);
+            }
+        }
+        for hint in relays {
+            let (tx, key, role, side) =
+                (tx.clone(), self.key.clone(), self.role, self.side.clone());
+            tasks.spawn(async move {
+                tokio::time::sleep(relay_delay).await;
+                if let Ok(connected) = dial(&hint, role, &key, Some(&side)).await {
+                    let _ = tx.send(connected).await;
+                }
             });
         }
         drop(tx);
 
         let deadline = tokio::time::Instant::now() + self.timeout;
         loop {
-            let (mut stream, peer) = tokio::time::timeout_at(deadline, rx.recv())
+            let mut connected = tokio::time::timeout_at(deadline, rx.recv())
                 .await
                 .ok()
                 .flatten()
                 .ok_or(Error::NoConnection)?;
-            if self.role == Role::Sender && stream.write_all(b"go\n").await.is_err() {
+            if self.role == Role::Sender && connected.stream.write_all(b"go\n").await.is_err() {
                 continue;
             }
-            return Ok(RecordPipe::new(stream, &self.key, self.role, peer));
+            return Ok(RecordPipe::new(
+                connected.stream,
+                &self.key,
+                self.role,
+                connected.description,
+            ));
         }
     }
 }
@@ -140,10 +173,54 @@ async fn accept(listener: TcpListener, role: Role, key: Key, tx: mpsc::Sender<Co
             if let Ok(Ok(stream)) =
                 tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(stream, role, &key)).await
             {
-                let _ = tx.send((stream, Some(peer))).await;
+                let description = format!("directly from {peer}");
+                let _ = tx
+                    .send(Connected {
+                        stream,
+                        description,
+                    })
+                    .await;
             }
         });
     }
+}
+
+async fn dial(
+    hint: &DirectHint,
+    role: Role,
+    key: &Key,
+    relay_side: Option<&str>,
+) -> Result<Connected, Error> {
+    let mut stream = TcpStream::connect((hint.hostname.as_str(), hint.port)).await?;
+    let peer = stream
+        .peer_addr()
+        .map_or_else(|_| hint.hostname.clone(), |a| a.to_string());
+    let attempt = async {
+        if let Some(side) = relay_side {
+            stream.write_all(&relay_line(key, side)).await?;
+            expect(&mut stream, b"ok\n", "the relay refused").await?;
+        }
+        handshake(stream, role, key).await
+    };
+    let stream = tokio::time::timeout(HANDSHAKE_TIMEOUT, attempt)
+        .await
+        .map_err(|_| Error::Handshake("timed out"))??;
+    let description = match relay_side {
+        Some(_) => format!("via relay {peer}"),
+        None => format!("directly to {peer}"),
+    };
+    Ok(Connected {
+        stream,
+        description,
+    })
+}
+
+fn relay_line(key: &Key, side: &str) -> Vec<u8> {
+    format!(
+        "please relay {} for side {side}\n",
+        hex_id(key, b"transit_relay_token")
+    )
+    .into_bytes()
 }
 
 fn local_addresses() -> Vec<IpAddr> {
@@ -217,6 +294,14 @@ mod tests {
                 .try_into()
                 .unwrap(),
         )
+    }
+
+    #[test]
+    fn the_relay_line_matches_the_python_client() {
+        assert_eq!(
+            relay_line(&transit_key(), "0123456789abcdef"),
+            b"please relay ecd85f320731169f5768239a248b8b0f3e7834f1c05937a5939b13d6bfa933e1 for side 0123456789abcdef\n"
+        );
     }
 
     #[test]

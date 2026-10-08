@@ -41,13 +41,39 @@ impl DirectHint {
     }
 }
 
+impl std::str::FromStr for DirectHint {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let rest = s.strip_prefix("tcp:").unwrap_or(s);
+        let (host, port) = rest
+            .rsplit_once(':')
+            .ok_or_else(|| format!("{s}: expected tcp:HOST:PORT"))?;
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        let port = port.parse().map_err(|_| format!("{s}: bad port"))?;
+        if host.is_empty() {
+            return Err(format!("{s}: empty host"));
+        }
+        Ok(Self {
+            hostname: host.to_owned(),
+            port,
+        })
+    }
+}
+
 impl TransitInfo {
     #[must_use]
-    pub fn new(direct: &[DirectHint]) -> Self {
-        Self {
-            abilities: vec![json!({"type": "direct-tcp-v1"})],
-            hints: direct.iter().map(DirectHint::to_json).collect(),
+    pub fn new(direct: &[DirectHint], relays: &[DirectHint]) -> Self {
+        let mut abilities = vec![json!({"type": "direct-tcp-v1"})];
+        let mut hints: Vec<Value> = direct.iter().map(DirectHint::to_json).collect();
+        if !relays.is_empty() {
+            abilities.push(json!({"type": "relay-v1"}));
+            hints.push(json!({
+                "type": "relay-v1",
+                "hints": relays.iter().map(DirectHint::to_json).collect::<Vec<_>>(),
+            }));
         }
+        Self { abilities, hints }
     }
 
     #[must_use]
@@ -102,14 +128,34 @@ mod tests {
     }
 
     #[test]
+    fn parses_helper_arguments() {
+        let hint: DirectHint = "tcp:transit.magic-wormhole.io:4001".parse().unwrap();
+        assert_eq!(hint.hostname, "transit.magic-wormhole.io");
+        assert_eq!(hint.port, 4001);
+        let hint: DirectHint = "tcp:[::1]:9".parse().unwrap();
+        assert_eq!(hint.hostname, "::1");
+        assert!("tcp:host".parse::<DirectHint>().is_err());
+        assert!("tcp::80".parse::<DirectHint>().is_err());
+    }
+
+    #[test]
     fn writes_hints_the_python_client_reads() {
         let direct = [DirectHint {
             hostname: "10.0.0.2".into(),
             port: 7,
         }];
-        let info = serde_json::to_value(TransitInfo::new(&direct)).unwrap();
+        let info = serde_json::to_value(TransitInfo::new(&direct, &[])).unwrap();
         assert_eq!(info["hints-v1"][0]["type"], "direct-tcp-v1");
         assert_eq!(info["hints-v1"][0]["port"], 7);
         assert_eq!(info["abilities-v1"], json!([{"type": "direct-tcp-v1"}]));
+
+        let relay = [DirectHint {
+            hostname: "relay.example".into(),
+            port: 4001,
+        }];
+        let info = serde_json::to_value(TransitInfo::new(&direct, &relay)).unwrap();
+        assert_eq!(info["hints-v1"][1]["type"], "relay-v1");
+        assert_eq!(info["hints-v1"][1]["hints"][0]["hostname"], "relay.example");
+        assert_eq!(info["abilities-v1"][1]["type"], "relay-v1");
     }
 }
