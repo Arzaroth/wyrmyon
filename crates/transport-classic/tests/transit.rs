@@ -67,12 +67,12 @@ async fn different_keys_never_connect() {
 }
 
 #[tokio::test]
-async fn no_hints_and_no_listener_peer_fails_after_the_timeout_window() {
-    let receiver = Transit::new(Role::Receiver, key(3)).await;
-    let result = tokio::time::timeout(
-        Duration::from_secs(1),
-        receiver.connect(&TransitInfo::default()),
-    )
-    .await;
-    assert!(result.is_err() || matches!(result, Ok(Err(Error::NoConnection))));
+async fn with_no_way_to_reach_the_peer_connect_gives_up() {
+    let receiver = Transit::new(Role::Receiver, key(3))
+        .await
+        .without_listener()
+        .with_timeout(Duration::from_millis(200));
+    assert!(receiver.info().direct_hints().is_empty());
+    let result = within(receiver.connect(&TransitInfo::default())).await;
+    assert!(matches!(result, Err(Error::NoConnection)));
 }

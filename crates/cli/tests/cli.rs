@@ -5,6 +5,7 @@ use std::process::Command;
 use serde_json::json;
 use support::{finish, read_code, wyrm};
 use wyrmyon_testkit::MailboxServer;
+use wyrmyon_transport_classic::{Role, Transit};
 use wyrmyon_wormhole::{Config, Mood};
 
 fn version_of(bin: &str) -> String {
@@ -85,30 +86,85 @@ async fn a_refused_offer_fails_the_sender() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_file_travels_between_two_wyrm_processes() {
+async fn files_travel_between_two_wyrm_processes() {
     let server = MailboxServer::start().await;
-    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
-    std::fs::write(from.path().join("notes.txt"), &data).unwrap();
-    let mut sender = wyrm(&server.url())
-        .args(["send", "notes.txt"])
-        .current_dir(from.path())
+    for size in [0u32, 300_000] {
+        let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        std::fs::write(from.path().join("notes.txt"), &data).unwrap();
+        let mut sender = wyrm(&server.url())
+            .args(["send", "notes.txt"])
+            .current_dir(from.path())
+            .spawn()
+            .unwrap();
+        let code = read_code(sender.stderr.take().unwrap()).await;
+        let (ok, _, stderr) = finish(
+            wyrm(&server.url())
+                .args(["receive", "--accept-file", &code])
+                .current_dir(to.path())
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(ok, "{stderr}");
+        assert!(finish(sender).await.0);
+        assert_eq!(std::fs::read(to.path().join("notes.txt")).unwrap(), data);
+        assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn only_regular_files_are_offered() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args(["send", "/dev/null"])
+        .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not a regular file"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sender_that_sends_more_than_it_offered_leaves_nothing_behind() {
+    let server = MailboxServer::start().await;
+    let config = Config {
+        relay_url: server.url(),
+        ..Config::default()
+    };
+    let to = tempfile::tempdir().unwrap();
+    let pending = wyrmyon_wormhole::create(&config, 2).await.unwrap();
+    let receiver = wyrm(&server.url())
+        .args(["receive", "--accept-file", pending.code().as_str()])
+        .current_dir(to.path())
         .spawn()
         .unwrap();
-    let code = read_code(sender.stderr.take().unwrap()).await;
-    let (ok, _, stderr) = finish(
-        wyrm(&server.url())
-            .args(["receive", "--accept-file", &code])
-            .current_dir(to.path())
-            .spawn()
-            .unwrap(),
-    )
-    .await;
-    assert!(ok, "{stderr}");
-    assert!(finish(sender).await.0);
-    assert_eq!(std::fs::read(to.path().join("notes.txt")).unwrap(), data);
-    let leftovers: Vec<_> = std::fs::read_dir(to.path()).unwrap().collect();
-    assert_eq!(leftovers.len(), 1);
+    let mut wormhole = pending.pair().await.unwrap();
+    let transit = Transit::new(Role::Sender, wormhole.transit_key()).await;
+    let ours = serde_json::to_value(transit.info()).unwrap();
+    wormhole.send_json(&json!({"transit": ours})).await.unwrap();
+    wormhole
+        .send_json(&json!({"offer": {"file": {"filename": "x.bin", "filesize": 4}}}))
+        .await
+        .unwrap();
+    let mut theirs = None;
+    loop {
+        let msg = wormhole.receive_json().await.unwrap();
+        if let Some(transit) = msg.get("transit") {
+            theirs = Some(transit.clone());
+        }
+        if msg.get("answer").is_some() {
+            break;
+        }
+    }
+    let theirs = serde_json::from_value(theirs.unwrap()).unwrap();
+    let mut pipe = transit.connect(&theirs).await.unwrap();
+    pipe.send_record(b"12345").await.unwrap();
+    pipe.flush().await.unwrap();
+    let (ok, _, stderr) = finish(receiver).await;
+    assert!(!ok);
+    assert!(stderr.contains("more than"), "{stderr}");
+    assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 0);
+    wormhole.close(Mood::Happy).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
