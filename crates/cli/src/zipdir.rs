@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, bail};
 use zip::write::SimpleFileOptions;
@@ -14,11 +16,56 @@ pub struct Built {
     pub numfiles: u64,
 }
 
-pub fn build(dir: &Path) -> anyhow::Result<Built> {
+const ZIP64_FROM: u64 = 0xF000_0000;
+
+#[derive(Clone, Default)]
+pub struct Cancel(Arc<AtomicBool>);
+
+impl Cancel {
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.0.load(Ordering::Relaxed) {
+            bail!("interrupted");
+        }
+        Ok(())
+    }
+
+    pub fn on_drop(&self) -> CancelOnDrop {
+        CancelOnDrop(self.clone())
+    }
+}
+
+pub struct CancelOnDrop(Cancel);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.0.store(true, Ordering::Relaxed);
+    }
+}
+
+struct Checked<'a, R> {
+    inner: R,
+    cancel: &'a Cancel,
+}
+
+impl<R: Read> Read for Checked<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.cancel.0.load(Ordering::Relaxed) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "interrupted"));
+        }
+        self.inner.read(buf)
+    }
+}
+
+pub fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
     let file = tempfile::NamedTempFile::new().context("creating a temporary zip file")?;
     let mut zip = ZipWriter::new(file.reopen().context("opening the temporary zip file")?);
-    let mut totals = (0u64, 0u64);
-    add_dir(&mut zip, dir, Path::new(""), &mut totals)?;
+    let mut walk = Walk {
+        totals: (0, 0),
+        ancestors: Vec::new(),
+        cancel,
+    };
+    walk.add_dir(&mut zip, dir, Path::new(""))?;
+    let totals = walk.totals;
     zip.finish().context("writing the zip file")?;
     let zipsize = file.as_file().metadata()?.len();
     Ok(Built {
@@ -29,48 +76,70 @@ pub fn build(dir: &Path) -> anyhow::Result<Built> {
     })
 }
 
-fn add_dir(
-    zip: &mut ZipWriter<File>,
-    dir: &Path,
-    prefix: &Path,
-    totals: &mut (u64, u64),
-) -> anyhow::Result<()> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .with_context(|| format!("reading {}", dir.display()))?
-        .collect::<Result<_, _>>()?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    if entries.is_empty() && !prefix.as_os_str().is_empty() {
-        zip.add_directory(arcname(prefix)?, SimpleFileOptions::default())?;
-    }
-    for entry in entries {
-        let path = entry.path();
-        let name = prefix.join(entry.file_name());
-        let link = entry.file_type()?.is_symlink();
-        let meta =
-            std::fs::metadata(&path).with_context(|| format!("reading {}", path.display()))?;
-        if meta.is_dir() {
-            if link {
-                eprintln!("skipping {}: a symlink to a directory", path.display());
-                continue;
-            }
-            add_dir(zip, &path, &name, totals)?;
-        } else if meta.is_file() {
-            let options = SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Deflated)
-                .unix_permissions(meta.permissions().mode() & 0o777)
-                .large_file(meta.len() >= u64::from(u32::MAX));
-            zip.start_file(arcname(&name)?, options)?;
-            let copied = io::copy(
-                &mut File::open(&path).with_context(|| format!("opening {}", path.display()))?,
-                zip,
-            )?;
-            totals.0 += copied;
-            totals.1 += 1;
-        } else {
-            eprintln!("skipping {}: not a regular file", path.display());
+struct Walk<'a> {
+    totals: (u64, u64),
+    ancestors: Vec<PathBuf>,
+    cancel: &'a Cancel,
+}
+
+impl Walk<'_> {
+    fn add_dir(
+        &mut self,
+        zip: &mut ZipWriter<File>,
+        dir: &Path,
+        prefix: &Path,
+    ) -> anyhow::Result<()> {
+        let real =
+            std::fs::canonicalize(dir).with_context(|| format!("reading {}", dir.display()))?;
+        if self.ancestors.contains(&real) {
+            eprintln!("skipping {}: a symlink loop", dir.display());
+            return Ok(());
         }
+        self.ancestors.push(real);
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .with_context(|| format!("reading {}", dir.display()))?
+            .collect::<Result<_, _>>()?;
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        if entries.is_empty() {
+            let name = if prefix.as_os_str().is_empty() {
+                "./".to_owned()
+            } else {
+                arcname(prefix)?
+            };
+            zip.add_directory(name, SimpleFileOptions::default())?;
+        }
+        for entry in entries {
+            self.cancel.check()?;
+            let path = entry.path();
+            let name = prefix.join(entry.file_name());
+            let meta =
+                std::fs::metadata(&path).with_context(|| format!("reading {}", path.display()))?;
+            if meta.is_dir() {
+                self.add_dir(zip, &path, &name)?;
+            } else if meta.is_file() {
+                let options = SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Deflated)
+                    .unix_permissions(meta.permissions().mode() & 0o777)
+                    .large_file(meta.len() >= ZIP64_FROM);
+                zip.start_file(arcname(&name)?, options)?;
+                let source =
+                    File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+                let copied = io::copy(
+                    &mut Checked {
+                        inner: source,
+                        cancel: self.cancel,
+                    },
+                    zip,
+                )?;
+                self.totals.0 += copied;
+                self.totals.1 += 1;
+            } else {
+                eprintln!("skipping {}: not a regular file", path.display());
+            }
+        }
+        self.ancestors.pop();
+        Ok(())
     }
-    Ok(())
 }
 
 fn arcname(path: &Path) -> anyhow::Result<String> {
@@ -85,12 +154,18 @@ pub struct Limits {
     pub numfiles: u64,
 }
 
-pub fn extract(zip_path: &Path, dest: &Path, limits: &Limits) -> anyhow::Result<()> {
+pub fn extract(
+    zip_path: &Path,
+    dest: &Path,
+    limits: &Limits,
+    cancel: &Cancel,
+) -> anyhow::Result<()> {
     let mut archive =
         ZipArchive::new(File::open(zip_path).context("opening the received zip file")?)
             .context("the received data is not a zip file")?;
     let (mut bytes, mut files) = (0u64, 0u64);
     for index in 0..archive.len() {
+        cancel.check()?;
         let mut entry = archive.by_index(index)?;
         let Some(relative) = entry.enclosed_name() else {
             bail!(
@@ -125,7 +200,11 @@ pub fn extract(zip_path: &Path, dest: &Path, limits: &Limits) -> anyhow::Result<
             .open(&target)
             .with_context(|| format!("creating {}", target.display()))?;
         let budget = limits.numbytes - bytes;
-        let copied = io::copy(&mut (&mut entry).take(budget + 1), &mut out)?;
+        let mut limited = Checked {
+            inner: (&mut entry).take(budget.saturating_add(1)),
+            cancel,
+        };
+        let copied = io::copy(&mut limited, &mut out)?;
         if copied > budget {
             bail!(
                 "the directory holds more than the {} bytes offered",
@@ -182,7 +261,7 @@ mod tests {
         )
         .unwrap();
 
-        let built = build(src.path()).unwrap();
+        let built = build(src.path(), &Cancel::default()).unwrap();
         assert_eq!((built.numbytes, built.numfiles), (100_005, 2));
         assert!(built.zipsize < 100_005);
 
@@ -196,6 +275,7 @@ mod tests {
                 numbytes: 100_005,
                 numfiles: 2,
             },
+            &Cancel::default(),
         )
         .unwrap();
         assert_eq!(std::fs::read(dest.join("a.txt")).unwrap(), b"alpha");
@@ -216,7 +296,7 @@ mod tests {
         let src = tempfile::tempdir().unwrap();
         std::fs::write(src.path().join("a"), vec![1u8; 1000]).unwrap();
         std::fs::write(src.path().join("b"), vec![1u8; 1000]).unwrap();
-        let built = build(src.path()).unwrap();
+        let built = build(src.path(), &Cancel::default()).unwrap();
         for limits in [
             Limits {
                 numbytes: 1500,
@@ -228,7 +308,7 @@ mod tests {
             },
         ] {
             let dest = tempfile::tempdir().unwrap();
-            assert!(extract(built.file.path(), dest.path(), &limits).is_err());
+            assert!(extract(built.file.path(), dest.path(), &limits, &Cancel::default()).is_err());
         }
     }
 
@@ -245,7 +325,85 @@ mod tests {
             numbytes: 10,
             numfiles: 10,
         };
-        assert!(extract(file.path(), &dest.path().join("inner"), &limits).is_err());
+        assert!(
+            extract(
+                file.path(),
+                &dest.path().join("inner"),
+                &limits,
+                &Cancel::default()
+            )
+            .is_err()
+        );
         assert!(!dest.path().join("escape").exists());
+    }
+
+    fn limits() -> Limits {
+        Limits {
+            numbytes: u64::MAX,
+            numfiles: 100,
+        }
+    }
+
+    #[test]
+    fn directory_symlinks_are_followed_but_loops_are_not() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::create_dir(src.path().join("real")).unwrap();
+        std::fs::write(src.path().join("real/x"), b"x").unwrap();
+        std::os::unix::fs::symlink("real", src.path().join("link")).unwrap();
+        std::os::unix::fs::symlink("..", src.path().join("real/up")).unwrap();
+        let built = build(src.path(), &Cancel::default()).unwrap();
+        assert_eq!(built.numfiles, 2);
+        let dest = tempfile::tempdir().unwrap();
+        extract(
+            built.file.path(),
+            dest.path(),
+            &limits(),
+            &Cancel::default(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(dest.path().join("link/x")).unwrap(), b"x");
+        assert!(!dest.path().join("real/up").exists());
+    }
+
+    #[test]
+    fn an_empty_directory_still_has_an_entry() {
+        let src = tempfile::tempdir().unwrap();
+        let built = build(src.path(), &Cancel::default()).unwrap();
+        let archive = ZipArchive::new(built.file.reopen().unwrap()).unwrap();
+        assert_eq!(archive.len(), 1);
+        let dest = tempfile::tempdir().unwrap();
+        let inner = dest.path().join("inner");
+        std::fs::create_dir(&inner).unwrap();
+        extract(built.file.path(), &inner, &limits(), &Cancel::default()).unwrap();
+        assert!(inner.is_dir());
+    }
+
+    #[test]
+    fn symlink_entries_are_skipped() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut zip = ZipWriter::new(file.reopen().unwrap());
+        zip.add_symlink("evil", "/etc/passwd", SimpleFileOptions::default())
+            .unwrap();
+        zip.finish().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        extract(file.path(), dest.path(), &limits(), &Cancel::default()).unwrap();
+        assert!(dest.path().join("evil").symlink_metadata().is_err());
+    }
+
+    #[test]
+    fn cancelling_stops_the_work_and_drops_the_new_directory() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a"), b"a").unwrap();
+        let cancel = Cancel::default();
+        drop(cancel.on_drop());
+        assert!(build(src.path(), &cancel).is_err());
+
+        let built = build(src.path(), &Cancel::default()).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        let target = dest.path().join("t");
+        let made = NewDir::create(&target).unwrap();
+        assert!(extract(built.file.path(), &target, &limits(), &cancel).is_err());
+        drop(made);
+        assert!(!target.exists());
     }
 }

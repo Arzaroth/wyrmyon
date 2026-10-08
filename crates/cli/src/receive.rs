@@ -16,7 +16,7 @@ pub struct ReceiveArgs {
     #[arg(conflicts_with = "new")]
     code: Option<String>,
     /// Allocate a code here, for the sender to use with `send --code`
-    #[arg(long)]
+    #[arg(long, visible_alias = "allocate")]
     new: bool,
     /// Number of words in the code `--new` allocates
     #[arg(long, default_value_t = 2, requires = "new", value_parser = clap::value_parser!(u8).range(1..=8))]
@@ -105,60 +105,75 @@ async fn receive_text(wormhole: &mut Wormhole, text: &str) -> anyhow::Result<()>
     .await
 }
 
-async fn refuse(wormhole: &mut Wormhole, why: &str) -> anyhow::Result<()> {
+async fn refuse<T>(wormhole: &mut Wormhole, why: &str) -> anyhow::Result<T> {
     protocol::send_error(wormhole, why).await?;
     bail!("{why}")
 }
 
-struct Accepted {
-    name: String,
+struct Incoming {
+    partial: Partial,
     dest: PathBuf,
-    transit: Transit,
-    theirs: TransitInfo,
+    digest: [u8; 32],
+    pipe: wyrmyon_transport_classic::RecordPipe,
 }
 
-async fn accept(
+async fn receive_payload(
     wormhole: &mut Wormhole,
     offered_name: &str,
-    peer: Peer,
-    args: &ReceiveArgs,
+    size: u64,
     describe: &str,
-) -> anyhow::Result<Accepted> {
+    peer: Peer,
+    global: &Global,
+    args: &ReceiveArgs,
+) -> anyhow::Result<Incoming> {
     let Some(name) = safe_name(offered_name) else {
-        refuse(wormhole, "the offered name is not usable").await?;
-        unreachable!("refuse always fails");
+        return refuse(wormhole, "the offered name is not usable").await;
     };
     let (Some(transit), Some(theirs)) = (peer.transit, peer.theirs) else {
-        refuse(wormhole, "the sender did not offer a transit connection").await?;
-        unreachable!("refuse always fails");
+        return refuse(wormhole, "the sender did not offer a transit connection").await;
     };
     let dest = match &args.output_file {
+        Some(path) if path.is_dir() => path.join(&name),
         Some(path) => path.clone(),
         None => PathBuf::from(&name),
     };
     if dest.symlink_metadata().is_ok() {
-        refuse(
+        return refuse(
             wormhole,
             &format!("refusing to overwrite {}", dest.display()),
         )
-        .await?;
+        .await;
     }
     eprintln!("Receiving {describe} into: {}", dest.display());
     if !args.accept_file {
         match confirm("ok? (y/N) ").await {
             Ok(true) => {}
-            Ok(false) => refuse(wormhole, "transfer rejected").await?,
+            Ok(false) => return refuse(wormhole, "transfer rejected").await,
             Err(e) => {
                 protocol::send_error(wormhole, "transfer rejected").await?;
                 return Err(e);
             }
         }
     }
-    Ok(Accepted {
-        name,
+    let (partial, mut file) = match Partial::create(&dest, &name).await {
+        Ok(created) => created,
+        Err(e) => {
+            protocol::send_error(wormhole, "the receiver cannot write there").await?;
+            return Err(e);
+        }
+    };
+    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
+
+    let mut pipe = transit.connect(&theirs).await?;
+    eprintln!("Receiving ({})..", pipe.describe());
+    let bar = transfer::progress(size, global.hide_progress);
+    let digest = transfer::receive_stream(&mut pipe, &mut file, size, &bar).await?;
+    file.sync_all().await.context("writing the data")?;
+    Ok(Incoming {
+        partial,
         dest,
-        transit,
-        theirs,
+        digest,
+        pipe,
     })
 }
 
@@ -170,25 +185,20 @@ async fn receive_file(
     args: &ReceiveArgs,
 ) -> anyhow::Result<()> {
     let describe = format!("file ({} bytes)", offer.filesize);
-    let accepted = accept(wormhole, &offer.filename, peer, args, &describe).await?;
-    let (partial, mut file) = match Partial::create(&accepted.dest, &accepted.name).await {
-        Ok(created) => created,
-        Err(e) => {
-            protocol::send_error(wormhole, "the receiver cannot write the file").await?;
-            return Err(e);
-        }
-    };
-    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
-
-    let mut pipe = accepted.transit.connect(&accepted.theirs).await?;
-    eprintln!("Receiving ({})..", pipe.describe());
-    let bar = transfer::progress(offer.filesize, global.hide_progress);
-    let digest = transfer::receive_stream(&mut pipe, &mut file, offer.filesize, &bar).await?;
-    file.sync_all().await.context("writing the file")?;
-    partial.finish(&accepted.dest)?;
-    transfer::send_ack(&mut pipe, &digest).await?;
-    pipe.shutdown().await;
-    eprintln!("Received file written to {}", accepted.dest.display());
+    let mut incoming = receive_payload(
+        wormhole,
+        &offer.filename,
+        offer.filesize,
+        &describe,
+        peer,
+        global,
+        args,
+    )
+    .await?;
+    incoming.partial.finish(&incoming.dest)?;
+    transfer::send_ack(&mut incoming.pipe, &incoming.digest).await?;
+    incoming.pipe.shutdown().await;
+    eprintln!("Received file written to {}", incoming.dest.display());
     Ok(())
 }
 
@@ -206,41 +216,38 @@ async fn receive_directory(
         "directory ({} files, {} bytes, {} bytes compressed)",
         offer.numfiles, offer.numbytes, offer.zipsize
     );
-    let accepted = accept(wormhole, &offer.dirname, peer, args, &describe).await?;
-    let (partial, mut file) = match Partial::create(&accepted.dest, &accepted.name).await {
-        Ok(created) => created,
-        Err(e) => {
-            protocol::send_error(wormhole, "the receiver cannot write the directory").await?;
-            return Err(e);
-        }
-    };
-    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
-
-    let mut pipe = accepted.transit.connect(&accepted.theirs).await?;
-    eprintln!("Receiving ({})..", pipe.describe());
-    let bar = transfer::progress(offer.zipsize, global.hide_progress);
-    let digest = transfer::receive_stream(&mut pipe, &mut file, offer.zipsize, &bar).await?;
-    drop(file);
+    let mut incoming = receive_payload(
+        wormhole,
+        &offer.dirname,
+        offer.zipsize,
+        &describe,
+        peer,
+        global,
+        args,
+    )
+    .await?;
 
     eprintln!("Unpacking zipfile..");
-    let dest = accepted.dest.clone();
-    let zip = partial.path.clone();
+    let dest = incoming.dest.clone();
+    let zip = incoming.partial.path.clone();
     let limits = zipdir::Limits {
         numbytes: offer.numbytes,
         numfiles: offer.numfiles,
     };
+    let cancel = zipdir::Cancel::default();
+    let _cancel_on_drop = cancel.on_drop();
     tokio::task::spawn_blocking(move || {
         let dir = zipdir::NewDir::create(&dest)?;
-        zipdir::extract(&zip, &dest, &limits)?;
+        zipdir::extract(&zip, &dest, &limits, &cancel)?;
         dir.keep();
         anyhow::Ok(())
     })
     .await
     .context("unpacking the zip file")??;
-    drop(partial);
-    transfer::send_ack(&mut pipe, &digest).await?;
-    pipe.shutdown().await;
-    eprintln!("Received files written to {}", accepted.dest.display());
+    drop(incoming.partial);
+    transfer::send_ack(&mut incoming.pipe, &incoming.digest).await?;
+    incoming.pipe.shutdown().await;
+    eprintln!("Received files written to {}", incoming.dest.display());
     Ok(())
 }
 

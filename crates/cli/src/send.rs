@@ -89,7 +89,9 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
     if meta.is_dir() {
         eprintln!("Building zipfile..");
         let dir = path.clone();
-        let built = tokio::task::spawn_blocking(move || zipdir::build(&dir))
+        let cancel = zipdir::Cancel::default();
+        let _cancel_on_drop = cancel.on_drop();
+        let built = tokio::task::spawn_blocking(move || zipdir::build(&dir, &cancel))
             .await
             .context("building the zip file")??;
         eprintln!(
@@ -117,8 +119,9 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
 }
 
 fn display_name(path: &Path) -> anyhow::Result<String> {
-    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
-    Ok(absolute
+    let resolved =
+        std::fs::canonicalize(path).with_context(|| format!("cannot send {}", path.display()))?;
+    Ok(resolved
         .file_name()
         .with_context(|| format!("{} has no name", path.display()))?
         .to_string_lossy()

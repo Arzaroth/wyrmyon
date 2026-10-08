@@ -34,6 +34,5 @@ wyrmyon-wormhole = { version = "0.0.0", path = "../wormhole-core" }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
-tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "process"] }
 wyrmyon-testkit = { path = "../testkit" }
