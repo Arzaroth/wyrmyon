@@ -150,15 +150,17 @@ impl IrohPipe {
             .remote()
             .fetch(self.connection.clone(), hash)
             .stream();
-        while let Some(item) = stream.next().await {
-            match item {
-                GetProgressItem::Progress(bytes) => progress(local + bytes),
-                GetProgressItem::Done(_) => break,
-                GetProgressItem::Error(e) => {
-                    fetched.keep().await;
-                    return Err(store_error(e));
-                }
+        let interrupted = loop {
+            match stream.next().await {
+                Some(GetProgressItem::Progress(bytes)) => progress(local + bytes),
+                Some(GetProgressItem::Done(_)) => break None,
+                Some(GetProgressItem::Error(e)) => break Some(store_error(e)),
+                None => break Some(Error::Blob("the transfer stopped early".into())),
             }
+        };
+        if let Some(e) = interrupted {
+            fetched.keep().await;
+            return Err(e);
         }
         match fetched
             .store
