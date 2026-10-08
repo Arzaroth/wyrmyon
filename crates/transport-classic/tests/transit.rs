@@ -107,3 +107,32 @@ async fn peers_that_cannot_reach_each_other_meet_through_the_relay() {
         b"relayed"
     );
 }
+
+#[tokio::test]
+async fn the_relay_takes_over_when_direct_hints_are_dead() {
+    let relay = wyrmyon_testkit::TransitRelay::start().await;
+    let hint: wyrmyon_transport_classic::DirectHint = relay.hint().parse().unwrap();
+    let dead = wyrmyon_transport_classic::DirectHint {
+        hostname: "127.0.0.1".into(),
+        port: 9,
+    };
+    let sender = Transit::new(Role::Sender, key(6))
+        .await
+        .without_listener()
+        .with_relays(vec![hint]);
+    let receiver = Transit::new(Role::Receiver, key(6))
+        .await
+        .without_listener();
+    let mut receiver_info = receiver.info();
+    receiver_info.hints.push(dead.to_json());
+    let sender_info = sender.info();
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info),
+            receiver.connect(&sender_info)
+        )
+    })
+    .await;
+    assert!(upstream.unwrap().describe().starts_with("via relay"));
+    downstream.unwrap();
+}

@@ -272,3 +272,51 @@ async fn the_receiver_can_allocate_the_code() {
         b"receiver first"
     );
 }
+
+#[test]
+fn conflicting_code_flags_are_refused() {
+    for args in [
+        vec!["receive", "--new", "7-a-b"],
+        vec!["receive", "--code-length", "3", "7-a-b"],
+        vec![
+            "send",
+            "--code",
+            "7-a-b",
+            "--code-length",
+            "3",
+            "--text",
+            "x",
+        ],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+            .args(&args)
+            .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{args:?} was accepted");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_existing_output_directory_receives_the_file_inside() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("in.txt"), b"inside").unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "in.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let out = to.path().to_str().unwrap().to_owned();
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", "-o", &out, &code])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_eq!(std::fs::read(to.path().join("in.txt")).unwrap(), b"inside");
+}
