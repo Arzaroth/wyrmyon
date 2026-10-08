@@ -14,13 +14,13 @@ anything else whose size the sender cannot know are refused.
 
 | Option | Effect |
 | --- | --- |
-| `--transit-helper tcp:HOST:PORT` | The transit relay to fall back on (default `transit.magic-wormhole.io:4001`) |
+| `--transit-helper tcp:HOST:PORT` | The transit relay to fall back on (default `transit.magic-wormhole.io:4001`); a Python-style `:priority=X` suffix is accepted and ignored |
 | `--no-listen` | No inbound connections: connect out, or through a relay |
 | `--hide-progress` | No progress bar (none is drawn when stderr is not a terminal either) |
 
 ## Receiver first
 
-`wyrm receive --new` allocates the code and waits; the sender then runs
+`wyrm receive --new` (or `--allocate`, the Python spelling) allocates the code and waits; the sender then runs
 `wyrm send --code CODE FILE`, or `wormhole send --code CODE FILE` with the
 Python client. Only the side that allocates prints the code.
 
@@ -45,7 +45,8 @@ Python client. Only the side that allocates prints the code.
    characters stripped; `.`, `..` and empty names are refused, and so is an
    offer that came without a `transit` message, all before asking anything.
 3. Refuses to overwrite: anything at the destination, a dangling symlink
-   included, is answered with an `error`.
+   included, is answered with an `error`. `-o DIR` naming an existing
+   directory puts the file inside it, as the Python client does.
 4. Asks `ok? (y/N)` unless `--accept-file`. Without a terminal to ask on, it
    refuses and tells the sender, rather than leaving it waiting.
 5. Creates `.<name>.<unique>.wyrm-part` next to the destination before
