@@ -46,6 +46,10 @@ impl std::str::FromStr for DirectHint {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let rest = s.strip_prefix("tcp:").unwrap_or(s);
+        let rest = match rest.rsplit_once(':') {
+            Some((head, priority)) if priority.starts_with("priority=") => head,
+            _ => rest,
+        };
         let (host, port) = rest
             .rsplit_once(':')
             .ok_or_else(|| format!("{s}: expected tcp:HOST:PORT"))?;
@@ -134,6 +138,8 @@ mod tests {
         assert_eq!(hint.port, 4001);
         let hint: DirectHint = "tcp:[::1]:9".parse().unwrap();
         assert_eq!(hint.hostname, "::1");
+        let hint: DirectHint = "tcp:relay.example:4001:priority=0.5".parse().unwrap();
+        assert_eq!((hint.hostname.as_str(), hint.port), ("relay.example", 4001));
         assert!("tcp:host".parse::<DirectHint>().is_err());
         assert!("tcp::80".parse::<DirectHint>().is_err());
     }
