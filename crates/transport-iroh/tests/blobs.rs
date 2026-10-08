@@ -50,7 +50,8 @@ async fn a_file_arrives_verified_and_the_cache_is_cleared() {
         .unwrap();
     assert_eq!(seen, 1_000_000);
     let target = dir.path().join("target.bin");
-    fetched.export(&target).await.unwrap();
+    std::fs::write(&target, b"placeholder").unwrap();
+    let fetched = fetched.export_to(&target).await.unwrap();
     fetched.discard().await;
     assert_eq!(std::fs::read(&target).unwrap(), data(1_000_000));
     assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
@@ -125,6 +126,27 @@ async fn an_interrupted_transfer_resumes_from_what_is_cached() {
     fetched.discard().await;
     let same = std::fs::read(&target).unwrap() == data(SIZE);
     assert!(same, "the resumed file differs from the source");
+    upstream.abort().await;
+    downstream.abort().await;
+    offered.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_export_clears_the_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.bin");
+    std::fs::write(&source, data(5_000)).unwrap();
+    let cache = dir.path().join("cache");
+    let offered = Offered::import(&source).await.unwrap();
+    let (mut upstream, mut downstream) = connected().await;
+    upstream.provide(&offered).await.unwrap();
+    let fetched = within(downstream.fetch(&cache, 5_000, |_| {}))
+        .await
+        .unwrap();
+    let occupied = dir.path().join("occupied");
+    std::fs::create_dir(&occupied).unwrap();
+    assert!(fetched.export_to(&occupied).await.is_err());
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
     upstream.abort().await;
     downstream.abort().await;
     offered.close().await;

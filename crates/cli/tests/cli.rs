@@ -445,3 +445,38 @@ async fn force_iroh_refuses_a_legacy_peer_on_either_side() {
         outcome.sender
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_iroh_transfer_leaves_nothing_in_the_cache() {
+    let server = MailboxServer::start().await;
+    let (from, to, cache) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    std::fs::write(from.path().join("c.bin"), vec![4u8; 2_000_000]).unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "c.bin"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", &code])
+            .env("WYRMYON_CACHE_DIR", cache.path())
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("Receiving (iroh"), "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_eq!(
+        std::fs::read(to.path().join("c.bin")).unwrap(),
+        vec![4u8; 2_000_000]
+    );
+    assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+    assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 1);
+}
