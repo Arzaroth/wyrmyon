@@ -113,8 +113,15 @@ async fn receive_file(
         offer.filesize,
         dest.display()
     );
-    if !args.accept_file && !confirm("ok? (y/N) ").await? {
-        return refuse(wormhole, "transfer rejected").await;
+    if !args.accept_file {
+        match confirm("ok? (y/N) ").await {
+            Ok(true) => {}
+            Ok(false) => return refuse(wormhole, "transfer rejected").await,
+            Err(e) => {
+                protocol::send_error(wormhole, "transfer rejected").await?;
+                return Err(e);
+            }
+        }
     }
     let (Some(transit), Some(theirs)) = (peer.transit, peer.theirs) else {
         return refuse(wormhole, "the sender did not offer a transit connection").await;
