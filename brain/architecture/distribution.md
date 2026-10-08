@@ -2,6 +2,11 @@
 
 ## CI
 
+The toolchain is pinned: `rust-toolchain.toml` for CI (rustup on the runners
+honours it) and `.mise.toml` for local work, both on the same version with
+clippy and rustfmt, so a lint new in one release never fails CI only. Bump
+both together.
+
 `.github/workflows/ci.yml` runs on pull requests and pushes to `master`, on
 x86_64 and aarch64 Linux: `cargo fmt --all --check`, clippy with
 `-D warnings` (pedantic, from `[workspace.lints]`), and `cargo test`, all
@@ -25,5 +30,7 @@ always `wyrmyon`; `wyrm` is taken on crates.io and PyPI.
 ## Sources
 
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
+- [rust-toolchain.toml](../../rust-toolchain.toml)
+- [.mise.toml](../../.mise.toml)
 - [Cargo.toml](../../Cargo.toml)
 - [crates/cli/Cargo.toml](../../crates/cli/Cargo.toml)

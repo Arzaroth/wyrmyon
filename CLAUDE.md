@@ -52,6 +52,8 @@ only when asked: `cargo test -p wyrmyon --test interop -- --ignored` (needs
 
 - `CHANGELOG.md` `[Unreleased]` gets an entry with every user-facing change; it
   becomes the release notes.
+- The Rust toolchain is pinned in `rust-toolchain.toml` and `.mise.toml`;
+  bump both together.
 - Before finishing: `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test`. CI runs the same on x86_64 and aarch64.
 - Protocol identifiers are part of the wire format; changing any of them breaks
