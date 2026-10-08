@@ -24,6 +24,12 @@ direct TCP from exchanged hints, or the transit relay, with encrypted records.
 **Hint**: an address a peer can be reached at, sent in the `transit` message:
 `direct-tcp-v1` (host and port) or `relay-v1` (a transit relay).
 
+**Transit relay**: a server that splices two TCP connections presenting the
+same relay token, for peers that cannot reach each other directly.
+
+**Receiver first**: the receiver allocates the code (`receive --new`) and the
+sender joins it (`send --code`).
+
 **Record**: one encrypted, length-prefixed message on a transit connection.
 
 **iroh-v1**: wyrmyon's own transport, used only when both peers advertise it.

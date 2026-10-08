@@ -6,4 +6,5 @@ is in [ROADMAP.md](../../ROADMAP.md).
 | Feature | Doc |
 | --- | --- |
 | Text messages, both ways with any magic-wormhole client | [text.md](text.md) |
-| A file, both ways with any magic-wormhole client | [files.md](files.md) |
+| A file, both ways with any magic-wormhole client; relays, receiver-first codes | [files.md](files.md) |
+| A directory, as a zip file | [directories.md](directories.md) |

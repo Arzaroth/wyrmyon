@@ -17,7 +17,8 @@ transports are interchangeable behind it.
 `wormhole-core` ([wormhole-core.md](wormhole-core.md)) and
 `transport-classic` ([transit-classic.md](transit-classic.md)) are built;
 `transport-iroh` is still empty. The CLI sends and receives text and files
-(`send.rs`, `receive.rs`, the app messages in `protocol.rs`), on a multi-threaded tokio runtime started in
+(`send.rs`, `receive.rs`, the app messages in `protocol.rs`, streaming and
+progress in `transfer.rs`, directories in `zipdir.rs`), on a multi-threaded tokio runtime started in
 `wyrmyon::main`. Both binaries are thin `main`s over that function, returning
 its exit status, so they cannot drift apart.
 

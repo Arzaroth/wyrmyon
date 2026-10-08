@@ -37,6 +37,16 @@ terminal, which leaves its sender waiting. `wyrm receive` refuses with an
 unattended. Writing into a fresh `.<name>.wyrm-part` and renaming at the end
 means a failed or hostile transfer never leaves a file that looks complete.
 
+## Directories create their destination, and stop at what was offered
+
+The receiver creates the destination directory itself (`create_dir`, which
+fails if anything is there) instead of checking and then extracting, so it
+never merges into a directory that appeared meanwhile, and removes it if
+extraction fails. Extraction counts files and bytes against the offer and
+stops past either: the offer is what the user said yes to, and a zip's own
+headers can claim anything. Symlink entries are skipped on both sides, as the
+Python receiver never recreates them either.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

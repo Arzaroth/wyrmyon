@@ -2,18 +2,20 @@
 
 `crates/transport-classic` (package `wyrmyon-transport-classic`) is the data
 transport every magic-wormhole client speaks: TCP connections from exchanged
-hints, a handshake keyed by the transit key, then encrypted records. Checked
-against the Python client's `transit.py` (`wormhole` 0.22). Relays are not
-used yet (M3).
+hints or through a transit relay, a handshake keyed by the transit key, then
+encrypted records. Checked against the Python client's `transit.py`
+(`wormhole` 0.22) and its transit relay server.
 
 ## API
 
 | Item | What it does |
 | --- | --- |
 | `Transit::new(Role, transit_key)` | Binds a listener on `0.0.0.0:<random port>` and builds direct hints from the machine's non-loopback IPv4 addresses (loopback only when there are none) |
-| `Transit::without_listener()` / `with_timeout(d)` | No inbound connections and no direct hints of our own; a connect window other than 120 s |
-| `Transit::info()` | Our `TransitInfo`, sent to the peer as `{"transit": ...}`. It advertises only `direct-tcp-v1` until relays are built |
-| `Transit::connect(&their_info)` | Races inbound connections against outbound ones to each of their direct hints; returns the first `RecordPipe` that completes the handshake, or `NoConnection` when the window closes |
+| `Transit::with_relays(hints)` | Transit relays we offer and use |
+| `Transit::without_listener()` / `with_timeout(d)` | No inbound connections and no direct hints of our own (`--no-listen`); a connect window other than 120 s |
+| `Transit::info()` | Our `TransitInfo`, sent to the peer as `{"transit": ...}`: `direct-tcp-v1`, plus `relay-v1` when we have relays |
+| `Transit::connect(&their_info)` | Races inbound connections, outbound ones to each of their direct hints, and relay connections; returns the first `RecordPipe` that completes the handshake, or `NoConnection` when the window closes |
+| `DirectHint: FromStr` | Parses `tcp:HOST:PORT` (`--transit-helper`) |
 | `RecordPipe::send_record` / `flush` / `receive_record` | Encrypted records, at most `MAX_RECORD` (4 MiB) of plaintext each |
 | `TransitInfo::direct_hints()` / `relay_hints()` | Parse the peer's hints leniently: unknown types, bad ports and empty hostnames are skipped, never fatal |
 
@@ -39,6 +41,14 @@ On every TCP connection, whichever side opened it:
    connection.
 3. The sender takes the first connection to finish and writes `go\n` on it;
    the others are dropped. The receiver waits for `go\n`.
+
+Through a relay, the connection first sends
+`please relay <hex> for side <side>\n` (the hex is HKDF of the transit key with
+`transit_relay_token`, the side 8 random bytes in hex, fresh per `Transit`)
+and waits for `ok\n`, which the relay sends once both peers' lines arrived;
+the handshake above then runs end to end through it. Relays are dialled 2 s
+after the direct hints (at once when the peer gave none), so a direct
+connection wins whenever it can, and both peers' relays are tried.
 
 Then records, each `u32` big-endian length + 24-byte nonce + secretbox
 ciphertext. The nonce is a counter from 0, big-endian, one per direction, and a

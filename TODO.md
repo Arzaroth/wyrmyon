@@ -16,9 +16,6 @@ done.
 - [ ] M4: whether a transport needs to send and receive on the mailbox
       at the same time (split `Wormhole` into halves, or a driver task).
 
-- [ ] M3: the test transit relay: extend `crates/testkit` with an in-process
-      fake, as for the mailbox, and use the Python
-      `magic-wormhole-transit-relay` in the interop suite.
 - [ ] M4: pin the iroh and iroh-blobs versions, and check which NodeAddr
       serialisation is stable enough to put on the wire.
 - [ ] M4: what the iroh side does when hole-punching and n0's relays both fail:

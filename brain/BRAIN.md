@@ -29,6 +29,8 @@ wyrmyon.
 | Which HKDF purposes derive which keys? | [architecture/wormhole-core.md](architecture/wormhole-core.md) |
 | How does file data travel to a legacy client? | [architecture/transit-classic.md](architecture/transit-classic.md) |
 | What protects the receiver from a hostile file offer? | [features/files.md](features/files.md) |
+| What stops a zip bomb or a path escape in a directory? | [features/directories.md](features/directories.md) |
+| When is the transit relay used? | [architecture/transit-classic.md](architecture/transit-classic.md) |
 | How do two peers decide between classic transit and iroh? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Can a malicious mailbox downgrade the connection? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Which servers does it talk to, and why always the public mailbox? | [architecture/servers.md](architecture/servers.md) |
@@ -42,6 +44,7 @@ wyrmyon.
 | Feature | Doc |
 | --- | --- |
 | Text messages | [features/text.md](features/text.md) |
-| Files | [features/files.md](features/files.md) |
+| Files, relays, receiver-first codes | [features/files.md](features/files.md) |
+| Directories | [features/directories.md](features/directories.md) |
 
 What comes next is in [ROADMAP.md](../ROADMAP.md).

@@ -7,8 +7,22 @@ wyrm receive --accept-file -o ~/in/r.pdf CODE # no question, chosen path
 ```
 
 One regular file per transfer, with any magic-wormhole client. Directories
-are refused for now (M3), and so are pipes, devices and anything else whose
-size the sender cannot know.
+have their own doc ([directories.md](directories.md)); pipes, devices and
+anything else whose size the sender cannot know are refused.
+
+## Options both sides share
+
+| Option | Effect |
+| --- | --- |
+| `--transit-helper tcp:HOST:PORT` | The transit relay to fall back on (default `transit.magic-wormhole.io:4001`) |
+| `--no-listen` | No inbound connections: connect out, or through a relay |
+| `--hide-progress` | No progress bar (none is drawn when stderr is not a terminal either) |
+
+## Receiver first
+
+`wyrm receive --new` allocates the code and waits; the sender then runs
+`wyrm send --code CODE FILE`, or `wormhole send --code CODE FILE` with the
+Python client. Only the side that allocates prints the code.
 
 ## Sender
 
@@ -17,8 +31,9 @@ size the sender cannot know.
 2. Waits for the receiver's `transit` and `{"answer": {"file_ack": "ok"}}`.
    An `error` or any other answer fails the transfer.
 3. Connects ([transit-classic.md](../architecture/transit-classic.md)) and
-   streams the file in 64 KiB records, hashing it with SHA-256. A file that
-   grows or shrinks during the send fails it.
+   streams the file in 64 KiB records with a progress bar, hashing it with
+   SHA-256 (`transfer.rs`). A file that grows or shrinks during the send fails
+   it.
 4. Reads the receiver's last record, `{"ack": "ok", "sha256": <hex>}`, and
    checks the hash when there is one.
 
@@ -48,3 +63,5 @@ size the sender cannot know.
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
 - [crates/cli/src/protocol.rs](../../crates/cli/src/protocol.rs)
+- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)
+- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs)

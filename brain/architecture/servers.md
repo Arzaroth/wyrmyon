@@ -1,13 +1,14 @@
 # Servers
 
-The mailbox client is built ([wormhole-core.md](wormhole-core.md)); the relays
-and the fallback mailbox are still planned. The mailbox is always the public one. Data relays are negotiated in-band, so
+The mailbox client ([wormhole-core.md](wormhole-core.md)) and the transit relay
+client ([transit-classic.md](transit-classic.md)) are built; iroh relays and the
+fallback mailbox are still planned. The mailbox is always the public one. Data relays are negotiated in-band, so
 they need no discovery.
 
 | Server | Used for | How it is chosen |
 | --- | --- | --- |
 | `relay.magic-wormhole.io` | Rendezvous (mailbox) | Fixed. The sender cannot know which client the receiver runs, so codes must live where everyone looks |
-| `transit.magic-wormhole.io` | Classic data relay | Legacy path only |
+| `transit.magic-wormhole.io` | Classic data relay | Legacy path only. `--transit-helper tcp:HOST:PORT` (or `WYRMYON_TRANSIT_HELPER`) replaces it; the peer's relays are used too |
 | iroh relays (n0's public ones at first) | iroh data relay | The relay URL travels inside the encrypted NodeAddr; moving to self-hosted relays is a client default change |
 | Our own mailbox | Fallback rendezvous (Later) | Only when the public mailbox is unreachable. Its codes carry a prefix (`m7-guitarist-revenge`) that legacy clients reject as malformed, which is correct |
 

@@ -37,11 +37,14 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M3 - Full legacy transfer
 
-- [ ] Transit relay fallback (`transit.magic-wormhole.io`) and connection
-      racing across hints.
-- [ ] Directories (zipped, as the Python client does) and progress.
-- [ ] Receiver-first codes work with a legacy sender
-      (`wormhole send --code ...`).
+- [x] Transit relay fallback (`transit.magic-wormhole.io`) and connection
+      racing across hints. Decided: relays 2 s after direct hints, both
+      peers' relays tried; `--transit-helper`, `--no-listen`.
+- [x] Directories (zipped, as the Python client does) and progress.
+      Decided: extraction capped at the offered size and count; symlinks
+      skipped.
+- [x] Receiver-first codes work with a legacy sender
+      (`wormhole send --code ...`): `wyrm receive --new`, `wyrm send --code`.
 
 ## M4 - The iroh-v1 transport
 

@@ -9,10 +9,10 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: early.** Text and single files work with any magic-wormhole client
-over a direct connection (`wyrm send --text`, `wyrm send FILE`,
-`wyrm receive`); relays, directories and the iroh transport follow
-[ROADMAP.md](ROADMAP.md).
+**Status: early.** Text, files and directories work with any magic-wormhole
+client, directly or through the transit relay (`wyrm send --text`,
+`wyrm send PATH`, `wyrm receive`, `wyrm receive --new`); the iroh transport
+follows [ROADMAP.md](ROADMAP.md).
 
 ## Usage (planned)
 
