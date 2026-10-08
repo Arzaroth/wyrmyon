@@ -1076,6 +1076,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wyrmyon-testkit"
+version = "0.0.0"
+dependencies = [
+ "futures-util",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
 name = "wyrmyon-transport-classic"
 version = "0.0.0"
 
@@ -1100,6 +1110,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "unicode-normalization",
+ "wyrmyon-testkit",
 ]
 
 [[package]]

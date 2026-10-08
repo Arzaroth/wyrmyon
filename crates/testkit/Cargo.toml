@@ -1,0 +1,18 @@
+[package]
+name = "wyrmyon-testkit"
+description = "In-process mailbox server and transit relay for wyrmyon's tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+futures-util = "0.3.34"
+serde_json = "1.0.151"
+tokio = { version = "1.53.2", features = ["net", "rt", "sync", "macros", "io-util"] }
+tokio-tungstenite = "0.30.0"
