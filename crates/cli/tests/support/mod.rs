@@ -12,6 +12,7 @@ pub fn wyrm(relay: &str) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_wyrm"));
     cmd.env("WYRMYON_RELAY_URL", relay)
         .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
+        .env("WYRMYON_IROH_RELAYS", "disabled")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

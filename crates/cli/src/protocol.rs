@@ -2,6 +2,7 @@ use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wyrmyon_transport_classic::TransitInfo;
+use wyrmyon_transport_iroh::IrohInfo;
 use wyrmyon_wormhole::Wormhole;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,6 +11,8 @@ pub enum AppMessage {
     Offer(Offer),
     Answer(Answer),
     Transit(TransitInfo),
+    #[serde(rename = "wyrmyon-iroh-v1")]
+    Iroh(IrohInfo),
     Error(Value),
 }
 

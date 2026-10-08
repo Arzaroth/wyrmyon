@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use wyrmyon_transport_classic::{DirectHint, Role, Transit};
+use wyrmyon_transport_iroh::IrohTransport;
 use wyrmyon_wormhole::{Config, Key, Mood, PUBLIC_RELAY, Welcome};
 
 const PUBLIC_TRANSIT_HELPER: &str = "tcp:transit.magic-wormhole.io:4001";
@@ -35,6 +36,21 @@ struct Global {
     /// Do not show progress bars
     #[arg(long, global = true)]
     hide_progress: bool,
+    /// Never use the iroh-v1 transport, even with another wyrmyon
+    #[arg(long, global = true, conflicts_with = "force_iroh")]
+    force_classic: bool,
+    /// Fail rather than fall back to classic transit with a legacy peer
+    #[arg(long, global = true)]
+    force_iroh: bool,
+    /// iroh relays: n0's public ones, or none (direct connections only)
+    #[arg(long, global = true, env = "WYRMYON_IROH_RELAYS", value_enum, default_value_t = IrohRelays::Default)]
+    iroh_relays: IrohRelays,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum IrohRelays {
+    Default,
+    Disabled,
 }
 
 #[derive(Subcommand)]
@@ -47,10 +63,34 @@ enum Command {
 
 impl Global {
     fn config(&self) -> Config {
+        let app_versions = if self.force_classic {
+            serde_json::json!({})
+        } else {
+            serde_json::json!({"wyrmyon": {"transports": [wyrmyon_transport_iroh::TRANSPORT]}})
+        };
         Config {
             relay_url: self.relay_url.clone(),
+            app_versions,
             ..Config::default()
         }
+    }
+
+    fn use_iroh(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> anyhow::Result<bool> {
+        let theirs = wormhole.their_app_versions()["wyrmyon"]["transports"]
+            .as_array()
+            .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT));
+        if self.force_iroh && !theirs {
+            anyhow::bail!("the other side does not speak iroh-v1 (--force-iroh)");
+        }
+        Ok(theirs && !self.force_classic)
+    }
+
+    async fn iroh(&self, role: wyrmyon_transport_iroh::Role) -> anyhow::Result<IrohTransport> {
+        let relays = match self.iroh_relays {
+            IrohRelays::Default => wyrmyon_transport_iroh::Relays::Default,
+            IrohRelays::Disabled => wyrmyon_transport_iroh::Relays::Disabled,
+        };
+        Ok(IrohTransport::bind(role, relays).await?)
     }
 
     async fn transit(&self, role: Role, key: Key) -> Transit {

@@ -30,6 +30,7 @@ sha2 = "0.11.0"
 tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "io-std", "io-util", "fs", "signal"] }
 wyrmyon-transport-classic = { version = "0.0.0", path = "../transport-classic" }
+wyrmyon-transport-iroh = { version = "0.0.0", path = "../transport-iroh" }
 wyrmyon-wormhole = { version = "0.0.0", path = "../wormhole-core" }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 

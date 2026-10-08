@@ -4099,6 +4099,7 @@ dependencies = [
  "tokio",
  "wyrmyon-testkit",
  "wyrmyon-transport-classic",
+ "wyrmyon-transport-iroh",
  "wyrmyon-wormhole",
  "zip",
 ]

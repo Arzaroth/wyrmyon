@@ -212,7 +212,12 @@ async fn a_directory_travels_through_the_relay_only() {
     std::fs::write(tree.join("a.txt"), b"alpha").unwrap();
     std::fs::write(tree.join("sub/b.bin"), vec![3u8; 70_000]).unwrap();
     let relayed = |cmd: &mut tokio::process::Command| {
-        cmd.args(["--no-listen", "--transit-helper", &relay.hint()]);
+        cmd.args([
+            "--force-classic",
+            "--no-listen",
+            "--transit-helper",
+            &relay.hint(),
+        ]);
     };
 
     let mut send = wyrm(&server.url());

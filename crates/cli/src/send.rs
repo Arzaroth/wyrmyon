@@ -4,9 +4,11 @@ use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
 use wyrmyon_transport_classic::{Role, TransitInfo};
+use wyrmyon_transport_iroh::Role as IrohRole;
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
+use crate::transfer::Pipe;
 use crate::{Global, mood_for, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
@@ -148,23 +150,47 @@ async fn send_data(
     source: tokio::fs::File,
     size: u64,
 ) -> anyhow::Result<()> {
-    let transit = global.transit(Role::Sender, wormhole.transit_key()).await;
-    protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
-    protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
-
-    let mut theirs = TransitInfo::default();
-    loop {
-        match protocol::next(wormhole, "receiver").await? {
-            AppMessage::Transit(info) => theirs = info,
-            AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => break,
-            AppMessage::Answer(answer) => {
-                bail!("unexpected answer from the receiver: {answer:?}")
-            }
-            _ => {}
+    let use_iroh = match global.use_iroh(wormhole) {
+        Ok(use_iroh) => use_iroh,
+        Err(e) => {
+            protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
+            return Err(e);
         }
-    }
-
-    let mut pipe = transit.connect(&theirs).await?;
+    };
+    let mut pipe = if use_iroh {
+        let iroh = global.iroh(IrohRole::Sender).await?;
+        protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
+        protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
+        let mut theirs = None;
+        loop {
+            match protocol::next(wormhole, "receiver").await? {
+                AppMessage::Iroh(info) => theirs = Some(info),
+                AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => break,
+                AppMessage::Answer(answer) => {
+                    bail!("unexpected answer from the receiver: {answer:?}")
+                }
+                _ => {}
+            }
+        }
+        let theirs = theirs.context("the receiver accepted without an iroh address")?;
+        Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
+    } else {
+        let transit = global.transit(Role::Sender, wormhole.transit_key()).await;
+        protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
+        protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
+        let mut theirs = TransitInfo::default();
+        loop {
+            match protocol::next(wormhole, "receiver").await? {
+                AppMessage::Transit(info) => theirs = info,
+                AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => break,
+                AppMessage::Answer(answer) => {
+                    bail!("unexpected answer from the receiver: {answer:?}")
+                }
+                _ => {}
+            }
+        }
+        Pipe::Classic(transit.connect(&theirs).await?)
+    };
     eprintln!("Sending ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);
     let digest = transfer::send_stream(&mut pipe, source, size, &bar).await?;

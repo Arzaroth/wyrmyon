@@ -5,9 +5,11 @@ use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
+use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
+use crate::transfer::Pipe;
 use crate::{Global, mood_for, printable, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
@@ -32,6 +34,7 @@ pub struct ReceiveArgs {
 struct Peer {
     transit: Option<Transit>,
     theirs: Option<TransitInfo>,
+    iroh: Option<(IrohTransport, IrohInfo)>,
 }
 
 pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
@@ -67,6 +70,14 @@ async fn receive_offer(
     let mut peer = Peer {
         transit: None,
         theirs: None,
+        iroh: None,
+    };
+    let iroh_allowed = match global.use_iroh(wormhole) {
+        Ok(allowed) => allowed,
+        Err(e) => {
+            protocol::send_error(wormhole, "the receiver requires iroh-v1").await?;
+            return Err(e);
+        }
     };
     let offer = loop {
         match protocol::next(wormhole, "sender").await? {
@@ -77,6 +88,11 @@ async fn receive_offer(
                     protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
                     peer.transit = Some(transit);
                 }
+            }
+            AppMessage::Iroh(info) if iroh_allowed && peer.iroh.is_none() => {
+                let iroh = global.iroh(IrohRole::Receiver).await?;
+                protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
+                peer.iroh = Some((iroh, info));
             }
             AppMessage::Offer(offer) => break offer,
             _ => {}
@@ -114,7 +130,12 @@ struct Incoming {
     partial: Partial,
     dest: PathBuf,
     digest: [u8; 32],
-    pipe: wyrmyon_transport_classic::RecordPipe,
+    pipe: Pipe,
+}
+
+enum Connection {
+    Iroh(IrohTransport, IrohInfo),
+    Classic(Transit, TransitInfo),
 }
 
 async fn receive_payload(
@@ -129,8 +150,10 @@ async fn receive_payload(
     let Some(name) = safe_name(offered_name) else {
         return refuse(wormhole, "the offered name is not usable").await;
     };
-    let (Some(transit), Some(theirs)) = (peer.transit, peer.theirs) else {
-        return refuse(wormhole, "the sender did not offer a transit connection").await;
+    let connection = match (peer.iroh, peer.transit, peer.theirs) {
+        (Some((iroh, theirs)), _, _) => Connection::Iroh(iroh, theirs),
+        (None, Some(transit), Some(theirs)) => Connection::Classic(transit, theirs),
+        _ => return refuse(wormhole, "the sender did not offer a connection").await,
     };
     let dest = match &args.output_file {
         Some(path) if path.is_dir() => path.join(&name),
@@ -164,7 +187,10 @@ async fn receive_payload(
     };
     protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
 
-    let mut pipe = transit.connect(&theirs).await?;
+    let mut pipe = match connection {
+        Connection::Iroh(iroh, theirs) => Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?),
+        Connection::Classic(transit, theirs) => Pipe::Classic(transit.connect(&theirs).await?),
+    };
     eprintln!("Receiving ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);
     let digest = transfer::receive_stream(&mut pipe, &mut file, size, &bar).await?;
