@@ -74,6 +74,23 @@ impl Fetched {
         Ok(())
     }
 
+    pub async fn export_to(self, target: &Path) -> Result<Self, Error> {
+        let exported = async {
+            if tokio::fs::symlink_metadata(target).await.is_ok() {
+                tokio::fs::remove_file(target).await.map_err(store_error)?;
+            }
+            self.export(target).await
+        }
+        .await;
+        match exported {
+            Ok(()) => Ok(self),
+            Err(e) => {
+                self.discard().await;
+                Err(e)
+            }
+        }
+    }
+
     pub async fn discard(self) {
         let _ = self.store.shutdown().await;
         let _ = tokio::fs::remove_dir_all(&self.dir).await;
