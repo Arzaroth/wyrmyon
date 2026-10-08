@@ -201,3 +201,74 @@ async fn a_file_is_refused_without_confirmation_or_over_an_existing_one() {
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_directory_travels_through_the_relay_only() {
+    let server = MailboxServer::start().await;
+    let relay = wyrmyon_testkit::TransitRelay::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let tree = from.path().join("tree");
+    std::fs::create_dir_all(tree.join("sub/empty")).unwrap();
+    std::fs::write(tree.join("a.txt"), b"alpha").unwrap();
+    std::fs::write(tree.join("sub/b.bin"), vec![3u8; 70_000]).unwrap();
+    let relayed = |cmd: &mut tokio::process::Command| {
+        cmd.args(["--no-listen", "--transit-helper", &relay.hint()]);
+    };
+
+    let mut send = wyrm(&server.url());
+    relayed(&mut send);
+    let mut sender = send
+        .args(["send", "tree"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let mut receive = wyrm(&server.url());
+    relayed(&mut receive);
+    let (ok, _, stderr) = finish(
+        receive
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("via relay"), "{stderr}");
+    assert!(finish(sender).await.0);
+    let got = to.path().join("tree");
+    assert_eq!(std::fs::read(got.join("a.txt")).unwrap(), b"alpha");
+    assert_eq!(
+        std::fs::read(got.join("sub/b.bin")).unwrap(),
+        vec![3u8; 70_000]
+    );
+    assert!(got.join("sub/empty").is_dir());
+    assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_receiver_can_allocate_the_code() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("r.txt"), b"receiver first").unwrap();
+    let mut receiver = wyrm(&server.url())
+        .args(["receive", "--new", "--accept-file"])
+        .current_dir(to.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(receiver.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["send", "--code", &code, "r.txt"])
+            .current_dir(from.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(receiver).await.0);
+    assert_eq!(
+        std::fs::read(to.path().join("r.txt")).unwrap(),
+        b"receiver first"
+    );
+}
