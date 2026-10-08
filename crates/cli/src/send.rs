@@ -70,6 +70,9 @@ async fn file_payload(path: PathBuf) -> anyhow::Result<Payload> {
             path.display()
         );
     }
+    if !meta.is_file() {
+        bail!("{} is not a regular file", path.display());
+    }
     let filename = path
         .file_name()
         .with_context(|| format!("{} has no file name", path.display()))?

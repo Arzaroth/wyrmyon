@@ -97,11 +97,14 @@ async fn receive_file(
     let Some(name) = safe_name(&offer.filename) else {
         return refuse(wormhole, "the offered file name is not usable").await;
     };
+    let (Some(transit), Some(theirs)) = (peer.transit, peer.theirs) else {
+        return refuse(wormhole, "the sender did not offer a transit connection").await;
+    };
     let dest = match &args.output_file {
         Some(path) => path.clone(),
         None => PathBuf::from(&name),
     };
-    if dest.exists() {
+    if dest.symlink_metadata().is_ok() {
         return refuse(
             wormhole,
             &format!("refusing to overwrite {}", dest.display()),
@@ -123,32 +126,19 @@ async fn receive_file(
             }
         }
     }
-    let (Some(transit), Some(theirs)) = (peer.transit, peer.theirs) else {
-        return refuse(wormhole, "the sender did not offer a transit connection").await;
+    let (partial, file) = match Partial::create(&dest, &name).await {
+        Ok(created) => created,
+        Err(e) => {
+            protocol::send_error(wormhole, "the receiver cannot write the file").await?;
+            return Err(e);
+        }
     };
     protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
 
     let mut pipe = transit.connect(&theirs).await?;
     eprintln!("Receiving ({})..", pipe.describe());
-    let partial = partial_path(&dest, &name);
-    let written = write_records(&mut pipe, &partial, offer.filesize).await;
-    let digest = match written {
-        Ok(digest) => digest,
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&partial).await;
-            return Err(e);
-        }
-    };
-    if dest.exists() {
-        let _ = tokio::fs::remove_file(&partial).await;
-        bail!(
-            "{} appeared during the transfer; the data is discarded",
-            dest.display()
-        );
-    }
-    tokio::fs::rename(&partial, &dest)
-        .await
-        .with_context(|| format!("moving the file to {}", dest.display()))?;
+    let digest = write_records(&mut pipe, file, offer.filesize).await?;
+    partial.finish(&dest)?;
     let ack = json!({"ack": "ok", "sha256": hex::encode(digest)}).to_string();
     pipe.send_record(ack.as_bytes()).await?;
     pipe.flush().await?;
@@ -157,17 +147,61 @@ async fn receive_file(
     Ok(())
 }
 
+struct Partial {
+    path: PathBuf,
+}
+
+impl Partial {
+    async fn create(dest: &Path, name: &str) -> anyhow::Result<(Self, tokio::fs::File)> {
+        let dir = dest.parent().filter(|p| !p.as_os_str().is_empty());
+        let file = format!(".{name}.{}.wyrm-part", unique_suffix());
+        let path = dir.map_or_else(|| PathBuf::from(&file), |d| d.join(&file));
+        let handle = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+            .with_context(|| format!("creating {}", path.display()))?;
+        Ok((Self { path }, handle))
+    }
+
+    fn finish(self, dest: &Path) -> anyhow::Result<()> {
+        let appeared = || {
+            format!(
+                "{} appeared during the transfer; the data is discarded",
+                dest.display()
+            )
+        };
+        match std::fs::hard_link(&self.path, dest) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(e).with_context(appeared)
+            }
+            Err(_) if dest.symlink_metadata().is_ok() => bail!(appeared()),
+            Err(_) => std::fs::rename(&self.path, dest)
+                .with_context(|| format!("moving the file to {}", dest.display())),
+        }
+    }
+}
+
+impl Drop for Partial {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn unique_suffix() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    format!("{:x}{nanos:x}", std::process::id())
+}
+
 async fn write_records(
     pipe: &mut wyrmyon_transport_classic::RecordPipe,
-    partial: &Path,
+    mut file: tokio::fs::File,
     size: u64,
 ) -> anyhow::Result<Vec<u8>> {
-    let mut file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(partial)
-        .await
-        .with_context(|| format!("creating {}", partial.display()))?;
     let mut hasher = Sha256::new();
     let mut received = 0u64;
     while received < size {
@@ -186,12 +220,6 @@ async fn write_records(
 fn safe_name(offered: &str) -> Option<String> {
     let name = printable(Path::new(offered).file_name()?.to_str()?);
     (!name.is_empty() && name != "." && name != "..").then_some(name)
-}
-
-fn partial_path(dest: &Path, name: &str) -> PathBuf {
-    let dir = dest.parent().filter(|p| !p.as_os_str().is_empty());
-    let file = format!(".{name}.wyrm-part");
-    dir.map_or_else(|| PathBuf::from(&file), |d| d.join(&file))
 }
 
 async fn confirm(question: &str) -> anyhow::Result<bool> {
@@ -229,17 +257,5 @@ mod tests {
         assert_eq!(safe_name("a\x1b[2Jb").as_deref(), Some("a[2Jb"));
         assert_eq!(safe_name(".."), None);
         assert_eq!(safe_name(""), None);
-    }
-
-    #[test]
-    fn partial_files_sit_next_to_the_destination() {
-        assert_eq!(
-            partial_path(Path::new("x.bin"), "x.bin"),
-            PathBuf::from(".x.bin.wyrm-part")
-        );
-        assert_eq!(
-            partial_path(Path::new("/tmp/out/y"), "z"),
-            PathBuf::from("/tmp/out/.z.wyrm-part")
-        );
     }
 }

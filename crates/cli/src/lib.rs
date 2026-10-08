@@ -44,9 +44,15 @@ pub fn main() -> ExitCode {
     let cli = Cli::parse();
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
     let result = runtime.block_on(async {
-        match cli.command {
-            Command::Send(args) => send::run(&cli.global, args).await,
-            Command::Receive(args) => receive::run(&cli.global, args).await,
+        let work = async {
+            match cli.command {
+                Command::Send(args) => send::run(&cli.global, args).await,
+                Command::Receive(args) => receive::run(&cli.global, args).await,
+            }
+        };
+        tokio::select! {
+            result = work => result,
+            _ = tokio::signal::ctrl_c() => Err(anyhow::anyhow!("interrupted")),
         }
     });
     match result {
