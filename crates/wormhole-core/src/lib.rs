@@ -6,7 +6,7 @@ mod wordlist_data;
 mod wormhole;
 
 pub use code::{Code, CodeError};
-pub use crypto::Key;
+pub use crypto::{KEY_LEN, Key, NONCE_LEN};
 pub use server::Mood;
 pub use wormhole::{Config, Pending, Welcome, Wormhole, create, join};
 

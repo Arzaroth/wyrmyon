@@ -11,7 +11,7 @@ pub struct Key(pub(crate) [u8; KEY_LEN]);
 
 impl Key {
     #[must_use]
-    pub(crate) fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
+    pub fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
         Self(bytes)
     }
 
