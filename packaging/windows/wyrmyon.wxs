@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Per-user MSI, built by the release workflow with WiX 5:
+  `wix build -arch x64|arm64 -d Version=X.Y.Z -d StageDir=... wyrmyon.wxs`.
+  It installs into the directory scripts/install.ps1 uses, so the two never
+  leave two copies on PATH.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="wyrmyon"
+      Manufacturer="Arzaroth"
+      Version="$(Version)"
+      UpgradeCode="cff6149e-8904-44e4-ae04-0f192f471c27"
+      Scope="perUser"
+      Compressed="yes"
+      Language="1033">
+
+    <SummaryInformation
+        Description="wyrmyon - a magic-wormhole client"
+        Manufacturer="Arzaroth" />
+
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of wyrmyon is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Arzaroth/wyrmyon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="wyrmyon" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="wyrmyon" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="Binaries" />
+    </Feature>
+
+    <ComponentGroup Id="Binaries" Directory="INSTALLFOLDER">
+      <Component Id="WyrmyonExe" Guid="*">
+        <File Id="WyrmyonExeFile" Source="$(StageDir)\wyrmyon.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="WyrmExe" Guid="*">
+        <File Id="WyrmExeFile" Source="$(StageDir)\wyrm.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="Docs" Guid="*">
+        <File Id="ReadmeFile" Source="$(StageDir)\README.md" KeyPath="yes" />
+        <File Id="LicenseFile" Source="$(StageDir)\LICENSE" />
+      </Component>
+      <!--
+        Part="last" appends to the user's PATH, and MSI takes it back out on
+        uninstall. The keypath is a registry value: an Environment element
+        cannot be one.
+      -->
+      <Component Id="PathEntry" Guid="*">
+        <Environment
+            Id="PathBin" Name="PATH" Value="[INSTALLFOLDER]"
+            Action="set" Part="last" System="no" Permanent="no" />
+        <RegistryValue
+            Root="HKCU" Key="Software\wyrmyon" Name="PathEntry"
+            Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>
