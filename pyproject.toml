@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "wyrmyon"
+description = "A magic-wormhole client that switches to iroh when both peers run wyrmyon"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.8"
+dynamic = ["version"]
+keywords = ["magic-wormhole", "wormhole", "iroh", "file-transfer"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Rust",
+    "Topic :: Communications :: File Sharing",
+]
+
+[project.urls]
+Repository = "https://github.com/Arzaroth/wyrmyon"
+Changelog = "https://github.com/Arzaroth/wyrmyon/blob/master/CHANGELOG.md"
+
+[tool.maturin]
+manifest-path = "crates/cli/Cargo.toml"
+bindings = "bin"
+strip = true
