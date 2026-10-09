@@ -31,7 +31,9 @@ wyrm send big.iso        # a new code; the receiver fetches only what it lacks
   [directories.md](directories.md)), and acked with `{"ack": "ok"}`: no
   SHA-256, since BLAKE3 already verified every byte.
 - **The cache.** `WYRMYON_CACHE_DIR`, else `$XDG_CACHE_HOME/wyrmyon/partial`,
-  else `~/.cache/wyrmyon/partial`; empty or relative values are ignored. A
+  else `~/.cache/wyrmyon/partial`; on Windows `%LOCALAPPDATA%` and
+  `%USERPROFILE%` stand in for the last two. Empty or relative values are
+  ignored. A
   successful transfer, or one whose data turned out wrong, deletes its
   `<hash>` directory. An interrupted one, or one whose export failed (a full
   disk, say), keeps it for the next attempt and says so in the error, naming

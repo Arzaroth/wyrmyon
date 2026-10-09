@@ -138,3 +138,12 @@ package. Internal crates carry a `wyrmyon-` prefix for the same reason.
 maturin's `bindings = "bin"` puts the native binary in a wheel, so `uvx` and
 `pipx` users (the people who already have the Python `wormhole`) get it with no
 Python runtime involved, as ruff and uv do.
+
+## Binaries, not crates
+
+wyrmyon ships as release archives, installers, a Homebrew formula and PyPI
+wheels; no crate goes to crates.io (`publish = false` everywhere). The crates
+are internals of one tool, not a library with a stable API, and publishing
+them would freeze names and versions nobody asked for; `cargo install --git`
+still works for Rust users. The workspace crates depend on each other by path
+only, so the version lives in one line of the workspace `Cargo.toml`.

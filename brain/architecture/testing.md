@@ -26,7 +26,8 @@ failure, an `accept` error, a write failing in the instant after a handshake,
 iroh waiting for a home relay. Everything a peer or a server can do wrong is
 reached on purpose: `tests/peers.rs` drives `wyrm` against hand-written library
 peers (bad offers and answers, forged acks, oversized zips over iroh, a closed
-stdout, prompts answered through a pty from Python's `pty.spawn`), and
+stdout, prompts answered through a pty from Python's `pty.spawn`, on Unix
+only), and
 `MailboxServer::start_with(Quirks { .. })` makes the fake server allocate a
 malformed nameplate, refuse allocation, flood messages, hang up after the
 welcome, or chatter between replies.

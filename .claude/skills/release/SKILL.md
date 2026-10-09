@@ -10,13 +10,20 @@ the tag is what builds and publishes the release, so there is no undo once
 step 3 runs: a bad tag means a new patch release, and a version on PyPI can
 never be uploaded again.
 
-## 0. Is there a release pipeline yet?
+## 0. Before the first release
 
-Packaging is roadmap milestone M7 (maturin wheels, cargo-dist archives and
-installers). If `dist-workspace.toml`, `pyproject.toml` or
-`.github/workflows/release.yml` is missing, there is nothing to release: stop
-and say so. When M7 lands, it fills in steps 3 to 5 below with the real
-commands and adds `scripts/release.sh`.
+The pipeline is described in `brain/architecture/distribution.md`. Two
+things live outside the repository and must exist before the first tag, or the
+Release workflow fails halfway through:
+
+- **PyPI trusted publisher** for the `wyrmyon` project (a pending publisher
+  before the first upload): owner `Arzaroth`, repository `wyrmyon`, workflow
+  `release.yml` (the caller, not `publish-pypi.yml`), environment `pypi`
+  (GitHub creates it on first use). Without it the upload is refused.
+- **`Arzaroth/homebrew-tap`** on GitHub, and a `HOMEBREW_TAP_TOKEN` secret on
+  `Arzaroth/wyrmyon` that can push to it.
+
+Check them with the user before the first release; afterwards they stay.
 
 ## 1. Pre-flight
 
@@ -48,12 +55,18 @@ commands and adds `scripts/release.sh`.
 
 ## 3. Cut it
 
-Move `[Unreleased]` into `## [x.y.z] - <UTC date>`, set `version` in the
-workspace `Cargo.toml` (and `Cargo.lock`), run the gate (`cargo fmt --all
---check`, clippy `-D warnings`, `cargo test --locked`), check
-`cargo run -q --bin wyrm -- --version` prints `wyrmyon x.y.z`, then commit
-`[master] chore(release): x.y.z`, create annotated tag `vx.y.z`, and push both
-to `origin`. The GitHub mirror syncs on commit; confirm the tag reached GitHub
+```bash
+scripts/release.sh <x.y.z> --dry-run   # shows the changelog section it will release
+scripts/release.sh <x.y.z>
+```
+
+It refuses unless on a clean `master` level with `origin/master`, with
+something under `[Unreleased]` and no `v<x.y.z>` tag yet. It moves
+`[Unreleased]` into `## [x.y.z] - <UTC date>`, sets the workspace version
+(and `Cargo.lock`), runs the gate, checks `wyrm --version` prints
+`wyrmyon x.y.z`, then commits `[master] chore(release): x.y.z`, creates the
+annotated tag `vx.y.z` and pushes both to `origin`; a failed gate undoes the
+bump. The GitHub mirror syncs on commit; confirm the tag reached GitHub
 (`gh api repos/Arzaroth/wyrmyon/git/refs/tags/vx.y.z`) before watching for the
 workflow.
 
@@ -73,12 +86,16 @@ for the same tag rather than moving the tag.
 
 ```bash
 uvx wyrmyon@<x.y.z> --version            # wyrmyon <x.y.z>
+h=$(mktemp -d); curl -LsSf https://github.com/Arzaroth/wyrmyon/releases/download/v<x.y.z>/wyrmyon-installer.sh \
+  | HOME=$h CARGO_HOME=$h/.cargo sh && $h/.cargo/bin/wyrm --version; rm -rf "$h"
 ```
 
-and the shell installer into a throwaway `HOME`.
+and that `Arzaroth/homebrew-tap` received `Formula/wyrmyon.rb` for the new
+version.
 
 ## Done when
 
-The tag is pushed, the GitHub release has its archives, PyPI has the wheels, a
+The tag is pushed, the GitHub release has its archives and installers, PyPI
+has the wheels, the tap has the formula, a
 throwaway install reports the new version, and `CHANGELOG.md` has a dated
 section for it. Report the version and the release URL.
