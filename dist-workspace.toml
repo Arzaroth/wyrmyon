@@ -4,10 +4,7 @@ members = ["cargo:."]
 [dist]
 cargo-dist-version = "0.32.0"
 ci = "github"
-installers = ["shell", "powershell", "homebrew"]
-tap = "Arzaroth/homebrew-tap"
-local-artifacts-jobs = ["./build-wheels"]
-publish-jobs = ["homebrew", "./publish-pypi"]
+installers = ["shell", "powershell"]
 targets = [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
@@ -19,6 +16,3 @@ install-path = "CARGO_HOME"
 install-updater = false
 pr-run-mode = "plan"
 
-[dist.github-custom-job-permissions]
-"build-wheels" = { contents = "read" }
-"publish-pypi" = { contents = "read", id-token = "write" }
