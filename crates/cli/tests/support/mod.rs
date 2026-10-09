@@ -53,9 +53,9 @@ pub async fn finish(child: Child) -> (bool, String, String) {
 }
 
 pub fn cache_dir() -> std::path::PathBuf {
-    tempfile::Builder::new()
-        .prefix("wyrmyon-test-cache")
-        .tempdir()
-        .unwrap()
-        .keep()
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("cache")
+        .join(format!("{}-{n}", std::process::id()))
 }

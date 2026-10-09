@@ -541,3 +541,24 @@ async fn the_server_motd_is_shown_and_progress_can_be_hidden() {
         "{stderr}"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreadable_file_is_reported_to_an_iroh_receiver() {
+    use std::os::unix::fs::PermissionsExt;
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let locked = dir.path().join("locked.bin");
+    std::fs::write(&locked, b"secret").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&locked).is_ok() {
+        return;
+    }
+    let (mut receiver, sender) = wyrm_sends(&server, &["locked.bin"], dir.path(), true).await;
+    let error = until(&mut receiver, "error").await;
+    assert!(
+        error.as_str().unwrap().contains("could not read"),
+        "{error}"
+    );
+    receiver.close(Mood::Happy).await;
+    fails(sender).await;
+}
