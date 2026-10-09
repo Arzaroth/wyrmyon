@@ -59,8 +59,8 @@ powershell -c "irm https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scr
 ```
 
 The script checks the download against the release's `SHA256SUMS` and installs
-into `~/.local/bin` (`%LOCALAPPDATA%\Programs\wyrmyon` on Windows), with man
-pages and shell completions. The Linux binaries are static, so they run on any
+into `~/.local/bin`, with man pages and shell completions
+(`%LOCALAPPDATA%\Programs\wyrmyon` on Windows, binaries only). The Linux binaries are static, so they run on any
 distribution. PyPI, Homebrew and the AUR come later.
 
 ## How it works

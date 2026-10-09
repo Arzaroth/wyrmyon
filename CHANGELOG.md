@@ -31,8 +31,9 @@
 - Several paths at once travel as one bundle, unpacked as a directory named
   `files`.
 - Runs on Linux, macOS and Windows, on x86_64 and arm64. Each release has
-  .deb, .rpm and Arch packages, a Windows MSI, archives, and install scripts
-  for Linux, macOS and Windows; the Linux binaries are static and run on any
-  distribution.
-- Man pages and bash, zsh, fish, PowerShell and elvish completions in every
-  package and archive.
+  .deb, .rpm and Arch packages, a Windows MSI and archives, and
+  `scripts/install.sh` and `scripts/install.ps1` install the latest one; the
+  Linux binaries are static and run on any distribution.
+- Man pages and bash, zsh and fish completions in the Linux packages, the
+  archives and what `install.sh` installs; the archives add PowerShell and
+  elvish completions.

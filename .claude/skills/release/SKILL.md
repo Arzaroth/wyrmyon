@@ -55,7 +55,7 @@ scripts/release.sh <x.y.z>
 It refuses unless on a clean `master` level with `origin/master`, with
 something under `[Unreleased]` and no `v<x.y.z>` tag yet. It moves
 `[Unreleased]` into `## [x.y.z] - <UTC date>`, sets the workspace version
-(and `Cargo.lock`), runs the gate, checks `wyrm --version` prints
+(and `Cargo.lock`) and the PKGBUILDs' `pkgver`, runs the gate, checks `wyrm --version` prints
 `wyrmyon x.y.z`, then commits `[master] chore(release): x.y.z`, creates the
 annotated tag `vx.y.z` and pushes both to `origin`; a failed gate undoes the
 bump. The GitHub mirror syncs on commit; confirm the tag reached GitHub
@@ -65,7 +65,7 @@ workflow.
 ## 4. Watch the Release workflow
 
 ```bash
-run=$(gh run list -R Arzaroth/wyrmyon --workflow Release --limit 1 --json databaseId --jq '.[0].databaseId')
+run=$(gh run list -R Arzaroth/wyrmyon --workflow Release --event push --branch v<x.y.z> --limit 1 --json databaseId --jq '.[0].databaseId')
 gh run watch "$run" -R Arzaroth/wyrmyon --exit-status
 gh release view v<x.y.z> -R Arzaroth/wyrmyon --json assets --jq '.assets[].name'
 ```
