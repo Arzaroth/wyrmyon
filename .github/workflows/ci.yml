@@ -11,12 +11,17 @@ permissions:
 jobs:
   binary:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64
             runs-on: ubuntu-latest
           - arch: aarch64
             runs-on: ubuntu-24.04-arm
+          - arch: aarch64-macos
+            runs-on: macos-latest
+          - arch: x86_64-windows
+            runs-on: windows-latest
     runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Checkout
@@ -32,7 +37,6 @@ jobs:
 
       - name: Test
         run: cargo test --locked
-
 
   coverage:
     runs-on: ubuntu-latest
