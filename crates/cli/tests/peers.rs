@@ -453,6 +453,7 @@ async fn in_a_terminal(
         .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
         .env("WYRMYON_IROH_RELAYS", "disabled")
         .env("WYRMYON_CACHE_DIR", support::cache_dir())
+        .env("TERM", "xterm")
         .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -566,26 +567,36 @@ async fn an_unreadable_file_is_reported_to_an_iroh_receiver() {
 #[tokio::test(flavor = "multi_thread")]
 async fn bare_wyrm_in_a_terminal_asks_for_the_code_and_completes_its_words() {
     let server = MailboxServer::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let pending = wyrmyon_wormhole::create(&config(&server, false), 2)
-        .await
-        .unwrap();
-    let code = pending.code().to_string();
-    let (nameplate, words) = code.split_once('-').unwrap();
-    let (first, second) = words.split_once('-').unwrap();
-    let typed = format!("{nameplate}-{}\t{second}", &first[..first.len() - 1]);
-    let questions = [("wormhole code", typed.as_str())];
-    let terminal = in_a_terminal(&server, dir.path(), "", &questions);
-    let peer = async {
-        let mut sender = pending.pair().await.unwrap();
-        sender
-            .send_json(&json!({"offer": {"message": "completed"}}))
+    for (command, words) in [("", 2), ("receive --code-length 3", 3)] {
+        let dir = tempfile::tempdir().unwrap();
+        let pending = wyrmyon_wormhole::create(&config(&server, false), words)
             .await
             .unwrap();
-        until(&mut sender, "answer").await;
-        sender.close(Mood::Happy).await;
-    };
-    let ((ok, output), ()) = tokio::join!(terminal, peer);
-    assert!(ok, "{output}");
-    assert!(output.contains("completed"), "{output}");
+        let code = pending.code().to_string();
+        let mut parts = code.split('-');
+        let mut typed = format!("{}-", parts.next().unwrap());
+        let mut so_far = typed.clone();
+        for word in parts {
+            let short = &word[..word.len() - 1];
+            let unique =
+                wyrmyon_wormhole::code::completions(&format!("{so_far}{short}"), words).len() == 1;
+            typed.push_str(if unique { short } else { word });
+            typed.push('\t');
+            so_far = format!("{so_far}{word}-");
+        }
+        let questions = [("wormhole code", typed.as_str())];
+        let terminal = in_a_terminal(&server, dir.path(), command, &questions);
+        let peer = async {
+            let mut sender = pending.pair().await.unwrap();
+            sender
+                .send_json(&json!({"offer": {"message": "completed"}}))
+                .await
+                .unwrap();
+            until(&mut sender, "answer").await;
+            sender.close(Mood::Happy).await;
+        };
+        let ((ok, output), ()) = tokio::join!(terminal, peer);
+        assert!(ok, "{output}");
+        assert!(output.contains("completed"), "{output}");
+    }
 }

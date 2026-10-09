@@ -282,7 +282,6 @@ async fn the_receiver_can_allocate_the_code() {
 fn conflicting_code_flags_are_refused() {
     for args in [
         vec!["receive", "--new", "7-a-b"],
-        vec!["receive", "--code-length", "3", "7-a-b"],
         vec![
             "send",
             "--code",
