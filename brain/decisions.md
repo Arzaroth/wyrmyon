@@ -78,10 +78,14 @@ connection's streams and has no `iroh-blobs` ALPN on its endpoint, so nobody
 else can ask for anything. The hash travels on the bound control stream, not
 the mailbox, so the mailbox protocol did not change. The sender imports by
 reference, so a large file is hashed but not copied. The receiver keeps one
-store per hash under the cache directory: resuming is reopening it, and a
-finished or failed transfer removes one directory, so the cache never grows
-with old data. Two receivers fetching the same content on one machine at once
-would contend for the same store; the second fails rather than corrupting it.
+store per hash under the cache directory: resuming is reopening it, a
+finished transfer or bad data removes one directory, and an interrupted one
+leaves it with a message saying where. Nothing evicts abandoned entries; that
+is the price of resuming across codes. Two receivers fetching the same content
+on one machine at once would contend for the same store; the second fails
+rather than corrupting it. Exporting replaces the placeholder partial file by
+path, which a local user able to write the destination directory could race
+with a symlink; such a user can already write there, so this is left as is.
 
 ## Interoperate first, upgrade second
 

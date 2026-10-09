@@ -21,18 +21,29 @@ wyrm send big.iso        # a new code; the receiver fetches only what it lacks
 - **Receiver.** Reads the hash, opens the store at
   `<cache>/<hash>/` and calls iroh-blobs' `fetch`, which requests only the
   ranges the store does not hold yet; the progress bar starts at what was
-  already there. A completed blob whose size is not the offered size is
-  refused. The blob is exported into the partial file next to the
-  destination, finished the usual way ([files.md](files.md),
+  already there. The fetch stops the moment more bytes arrive than were
+  offered, and a completed blob whose size is not the offered size is
+  refused: either way the data is wrong and its cache entry is deleted, so a
+  peer cannot fill the cache with more than the user accepted. The blob is
+  exported into the partial file next to the destination (moved rather than
+  copied when the store owns the data on the same filesystem, then fsynced),
+  finished the usual way ([files.md](files.md),
   [directories.md](directories.md)), and acked with `{"ack": "ok"}`: no
   SHA-256, since BLAKE3 already verified every byte.
 - **The cache.** `WYRMYON_CACHE_DIR`, else `$XDG_CACHE_HOME/wyrmyon/partial`,
-  else `~/.cache/wyrmyon/partial`. A successful transfer, or one whose data
-  turned out wrong, deletes its `<hash>` directory; an interrupted one leaves
-  it for the next attempt. One store per hash means resuming is just
-  reopening it, and cleaning up is one directory.
+  else `~/.cache/wyrmyon/partial`; empty or relative values are ignored. A
+  successful transfer, or one whose data turned out wrong, deletes its
+  `<hash>` directory. An interrupted one, or one whose export failed (a full
+  disk, say), keeps it for the next attempt and says so in the error, naming
+  the directory to delete if no retry is coming. Nothing evicts abandoned
+  entries: they stay until the same content arrives or the user removes them.
+  One store per hash means resuming is just reopening it, and cleaning up is
+  one directory.
 
 Classic transit with a legacy peer is unchanged: records, SHA-256, no resume.
+
+The sender's progress bar stays empty on this path: the receiver pulls the
+data, so the sender waits for the ack.
 
 ## Sources
 
