@@ -1,0 +1,21 @@
+[package]
+name = "wyrmyon-xtask"
+description = "Release tooling: man pages and shell completions for the packages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
+wyrmyon = { path = "../cli" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
