@@ -1,0 +1,86 @@
+# The .deb and .rpm, built by scripts/package.sh from inside the staged
+# release directory: ARCH (amd64, arm64) and VERSION come from the environment.
+name: wyrmyon
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Marc-Etienne Barrut <anthropic@barrut.me>
+homepage: https://github.com/Arzaroth/wyrmyon
+license: MIT
+description: |
+  A magic-wormhole client that switches to iroh when both peers run wyrmyon.
+  It sends to and receives from the Python wormhole CLI and every other
+  magic-wormhole client; between two wyrmyons the data moves over iroh QUIC
+  with hole-punching and relay fallback, verified and resumable.
+
+contents:
+  - src: ./wyrmyon
+    dst: /usr/bin/wyrmyon
+    file_info:
+      mode: 0755
+  - src: /usr/bin/wyrmyon
+    dst: /usr/bin/wyrm
+    type: symlink
+  - src: ./man/
+    dst: /usr/share/man/man1/
+    file_info:
+      mode: 0644
+  - src: ./completions/wyrmyon.bash
+    dst: /usr/share/bash-completion/completions/wyrmyon
+    file_info:
+      mode: 0644
+  - src: ./completions/wyrm.bash
+    dst: /usr/share/bash-completion/completions/wyrm
+    file_info:
+      mode: 0644
+  - src: ./completions/_wyrmyon
+    dst: /usr/share/zsh/site-functions/_wyrmyon
+    packager: rpm
+    file_info:
+      mode: 0644
+  - src: ./completions/_wyrmyon
+    dst: /usr/share/zsh/vendor-completions/_wyrmyon
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: ./completions/_wyrm
+    dst: /usr/share/zsh/site-functions/_wyrm
+    packager: rpm
+    file_info:
+      mode: 0644
+  - src: ./completions/_wyrm
+    dst: /usr/share/zsh/vendor-completions/_wyrm
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: ./completions/wyrmyon.fish
+    dst: /usr/share/fish/vendor_completions.d/wyrmyon.fish
+    file_info:
+      mode: 0644
+  - src: ./completions/wyrm.fish
+    dst: /usr/share/fish/vendor_completions.d/wyrm.fish
+    file_info:
+      mode: 0644
+  - src: ./README.md
+    dst: /usr/share/doc/wyrmyon/README.md
+    type: doc
+    file_info:
+      mode: 0644
+  - src: ./CHANGELOG.md
+    dst: /usr/share/doc/wyrmyon/CHANGELOG.md
+    type: doc
+    file_info:
+      mode: 0644
+  - src: ./LICENSE
+    dst: /usr/share/licenses/wyrmyon/LICENSE
+    type: license
+    file_info:
+      mode: 0644
+
+rpm:
+  group: Applications/Internet
+  compression: zstd
+deb:
+  compression: xz
