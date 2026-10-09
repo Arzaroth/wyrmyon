@@ -9,7 +9,7 @@ use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
 use crate::transfer::Pipe;
-use crate::{Global, mood_for, show_welcome, transfer, zipdir};
+use crate::{CODE_LENGTH, Global, mood_for, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
 #[command(group = clap::ArgGroup::new("what").required(true).args(["text", "paths"]))]
@@ -20,7 +20,7 @@ pub struct SendArgs {
     /// Files or directories to send; several travel as one bundle named `files`
     paths: Vec<PathBuf>,
     /// Number of words in the generated code
-    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=8))]
+    #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
     code_length: u8,
     /// Use this code instead of generating one, e.g. the one a receiver chose
     #[arg(long, conflicts_with = "code_length")]
@@ -38,7 +38,7 @@ impl SendArgs {
         Self {
             text: None,
             paths,
-            code_length: 2,
+            code_length: CODE_LENGTH,
             code: None,
         }
     }
@@ -47,7 +47,7 @@ impl SendArgs {
         Self {
             text: Some("-".into()),
             paths: Vec::new(),
-            code_length: 2,
+            code_length: CODE_LENGTH,
             code: None,
         }
     }
@@ -165,7 +165,7 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
     Ok(Payload::File(path, offer))
 }
 
-fn display_name(path: &Path) -> anyhow::Result<String> {
+pub fn display_name(path: &Path) -> anyhow::Result<String> {
     let resolved =
         std::fs::canonicalize(path).with_context(|| format!("cannot send {}", path.display()))?;
     Ok(resolved

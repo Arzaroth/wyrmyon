@@ -64,13 +64,9 @@ pub fn build_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Built>
     let mut named = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for path in paths {
-        let name = std::fs::canonicalize(path)
-            .with_context(|| format!("cannot send {}", path.display()))?
-            .file_name()
-            .with_context(|| format!("{} has no name", path.display()))?
-            .to_owned();
+        let name = crate::send::display_name(path)?;
         if !seen.insert(name.clone()) {
-            bail!("two of the paths are named {}", name.to_string_lossy());
+            bail!("two of the paths are named {name}");
         }
         named.push((path, PathBuf::from(name)));
     }

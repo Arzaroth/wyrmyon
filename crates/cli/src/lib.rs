@@ -12,6 +12,7 @@ use wyrmyon_transport_iroh::IrohTransport;
 use wyrmyon_wormhole::{Config, Key, Mood, PUBLIC_RELAY, Welcome};
 
 const PUBLIC_TRANSIT_HELPER: &str = "tcp:transit.magic-wormhole.io:4001";
+const CODE_LENGTH: u8 = 2;
 
 #[derive(Parser)]
 #[command(

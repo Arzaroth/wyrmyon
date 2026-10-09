@@ -10,7 +10,7 @@ use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
 use crate::transfer::Pipe;
-use crate::{Global, cache_dir, mood_for, printable, show_welcome, transfer, zipdir};
+use crate::{CODE_LENGTH, Global, cache_dir, mood_for, printable, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
 pub struct ReceiveArgs {
@@ -20,8 +20,8 @@ pub struct ReceiveArgs {
     /// Allocate a code here, for the sender to use with `send --code`
     #[arg(long, visible_alias = "allocate")]
     new: bool,
-    /// Number of words in the code `--new` allocates
-    #[arg(long, default_value_t = 2, requires = "new", value_parser = clap::value_parser!(u8).range(1..=8))]
+    /// Number of words in the code: the one `--new` allocates, or the one the prompt completes
+    #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
     code_length: u8,
     /// Accept a file or directory without asking
     #[arg(long)]
@@ -36,7 +36,7 @@ impl ReceiveArgs {
         Self {
             code,
             new: false,
-            code_length: 2,
+            code_length: CODE_LENGTH,
             accept_file: false,
             output_file: None,
         }
@@ -443,6 +443,7 @@ async fn prompt_code(words: usize) -> anyhow::Result<Code> {
     Ok(line.trim().parse()?)
 }
 
+#[derive(rustyline::Helper, rustyline::Hinter, rustyline::Highlighter, rustyline::Validator)]
 struct CodeCompleter {
     words: usize,
 }
@@ -462,16 +463,6 @@ impl rustyline::completion::Completer for CodeCompleter {
         ))
     }
 }
-
-impl rustyline::hint::Hinter for CodeCompleter {
-    type Hint = String;
-}
-
-impl rustyline::highlight::Highlighter for CodeCompleter {}
-
-impl rustyline::validate::Validator for CodeCompleter {}
-
-impl rustyline::Helper for CodeCompleter {}
 
 #[cfg(test)]
 mod tests {
