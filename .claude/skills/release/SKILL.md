@@ -16,10 +16,14 @@ The pipeline is described in `brain/architecture/distribution.md`. Two
 things live outside the repository and must exist before the first tag, or the
 Release workflow fails halfway through:
 
-- **PyPI trusted publisher** for the `wyrmyon` project (a pending publisher
-  before the first upload): owner `Arzaroth`, repository `wyrmyon`, workflow
-  `release.yml` (the caller, not `publish-pypi.yml`), environment `pypi`
-  (GitHub creates it on first use). Without it the upload is refused.
+- **PyPI trusted publishers** for the `wyrmyon` project (pending publishers
+  before the first upload): owner `Arzaroth`, repository `wyrmyon`,
+  environment `pypi` (GitHub creates it on first use), and register it twice,
+  once with workflow `publish-pypi.yml` and once with `release.yml`. The
+  upload runs in the reusable `publish-pypi.yml` called from `release.yml`,
+  and PyPI's support for reusable workflows is partial (it matches one of the
+  two depending on the claim it reads), so both names keep it working.
+  Without them the upload is refused after the GitHub release is out.
 - **`Arzaroth/homebrew-tap`** on GitHub, and a `HOMEBREW_TAP_TOKEN` secret on
   `Arzaroth/wyrmyon` that can push to it.
 
@@ -78,9 +82,14 @@ gh run watch "$run" -R Arzaroth/wyrmyon --exit-status
 gh release view v<x.y.z> -R Arzaroth/wyrmyon --json assets --jq '.assets[].name'
 ```
 
-A failed run leaves a pushed tag without a release: read the failing job
-(`gh run view "$run" --log-failed`), fix on `master`, and re-run the workflow
-for the same tag rather than moving the tag.
+Read a failing job with `gh run view "$run" --log-failed`. A re-run executes
+the workflow files and the code at the tag, so it only helps with a transient
+failure (a runner, the network, PyPI being down): `gh run rerun "$run"
+--failed`. The PyPI upload skips files already there, so re-running it
+finishes a partial upload. Anything else is fixed on `master` and shipped as
+the next patch release; never move or reuse a tag. If the build jobs failed,
+nothing is public yet and the dead tag just stays unreleased; if `host` ran,
+the GitHub release exists and the next patch supersedes it.
 
 ## 5. Verify it installs
 

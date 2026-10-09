@@ -29,8 +29,10 @@ and x86_64 Windows. The code is the same everywhere except:
   and received with the platform's defaults.
 - The partial-transfer cache: `%LOCALAPPDATA%\wyrmyon\partial` on Windows
   ([features/resume.md](../features/resume.md)).
-- Tests that need a pty, Unix permissions or the Python servers (the interop
-  suite) run on Unix only.
+- Received names: on Windows a file or zip entry name Windows cannot hold is
+  refused ([features/files.md](../features/files.md)).
+- Tests that need a pty, Unix permissions, symlinks or the Python servers
+  (the interop suite) run on Unix only ([testing.md](testing.md)).
 
 ## Packaging
 
@@ -47,12 +49,16 @@ disagree). It builds:
 - the GitHub release, its notes taken from the version's `CHANGELOG.md`
   section.
 
-Its custom publish job calls `.github/workflows/publish-pypi.yml`: **maturin**
-(`pyproject.toml`, `bindings = "bin"`) builds a wheel per target plus an sdist,
-and publishes them to PyPI with trusted publishing (the `pypi` environment, no
-token). The wheels carry the native binaries and no Python code, so
-`uvx wyrmyon` and `pipx install wyrmyon` work without a Python runtime, the
-way ruff and uv ship.
+Two custom jobs are reusable workflows it calls. `build-wheels.yml` runs with
+the archive builds, before anything is published: **maturin**
+(`pyproject.toml`, `bindings = "bin"`) builds a wheel per target and an sdist,
+so a broken wheel stops the release while nothing is public yet.
+`publish-pypi.yml` runs after the GitHub release and uploads them to PyPI with
+trusted publishing (the `pypi` environment, no token), skipping files already
+there so a re-run can finish a partial upload. The wheels carry the native
+binaries and no Python code, so `uvx wyrmyon` and `pipx install wyrmyon` work
+without a Python runtime, the way ruff and uv ship. CI builds the x86_64
+manylinux wheel on every pull request and checks it carries both binaries.
 
 Every artefact carries both binaries, `wyrmyon` and `wyrm`. The package name is
 always `wyrmyon`; `wyrm` is taken on crates.io and PyPI. The crates themselves
@@ -61,12 +67,13 @@ path only, so the version lives once, in the workspace `Cargo.toml`.
 
 `scripts/release.sh X.Y.Z` cuts a release: it dates the `[Unreleased]`
 changelog section, bumps the version, runs the gate, checks `wyrm --version`,
-commits, tags and pushes ([the release skill](../../.claude/skills/release/SKILL.md)).
+commits, tags and pushes master and the tag atomically ([the release skill](../../.claude/skills/release/SKILL.md)).
 
 ## Sources
 
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
 - [.github/workflows/release.yml](../../.github/workflows/release.yml)
+- [.github/workflows/build-wheels.yml](../../.github/workflows/build-wheels.yml)
 - [.github/workflows/publish-pypi.yml](../../.github/workflows/publish-pypi.yml)
 - [dist-workspace.toml](../../dist-workspace.toml)
 - [pyproject.toml](../../pyproject.toml)
