@@ -6,15 +6,17 @@
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $repo = if ($env:WYRMYON_REPO) { $env:WYRMYON_REPO } else { 'Arzaroth/wyrmyon' }
 $base = $env:WYRMYON_DOWNLOAD_BASE
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\wyrmyon'
 
-$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+$machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+$arch = switch ($machine) {
     'AMD64' { 'x86_64' }
     'ARM64' { 'aarch64' }
-    default { throw "install: no release for $env:PROCESSOR_ARCHITECTURE" }
+    default { throw "install: no release for $machine" }
 }
 
 if (-not $base) {
@@ -49,17 +51,34 @@ try {
     Expand-Archive "$tmp\$archive" -DestinationPath $tmp
     $src = Join-Path $tmp ([IO.Path]::GetFileNameWithoutExtension($archive))
     New-Item -ItemType Directory -Force $installDir | Out-Null
+    foreach ($exe in 'wyrmyon.exe', 'wyrm.exe') {
+        $old = Join-Path $installDir $exe
+        Remove-Item "$old.old" -Force -ErrorAction SilentlyContinue
+        if (Test-Path $old) { Move-Item $old "$old.old" -Force }
+    }
     foreach ($file in 'wyrmyon.exe', 'wyrm.exe', 'README.md', 'LICENSE') {
         Copy-Item (Join-Path $src $file) $installDir -Force
+    }
+    foreach ($exe in 'wyrmyon.exe', 'wyrm.exe') {
+        Remove-Item (Join-Path $installDir "$exe.old") -Force -ErrorAction SilentlyContinue
     }
 } finally {
     Remove-Item -Recurse -Force $tmp
 }
 
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (-not (($userPath -split ';') -contains $installDir)) {
-    $joined = if ($userPath) { "$userPath;$installDir" } else { $installDir }
-    [Environment]::SetEnvironmentVariable('Path', $joined, 'User')
-    Write-Host "Added $installDir to your PATH: open a new terminal to use wyrm."
+$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+try {
+    $userPath = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $entries = $userPath -split ';' | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') }
+    if ($entries -notcontains $installDir) {
+        $joined = if ($userPath) { "$($userPath.TrimEnd(';'));$installDir" } else { $installDir }
+        $key.SetValue('Path', $joined, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        # A registry write alone does not tell running programs; this broadcasts WM_SETTINGCHANGE.
+        [Environment]::SetEnvironmentVariable('WYRMYON_PATH_REFRESH', '1', 'User')
+        [Environment]::SetEnvironmentVariable('WYRMYON_PATH_REFRESH', $null, 'User')
+        Write-Host "Added $installDir to your PATH: open a new terminal to use wyrm."
+    }
+} finally {
+    $key.Close()
 }
 Write-Host "Installed $(& (Join-Path $installDir 'wyrmyon.exe') --version) into $installDir"

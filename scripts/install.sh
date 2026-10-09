@@ -58,14 +58,19 @@ if [ -z "$tag" ] && [ -z "$base" ]; then
   tag="${latest##*/}"
   case "$tag" in v*) ;; *) die "could not find the latest release of $repo" ;; esac
 fi
-[ -n "$base" ] || base="https://github.com/$repo/releases/download/$tag"
+case "$base" in
+"") base="https://github.com/$repo/releases/download/$tag" ;;
+/*) base="file://$base" ;;
+esac
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS"
-name=$(sed -n "s/^[0-9a-f]*  \(wyrmyon-v.*-$arch-$os\)\.tar\.gz$/\1/p" "$tmp/SHA256SUMS")
+version="${tag:-v[0-9][^ ]*}"
+name=$(sed -n "s/^[0-9a-f]*  \(wyrmyon-$version-$arch-$os\)\.tar\.gz$/\1/p" "$tmp/SHA256SUMS")
 [ -n "$name" ] || die "no $arch-$os archive in $base"
+[ "$(printf '%s\n' "$name" | wc -l)" -eq 1 ] || die "several $arch-$os archives in $base: pick one with --version"
 archive="$name.tar.gz"
 
 echo "Downloading $archive"
