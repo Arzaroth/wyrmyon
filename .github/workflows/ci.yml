@@ -52,7 +52,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: ShellCheck
-        run: shellcheck scripts/coverage.sh
+        run: shellcheck scripts/*.sh
 
       - name: Line coverage at or above the floor
         run: scripts/coverage.sh --check
