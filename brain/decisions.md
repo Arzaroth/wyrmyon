@@ -159,4 +159,6 @@ packages from the PKGBUILDs the AUR will get, so they are tested by the same
 run. The Linux binaries are static musl: one binary per architecture for
 every package format and distribution, with no glibc floor, as fd and atuin
 ship. Every package is installed on a matching system before the release
-job, which runs last, so a broken package never reaches a published release.
+job (all but the aarch64 Arch package, for want of an arm64 Arch image), and
+the release job runs last, so a broken package never reaches a published
+release.

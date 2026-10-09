@@ -47,10 +47,13 @@ everywhere except:
 | `wyrmyon-vX.Y.Z-<target>.msi` | Windows x64 and arm64 | WiX 5, `packaging/windows/wyrmyon.wxs` |
 | `SHA256SUMS` | the install scripts, anyone checking | the workflow |
 
-Every archive and package carries both binaries, a man page per binary and
-subcommand, and bash, zsh and fish completions (PowerShell and elvish in the
-archives too), generated from the clap definition by
-`cargo run -p wyrmyon-xtask -- assets DIR`. `wyrm` is a symlink to `wyrmyon`
+Every archive and Linux package carries both binaries, a man page per binary
+and subcommand, and bash, zsh and fish completions (PowerShell and elvish in
+the archives too), generated from the clap definition by
+`cargo run -p wyrmyon-xtask -- assets DIR`; the MSI holds the binaries, the
+README and the licence. The .deb and .rpm get the man pages gzipped, and the
+licence where each expects it (`/usr/share/doc/wyrmyon/copyright`,
+`/usr/share/licenses/wyrmyon/LICENSE`). `wyrm` is a symlink to `wyrmyon`
 everywhere but Windows, where it is a second copy. The packages put the man
 pages and completions where each distribution looks for them (zsh's are in
 `vendor-completions` on Debian, `site-functions` elsewhere).
@@ -81,7 +84,10 @@ latest release (or `--version` / `WYRMYON_VERSION`), checked against
 man pages and completions under `~/.local/share` and `~/.config/fish`;
 `install.ps1` into `%LOCALAPPDATA%\Programs\wyrmyon`, added to the user PATH.
 `WYRMYON_DOWNLOAD_BASE` points both at another location, a directory or a
-`file://` URL, which is how the workflow tests them.
+`file://` URL, which is how the workflow tests them. On Windows, a running
+`wyrm.exe` is renamed aside rather than overwritten, and the PATH entry is
+written to the registry as `REG_EXPAND_SZ` so the user's other `%VAR%`
+entries survive.
 
 ## The release workflow
 
@@ -89,7 +95,7 @@ man pages and completions under `~/.local/share` and `~/.config/fish`;
 for an existing tag):
 
 1. **build**, per target on a native runner (x86_64 macOS is cross-built on
-   the arm64 one and not tested): checks the tag matches the workspace
+   the arm64 one and its tests run under Rosetta): checks the tag matches the workspace
    version, runs the tests for the target, builds, checks `--version`, and
    runs `scripts/package.sh`, then WiX on Windows.
 2. **arch**, in an `archlinux` container: `scripts/arch.sh bin` and
@@ -99,12 +105,14 @@ for an existing tag):
    package (x86_64, there is no arm64 Arch image), `install.sh` on Linux and
    macOS, `install.ps1` and an MSI install and uninstall on Windows, on both
    architectures where a runner exists.
-5. **release**: the GitHub release, its notes taken from the version's
-   `CHANGELOG.md` section, refused if there is none.
+5. **release**: a draft GitHub release with every file, its notes taken from
+   the version's `CHANGELOG.md` section (refused if there is none), then
+   published, so `releases/latest` never points at a half-uploaded release.
 
 Pull requests that touch packaging run steps 1 to 4 (with the source PKGBUILD
 built from `git archive HEAD`), so the pipeline is tested before a tag needs
-it. A failed tag run is fixed on `master` and shipped as the next patch: a
+it. One run per tag or pull request at a time: a newer push cancels a pull
+request's older run. A failed tag run is fixed on `master` and shipped as the next patch: a
 re-run builds the tag's own files.
 
 `scripts/release.sh X.Y.Z` cuts a release: it dates the `[Unreleased]`

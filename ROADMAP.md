@@ -90,7 +90,8 @@ free; the iroh path is then a pure upgrade on top of it.
       cargo-dist (it has no deb, rpm or Arch); static musl on Linux; x86_64
       and arm64 on Linux, macOS and Windows; macOS gets tarballs and the
       install script, no unsigned .pkg or .dmg; the MSI is unsigned;
-      every package is installed on a matching system before a release.
+      every package but the aarch64 Arch one is installed on a matching
+      system before a release.
 
 ## Later
 
