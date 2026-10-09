@@ -56,10 +56,17 @@ its nameplate and closed with the right mood. It is a dev-dependency only.
 | `crates/cli/tests/cli.rs` | The built binaries: version, exit status on a bad code, text and files (empty and 300 kB) between two `wyrm` processes, a refused offer, a file refused without confirmation and over an existing one, non-regular files refused, a hand-written sender that sends more than it offered, a directory through the relay only, a receiver-allocated code, conflicting code flags refused, `-o` naming an existing directory, two wyrms on iroh (a file and a directory) unless either forces classic, `--force-iroh` refused against a legacy peer on either side with the reason on both, bare arguments (a path, a code, piped stdin), a target that is both a code and a file, several paths as one bundle and duplicate names refused, a code piped into `receive` |
 | `crates/cli/tests/peers.rs` | `wyrm` against scripted library peers: every refusal both ways, unknown messages and offers, a destination appearing mid-transfer, a zip larger than its offer over iroh, bad acks, a closed stdout, stdin text, the MOTD, the code and consent prompts through a pty, and bare `wyrm` completing a half-typed word with Tab |
 | `crates/cli/tests/interop.rs` | Against the Python client; `#[ignore]`d, see below |
+| `crates/xtask/src/main.rs` unit tests | Man pages for both binaries and their subcommands, and completions for five shells, each naming the subcommands' options; an unwritable output is an error |
 
 The tests that need a pty, Unix permissions, Unix sockets or symlinks, or
 `/dev/null` are `#[cfg(unix)]`, and so is the interop suite: the Windows CI
 job runs the rest.
+
+## Packages
+
+The release workflow tests packaging on every pull request that touches it:
+it builds and tests the six release targets, then installs each package on a
+matching system and runs it ([distribution.md](distribution.md)).
 
 ## Interop with the Python client
 
