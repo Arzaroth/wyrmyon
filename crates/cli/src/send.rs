@@ -12,13 +12,13 @@ use crate::transfer::Pipe;
 use crate::{Global, mood_for, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
-#[command(group = clap::ArgGroup::new("what").required(true).args(["text", "path"]))]
+#[command(group = clap::ArgGroup::new("what").required(true).args(["text", "paths"]))]
 pub struct SendArgs {
     /// Text to send; `-` reads it from stdin
     #[arg(long)]
     text: Option<String>,
-    /// File or directory to send
-    path: Option<PathBuf>,
+    /// Files or directories to send; several travel as one bundle named `files`
+    paths: Vec<PathBuf>,
     /// Number of words in the generated code
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=8))]
     code_length: u8,
@@ -33,12 +33,32 @@ enum Payload {
     Directory(zipdir::Built, DirectoryOffer),
 }
 
+impl SendArgs {
+    pub fn of_paths(paths: Vec<PathBuf>) -> Self {
+        Self {
+            text: None,
+            paths,
+            code_length: 2,
+            code: None,
+        }
+    }
+
+    pub fn of_stdin() -> Self {
+        Self {
+            text: Some("-".into()),
+            paths: Vec::new(),
+            code_length: 2,
+            code: None,
+        }
+    }
+}
+
 pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
     let payload = match args.text {
         Some(text) if text == "-" => Payload::Text(stdin_text().await?),
         Some(text) => Payload::Text(text),
-        None => path_payload(args.path.context("nothing to send")?).await?,
+        None => paths_payload(args.paths).await?,
     };
 
     let pending = if let Some(code) = code {
@@ -91,6 +111,34 @@ enum Prepared {
     Classic(Transit),
 }
 
+async fn paths_payload(mut paths: Vec<PathBuf>) -> anyhow::Result<Payload> {
+    if paths.len() == 1 {
+        return path_payload(paths.remove(0)).await;
+    }
+    eprintln!("Building zipfile of {} items..", paths.len());
+    let cancel = zipdir::Cancel::default();
+    let _cancel_on_drop = cancel.on_drop();
+    let built = tokio::task::spawn_blocking(move || zipdir::build_bundle(&paths, &cancel))
+        .await
+        .context("building the zip file")??;
+    Ok(directory_payload(built, "files".into()))
+}
+
+fn directory_payload(built: zipdir::Built, name: String) -> Payload {
+    eprintln!(
+        "Sending directory ({} bytes compressed) named '{name}'",
+        built.zipsize
+    );
+    let offer = DirectoryOffer {
+        mode: "zipfile/deflated".into(),
+        dirname: name,
+        zipsize: built.zipsize,
+        numbytes: built.numbytes,
+        numfiles: built.numfiles,
+    };
+    Payload::Directory(built, offer)
+}
+
 async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
     let meta = tokio::fs::metadata(&path)
         .await
@@ -104,18 +152,7 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
         let built = tokio::task::spawn_blocking(move || zipdir::build(&dir, &cancel))
             .await
             .context("building the zip file")??;
-        eprintln!(
-            "Sending directory ({} bytes compressed) named '{name}'",
-            built.zipsize
-        );
-        let offer = DirectoryOffer {
-            mode: "zipfile/deflated".into(),
-            dirname: name,
-            zipsize: built.zipsize,
-            numbytes: built.numbytes,
-            numfiles: built.numfiles,
-        };
-        return Ok(Payload::Directory(built, offer));
+        return Ok(directory_payload(built, name));
     }
     if !meta.is_file() {
         bail!("{} is not a regular file", path.display());

@@ -57,6 +57,34 @@ impl Read for Checked<'_> {
 }
 
 pub fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
+    zip_with(cancel, |walk, zip| walk.add_dir(zip, dir, Path::new("")))
+}
+
+pub fn build_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Built> {
+    let mut named = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for path in paths {
+        let name = std::fs::canonicalize(path)
+            .with_context(|| format!("cannot send {}", path.display()))?
+            .file_name()
+            .with_context(|| format!("{} has no name", path.display()))?
+            .to_owned();
+        if !seen.insert(name.clone()) {
+            bail!("two of the paths are named {}", name.to_string_lossy());
+        }
+        named.push((path, PathBuf::from(name)));
+    }
+    zip_with(cancel, |walk, zip| {
+        named
+            .iter()
+            .try_for_each(|(path, name)| walk.add_entry(zip, path, name))
+    })
+}
+
+fn zip_with(
+    cancel: &Cancel,
+    add: impl FnOnce(&mut Walk<'_>, &mut ZipWriter<File>) -> anyhow::Result<()>,
+) -> anyhow::Result<Built> {
     let file = tempfile::NamedTempFile::new().context("creating a temporary zip file")?;
     let mut zip = ZipWriter::new(file.reopen().context("opening the temporary zip file")?);
     let mut walk = Walk {
@@ -64,7 +92,7 @@ pub fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
         ancestors: Vec::new(),
         cancel,
     };
-    walk.add_dir(&mut zip, dir, Path::new(""))?;
+    add(&mut walk, &mut zip)?;
     let totals = walk.totals;
     zip.finish().context("writing the zip file")?;
     let zipsize = file.as_file().metadata()?.len();
@@ -109,33 +137,41 @@ impl Walk<'_> {
             zip.add_directory(name, SimpleFileOptions::default())?;
         }
         for entry in entries {
-            self.cancel.check()?;
-            let path = entry.path();
-            let name = prefix.join(entry.file_name());
-            let meta =
-                std::fs::metadata(&path).with_context(|| format!("reading {}", path.display()))?;
-            if meta.is_dir() {
-                self.add_dir(zip, &path, &name)?;
-            } else if meta.is_file() {
-                let options = SimpleFileOptions::default()
-                    .compression_method(CompressionMethod::Deflated)
-                    .unix_permissions(meta.permissions().mode() & 0o777)
-                    .large_file(meta.len() >= ZIP64_FROM);
-                zip.start_file(arcname(&name)?, options)?;
-                let mut source =
-                    File::open(&path).with_context(|| format!("opening {}", path.display()))?;
-                let mut reader = Checked {
-                    inner: &mut source,
-                    cancel: self.cancel,
-                };
-                let copied = io::copy(&mut reader, zip)?;
-                self.totals.0 += copied;
-                self.totals.1 += 1;
-            } else {
-                eprintln!("skipping {}: not a regular file", path.display());
-            }
+            self.add_entry(zip, &entry.path(), &prefix.join(entry.file_name()))?;
         }
         self.ancestors.pop();
+        Ok(())
+    }
+
+    fn add_entry(
+        &mut self,
+        zip: &mut ZipWriter<File>,
+        path: &Path,
+        name: &Path,
+    ) -> anyhow::Result<()> {
+        self.cancel.check()?;
+        let meta =
+            std::fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
+        if meta.is_dir() {
+            self.add_dir(zip, path, name)?;
+        } else if meta.is_file() {
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Deflated)
+                .unix_permissions(meta.permissions().mode() & 0o777)
+                .large_file(meta.len() >= ZIP64_FROM);
+            zip.start_file(arcname(name)?, options)?;
+            let mut source =
+                File::open(path).with_context(|| format!("opening {}", path.display()))?;
+            let mut reader = Checked {
+                inner: &mut source,
+                cancel: self.cancel,
+            };
+            let copied = io::copy(&mut reader, zip)?;
+            self.totals.0 += copied;
+            self.totals.1 += 1;
+        } else {
+            eprintln!("skipping {}: not a regular file", path.display());
+        }
         Ok(())
     }
 }

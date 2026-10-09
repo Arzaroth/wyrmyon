@@ -31,6 +31,18 @@ pub struct ReceiveArgs {
     output_file: Option<PathBuf>,
 }
 
+impl ReceiveArgs {
+    pub fn of_code(code: Option<String>) -> Self {
+        Self {
+            code,
+            new: false,
+            code_length: 2,
+            accept_file: false,
+            output_file: None,
+        }
+    }
+}
+
 pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
     let pending = if args.new {
         let pending =
@@ -45,7 +57,7 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
     } else {
         let code: Code = match &args.code {
             Some(code) => code.parse()?,
-            None => prompt_code().await?,
+            None => prompt_code(usize::from(args.code_length)).await?,
         };
         wyrmyon_wormhole::join(&global.config(), code).await?
     };
@@ -408,15 +420,58 @@ async fn confirm(question: &str) -> anyhow::Result<bool> {
     Ok(matches!(line.trim(), "y" | "Y" | "yes"))
 }
 
-async fn prompt_code() -> anyhow::Result<Code> {
-    eprint!("Enter receive wormhole code: ");
-    let mut line = String::new();
-    BufReader::new(tokio::io::stdin())
-        .read_line(&mut line)
-        .await
-        .context("reading the code")?;
+async fn prompt_code(words: usize) -> anyhow::Result<Code> {
+    const PROMPT: &str = "Enter receive wormhole code: ";
+    if !std::io::stdin().is_terminal() {
+        eprint!("{PROMPT}");
+        let mut line = String::new();
+        BufReader::new(tokio::io::stdin())
+            .read_line(&mut line)
+            .await
+            .context("reading the code")?;
+        return Ok(line.trim().parse()?);
+    }
+    let line = tokio::task::spawn_blocking(move || {
+        let mut editor =
+            rustyline::Editor::<CodeCompleter, rustyline::history::DefaultHistory>::new()?;
+        editor.set_helper(Some(CodeCompleter { words }));
+        editor.readline(PROMPT)
+    })
+    .await
+    .context("reading the code")?
+    .context("reading the code")?;
     Ok(line.trim().parse()?)
 }
+
+struct CodeCompleter {
+    words: usize,
+}
+
+impl rustyline::completion::Completer for CodeCompleter {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<String>)> {
+        Ok((
+            0,
+            wyrmyon_wormhole::code::completions(&line[..pos], self.words),
+        ))
+    }
+}
+
+impl rustyline::hint::Hinter for CodeCompleter {
+    type Hint = String;
+}
+
+impl rustyline::highlight::Highlighter for CodeCompleter {}
+
+impl rustyline::validate::Validator for CodeCompleter {}
+
+impl rustyline::Helper for CodeCompleter {}
 
 #[cfg(test)]
 mod tests {

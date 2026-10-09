@@ -14,12 +14,18 @@ use wyrmyon_wormhole::{Config, Key, Mood, PUBLIC_RELAY, Welcome};
 const PUBLIC_TRANSIT_HELPER: &str = "tcp:transit.magic-wormhole.io:4001";
 
 #[derive(Parser)]
-#[command(version, about)]
+#[command(
+    version,
+    about,
+    after_help = "Without a subcommand: paths send, a code receives, piped stdin sends text, and nothing at all asks for a code."
+)]
 struct Cli {
     #[command(flatten)]
     global: Global,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
+    /// Paths to send, or a code to receive
+    targets: Vec<String>,
 }
 
 #[derive(Args)]
@@ -64,7 +70,7 @@ impl From<IrohRelays> for wyrmyon_transport_iroh::Relays {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Send a text message or a file
+    /// Send text, a file, a directory, or several paths as one bundle
     Send(send::SendArgs),
     /// Receive what the other side sends
     Receive(receive::ReceiveArgs),
@@ -120,9 +126,10 @@ pub fn main() -> ExitCode {
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
     let result = runtime.block_on(async {
         let work = async {
-            match cli.command {
-                Command::Send(args) => send::run(&cli.global, args).await,
-                Command::Receive(args) => receive::run(&cli.global, args).await,
+            match cli.command.map_or_else(|| bare(&cli.targets), Ok) {
+                Ok(Command::Send(args)) => send::run(&cli.global, args).await,
+                Ok(Command::Receive(args)) => receive::run(&cli.global, args).await,
+                Err(e) => Err(e),
             }
         };
         tokio::select! {
@@ -136,6 +143,29 @@ pub fn main() -> ExitCode {
             eprintln!("error: {}", printable(&format!("{e:#}")));
             ExitCode::FAILURE
         }
+    }
+}
+
+fn bare(targets: &[String]) -> anyhow::Result<Command> {
+    use std::io::IsTerminal;
+    match targets {
+        [] if std::io::stdin().is_terminal() => {
+            Ok(Command::Receive(receive::ReceiveArgs::of_code(None)))
+        }
+        [] => Ok(Command::Send(send::SendArgs::of_stdin())),
+        [one] if wyrmyon_wormhole::code::looks_like_code(one) => {
+            if std::path::Path::new(one).exists() {
+                anyhow::bail!(
+                    "{one} is both a code and a file here: say `wyrm send {one}` or `wyrm receive {one}`"
+                );
+            }
+            Ok(Command::Receive(receive::ReceiveArgs::of_code(Some(
+                one.clone(),
+            ))))
+        }
+        paths => Ok(Command::Send(send::SendArgs::of_paths(
+            paths.iter().map(std::path::PathBuf::from).collect(),
+        ))),
     }
 }
 
