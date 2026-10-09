@@ -46,9 +46,11 @@
       <Component Id="WyrmExe" Guid="*">
         <File Id="WyrmExeFile" Source="$(StageDir)\wyrm.exe" KeyPath="yes" />
       </Component>
-      <Component Id="Docs" Guid="*">
+      <Component Id="Readme" Guid="*">
         <File Id="ReadmeFile" Source="$(StageDir)\README.md" KeyPath="yes" />
-        <File Id="LicenseFile" Source="$(StageDir)\LICENSE" />
+      </Component>
+      <Component Id="License" Guid="*">
+        <File Id="LicenseFile" Source="$(StageDir)\LICENSE" KeyPath="yes" />
       </Component>
       <!--
         Part="last" appends to the user's PATH, and MSI takes it back out on

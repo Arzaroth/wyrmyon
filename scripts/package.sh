@@ -62,10 +62,14 @@ if [[ $target == *linux* ]]; then
     ;;
   esac
   root="$PWD"
+  rm -rf "$stage/man-gz"
+  cp -R "$stage/man" "$stage/man-gz"
+  gzip -9n "$stage"/man-gz/*.1
   for format in deb rpm; do
     (cd "$stage" && ARCH="$arch" VERSION="$version" \
       nfpm package --config "$root/packaging/nfpm.yaml" --packager "$format" --target "$root/$dist/")
   done
 fi
 
+rm -rf "$stage/man-gz"
 ls -l "$dist"
