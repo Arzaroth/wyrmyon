@@ -30,6 +30,5 @@
 - The code prompt completes words with Tab.
 - Several paths at once travel as one bundle, unpacked as a directory named
   `files`.
-- Runs on macOS and Windows as well as Linux. Install with `uvx wyrmyon` (or
-  pipx), Homebrew, or the shell and PowerShell installers from the GitHub
-  release.
+- Runs on macOS and Windows as well as Linux. Install with the shell or
+  PowerShell installer, or an archive, from the GitHub release.
