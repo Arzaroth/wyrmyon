@@ -9,7 +9,14 @@ set -euo pipefail
 
 version="${1:-}"
 dry_run=false
-[[ ${2:-} == --dry-run ]] && dry_run=true
+case "${2:-}" in
+"") ;;
+--dry-run) dry_run=true ;;
+*)
+  echo "usage: scripts/release.sh <x.y.z> [--dry-run]" >&2
+  exit 2
+  ;;
+esac
 
 if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "usage: scripts/release.sh <x.y.z> [--dry-run]" >&2
@@ -81,5 +88,5 @@ trap - ERR
 git add CHANGELOG.md Cargo.toml Cargo.lock
 git commit -q -m "[master] chore(release): $version"
 git tag -a "v$version" -m "wyrmyon $version"
-git push -q origin master "v$version"
+git push -q --atomic origin master "v$version"
 echo "released v$version: the Release workflow is building it now"
