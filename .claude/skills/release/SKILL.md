@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a wyrmyon release, the whole shebang - docs sweep (CHANGELOG, README, brain, wire identifiers), then the version bump, gate, commit, annotated tag and push, then watch the Release workflow until the GitHub release, its archives and the installers are out. Use when the user says "cut a release", "release", "tag vX.Y.Z", or "the whole release shebang".
+description: Cut a wyrmyon release, the whole shebang - docs sweep (CHANGELOG, README, brain, wire identifiers), then the version bump, gate, commit, annotated tag and push, then watch the Release workflow until the GitHub release and its packages are out. Use when the user says "cut a release", "release", "tag vX.Y.Z", or "the whole release shebang".
 ---
 
 # Release shebang
@@ -11,9 +11,11 @@ step 3 runs: a bad tag means a new patch release.
 
 ## 0. What a release publishes
 
-The GitHub release only: archives for five targets, the shell and PowerShell
-installers, checksums. PyPI and Homebrew are deferred (ROADMAP, Later); the
-pipeline is in `brain/architecture/distribution.md`.
+The GitHub release only: archives for six targets, .deb, .rpm and Arch
+packages, the rendered PKGBUILDs, MSIs and `SHA256SUMS`; the install scripts
+are read from `master`. PyPI, Homebrew and the AUR are deferred (ROADMAP,
+Later). The pipeline is in `brain/architecture/distribution.md`; pull
+requests that touch packaging already ran all of it but the publishing.
 
 ## 1. Pre-flight
 
@@ -71,20 +73,20 @@ gh release view v<x.y.z> -R Arzaroth/wyrmyon --json assets --jq '.assets[].name'
 Read a failing job with `gh run view "$run" --log-failed`. A re-run executes
 the workflow files and the code at the tag, so it only helps with a transient
 failure (a runner, the network): `gh run rerun "$run" --failed`. Anything
-else is fixed on `master` and shipped as
-the next patch release; never move or reuse a tag. If the build jobs failed,
-nothing is public yet and the dead tag just stays unreleased; if `host` ran,
-the GitHub release exists and the next patch supersedes it.
+else is fixed on `master` and shipped as the next patch release; never move
+or reuse a tag. The release job runs last, after every package was installed
+and checked, so a failed run leaves nothing public: the dead tag just stays
+unreleased.
 
 ## 5. Verify it installs
 
 ```bash
-h=$(mktemp -d); curl -LsSf https://github.com/Arzaroth/wyrmyon/releases/download/v<x.y.z>/wyrmyon-installer.sh \
-  | HOME=$h CARGO_HOME=$h/.cargo sh && $h/.cargo/bin/wyrm --version; rm -rf "$h"
+h=$(mktemp -d); curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scripts/install.sh \
+  | HOME=$h sh -s -- --version v<x.y.z> && "$h/.local/bin/wyrm" --version; rm -rf "${h:?}"
 ```
 
 ## Done when
 
-The tag is pushed, the GitHub release has its archives and installers, a
+The tag is pushed, the GitHub release has its archives and packages, a
 throwaway install reports the new version, and `CHANGELOG.md` has a dated
 section for it. Report the version and the release URL.

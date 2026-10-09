@@ -84,10 +84,13 @@ free; the iroh path is then a pure upgrade on top of it.
 
 - [x] maturin with `bindings = "bin"`: the wheels build (CI checks it);
       publishing them to PyPI is deferred, see Later.
-- [x] cargo-dist: GitHub release archives, shell and PowerShell installers.
-      The release workflow and `scripts/release.sh` land here. Decided: Linux
-      (glibc) and macOS on x86_64 and aarch64, Windows on x86_64; CI tests one
-      target per OS and both Linux ones; releases go to GitHub only for now.
+- [x] GitHub releases: archives, install scripts, .deb, .rpm, Arch packages
+      and PKGBUILDs, a Windows MSI, man pages and completions; the release
+      workflow and `scripts/release.sh`. Decided: our own workflow rather than
+      cargo-dist (it has no deb, rpm or Arch); static musl on Linux; x86_64
+      and arm64 on Linux, macOS and Windows; macOS gets tarballs and the
+      install script, no unsigned .pkg or .dmg; the MSI is unsigned;
+      every package is installed on a matching system before a release.
 
 ## Later
 
@@ -95,6 +98,7 @@ free; the iroh path is then a pure upgrade on top of it.
       a Homebrew formula in `Arzaroth/homebrew-tap`: needs the PyPI project
       with trusted publishers and the tap repository with a push token; how
       to wire them back is in `brain/architecture/distribution.md`.
+- [ ] Push the rendered `wyrmyon` and `wyrmyon-bin` PKGBUILDs to the AUR.
 - [ ] Fallback mailbox of our own, used only when the public one is
       unreachable; its codes carry a prefix (`m7-guitarist-revenge`) that
       legacy clients reject as malformed, which is correct.

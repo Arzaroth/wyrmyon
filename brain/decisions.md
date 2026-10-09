@@ -141,9 +141,22 @@ Python runtime involved, as ruff and uv do.
 
 ## Binaries, not crates
 
-wyrmyon ships as release archives and installers (PyPI wheels and a Homebrew
+wyrmyon ships as release archives and packages (PyPI wheels and a Homebrew
 formula later); no crate goes to crates.io (`publish = false` everywhere). The crates
 are internals of one tool, not a library with a stable API, and publishing
 them would freeze names and versions nobody asked for; `cargo install --git`
 still works for Rust users. The workspace crates depend on each other by path
 only, so the version lives in one line of the workspace `Cargo.toml`.
+
+## Our own release workflow, static musl on Linux
+
+The release workflow is ours rather than cargo-dist's: cargo-dist builds
+archives, shell and PowerShell installers and MSIs, but no .deb, .rpm or Arch
+package, and bolting those onto its generated workflow left two pipelines to
+reason about. nfpm builds the .deb and .rpm from one config with `wyrm` as a
+real symlink, which cargo-generate-rpm cannot do; makepkg builds the Arch
+packages from the PKGBUILDs the AUR will get, so they are tested by the same
+run. The Linux binaries are static musl: one binary per architecture for
+every package format and distribution, with no glibc floor, as fd and atuin
+ship. Every package is installed on a matching system before the release
+job, which runs last, so a broken package never reaches a published release.

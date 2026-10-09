@@ -30,5 +30,9 @@
 - The code prompt completes words with Tab.
 - Several paths at once travel as one bundle, unpacked as a directory named
   `files`.
-- Runs on macOS and Windows as well as Linux. Install with the shell or
-  PowerShell installer, or an archive, from the GitHub release.
+- Runs on Linux, macOS and Windows, on x86_64 and arm64. Each release has
+  .deb, .rpm and Arch packages, a Windows MSI, archives, and install scripts
+  for Linux, macOS and Windows; the Linux binaries are static and run on any
+  distribution.
+- Man pages and bash, zsh, fish, PowerShell and elvish completions in every
+  package and archive.
