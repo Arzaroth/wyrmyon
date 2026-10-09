@@ -5,8 +5,8 @@ use std::path::Path;
 use std::process::Stdio;
 
 use serde_json::{Value, json};
-use support::{TIMEOUT, finish, read_code, wyrm};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use support::{finish, read_code, wyrm};
+use tokio::io::AsyncWriteExt;
 use tokio::process::Child;
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
@@ -436,12 +436,15 @@ async fn text_can_come_from_stdin() {
     assert!(finish(child).await.0);
 }
 
+#[cfg(unix)]
 async fn in_a_terminal(
     server: &MailboxServer,
     dir: &Path,
     command: &str,
     answers: &[(&str, &str)],
 ) -> (bool, String) {
+    use support::TIMEOUT;
+    use tokio::io::AsyncReadExt;
     let mut child = tokio::process::Command::new("python3")
         .args([
             "-c",
@@ -488,6 +491,7 @@ async fn in_a_terminal(
     (status.success(), rest)
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn in_a_terminal_the_receiver_asks_for_the_code_and_for_consent() {
     let server = MailboxServer::start().await;
@@ -543,6 +547,7 @@ async fn the_server_motd_is_shown_and_progress_can_be_hidden() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unreadable_file_is_reported_to_an_iroh_receiver() {
     use std::os::unix::fs::PermissionsExt;
@@ -564,6 +569,7 @@ async fn an_unreadable_file_is_reported_to_an_iroh_receiver() {
     fails(sender).await;
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn bare_wyrm_in_a_terminal_asks_for_the_code_and_completes_its_words() {
     let server = MailboxServer::start().await;

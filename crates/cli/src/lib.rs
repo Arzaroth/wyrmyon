@@ -179,10 +179,14 @@ fn show_welcome(welcome: &Welcome) {
 }
 
 fn cache_dir() -> anyhow::Result<std::path::PathBuf> {
+    #[cfg(windows)]
+    let (base, home) = ("LOCALAPPDATA", "USERPROFILE");
+    #[cfg(not(windows))]
+    let (base, home) = ("XDG_CACHE_HOME", "HOME");
     cache_dir_from(
         std::env::var_os("WYRMYON_CACHE_DIR"),
-        std::env::var_os("XDG_CACHE_HOME"),
-        std::env::var_os("HOME"),
+        std::env::var_os(base),
+        std::env::var_os(home),
     )
 }
 
@@ -225,23 +229,23 @@ mod tests {
     #[test]
     fn partial_transfers_go_where_the_environment_says() {
         use std::path::Path;
-        let os = |s: &str| Some(std::ffi::OsString::from(s));
+        let root = if cfg!(windows) { r"C:\" } else { "/" };
+        let os = |s: &str| Some(Path::new(root).join(s).into_os_string());
+        let at = |s: &str| Path::new(root).join(s);
+        assert_eq!(cache_dir_from(os("c"), os("x"), os("h")).unwrap(), at("c"));
         assert_eq!(
-            cache_dir_from(os("/c"), os("/x"), os("/h")).unwrap(),
-            Path::new("/c")
+            cache_dir_from(None, os("x"), os("h")).unwrap(),
+            at("x/wyrmyon/partial")
         );
         assert_eq!(
-            cache_dir_from(None, os("/x"), os("/h")).unwrap(),
-            Path::new("/x/wyrmyon/partial")
-        );
-        assert_eq!(
-            cache_dir_from(None, None, os("/h")).unwrap(),
-            Path::new("/h/.cache/wyrmyon/partial")
+            cache_dir_from(None, None, os("h")).unwrap(),
+            at("h/.cache/wyrmyon/partial")
         );
         assert!(cache_dir_from(None, None, None).is_err());
+        let raw = |s: &str| Some(std::ffi::OsString::from(s));
         assert_eq!(
-            cache_dir_from(os(""), os("relative"), os("/h")).unwrap(),
-            Path::new("/h/.cache/wyrmyon/partial")
+            cache_dir_from(raw(""), raw("relative"), os("h")).unwrap(),
+            at("h/.cache/wyrmyon/partial")
         );
     }
 

@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -153,7 +152,7 @@ impl Walk<'_> {
         } else if meta.is_file() {
             let options = SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Deflated)
-                .unix_permissions(meta.permissions().mode() & 0o777)
+                .unix_permissions(mode_of(&meta))
                 .large_file(meta.len() >= ZIP64_FROM);
             zip.start_file(arcname(name)?, options)?;
             let mut source =
@@ -221,12 +220,8 @@ pub fn extract(
         }
         std::fs::create_dir_all(target.parent().unwrap_or(dest))?;
         let mode = entry.unix_mode().map_or(0o644, |m| m & 0o777);
-        let mut out = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&target)
-            .with_context(|| format!("creating {}", target.display()))?;
+        let mut out =
+            create_new(&target, mode).with_context(|| format!("creating {}", target.display()))?;
         let budget = limits.numbytes - bytes;
         let mut entry = (&mut entry).take(budget.saturating_add(1));
         let mut limited = Checked {
@@ -242,8 +237,53 @@ pub fn extract(
         }
         bytes += copied;
         out.flush()?;
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode))?;
+        set_mode(&target, mode)?;
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn mode_of(meta: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o777
+}
+
+#[cfg(not(unix))]
+fn mode_of(meta: &std::fs::Metadata) -> u32 {
+    if meta.permissions().readonly() {
+        0o444
+    } else {
+        0o644
+    }
+}
+
+#[cfg(unix)]
+fn create_new(path: &Path, mode: u32) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn create_new(path: &Path, _mode: u32) -> io::Result<File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+}
+
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
+fn set_mode(_path: &Path, _mode: u32) -> io::Result<()> {
     Ok(())
 }
 
@@ -284,11 +324,8 @@ mod tests {
         std::fs::create_dir_all(src.path().join("sub/empty")).unwrap();
         std::fs::write(src.path().join("a.txt"), b"alpha").unwrap();
         std::fs::write(src.path().join("sub/b.bin"), vec![7u8; 100_000]).unwrap();
-        std::fs::set_permissions(
-            src.path().join("a.txt"),
-            std::fs::Permissions::from_mode(0o750),
-        )
-        .unwrap();
+        #[cfg(unix)]
+        set_mode(&src.path().join("a.txt"), 0o750).unwrap();
 
         let built = build(src.path(), &Cancel::default()).unwrap();
         assert_eq!((built.numbytes, built.numfiles), (100_005, 2));
@@ -313,11 +350,11 @@ mod tests {
             vec![7u8; 100_000]
         );
         assert!(dest.join("sub/empty").is_dir());
-        let mode = std::fs::metadata(dest.join("a.txt"))
-            .unwrap()
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o750);
+        #[cfg(unix)]
+        assert_eq!(
+            mode_of(&std::fs::metadata(dest.join("a.txt")).unwrap()),
+            0o750
+        );
     }
 
     #[test]
@@ -373,6 +410,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn directory_symlinks_are_followed_but_loops_are_not() {
         let src = tempfile::tempdir().unwrap();
@@ -450,6 +488,7 @@ mod tests {
         assert!(reader.read(&mut buf).is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn sockets_and_other_special_files_are_left_out() {
         let src = tempfile::tempdir().unwrap();

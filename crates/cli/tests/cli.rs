@@ -113,6 +113,7 @@ async fn files_travel_between_two_wyrm_processes() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn only_regular_files_are_offered() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_wyrm"))
