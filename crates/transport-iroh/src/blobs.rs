@@ -73,7 +73,11 @@ impl Fetched {
                 .blobs()
                 .export_with_opts(ExportOptions {
                     hash: self.hash,
-                    mode: ExportMode::TryReference,
+                    mode: if cfg!(windows) {
+                        ExportMode::Copy
+                    } else {
+                        ExportMode::TryReference
+                    },
                     target: std::path::absolute(target)?,
                 })
                 .await
