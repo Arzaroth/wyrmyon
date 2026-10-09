@@ -13,8 +13,11 @@ const SHELLS: [Shell; 5] = [
 ];
 
 fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.as_slice() {
+    run(&std::env::args().skip(1).collect::<Vec<_>>())
+}
+
+fn run(args: &[String]) -> anyhow::Result<()> {
+    match args {
         [task, dir] if task == "assets" => assets(Path::new(dir)),
         _ => bail!("usage: cargo run -p wyrmyon-xtask -- assets <dir>"),
     }
@@ -59,6 +62,21 @@ mod tests {
                     std::fs::read_to_string(dir.path().join("completions").join(&file)).unwrap();
                 assert!(script.contains("accept-file"), "{file}");
             }
+        }
+    }
+
+    #[test]
+    fn the_command_line_names_the_task_and_its_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out").to_string_lossy().into_owned();
+        run(&["assets".to_owned(), out.clone()]).unwrap();
+        assert!(Path::new(&out).join("man/wyrm.1").exists());
+        for args in [
+            vec![],
+            vec!["assets".to_owned()],
+            vec!["other".to_owned(), out],
+        ] {
+            assert!(run(&args).is_err());
         }
     }
 
