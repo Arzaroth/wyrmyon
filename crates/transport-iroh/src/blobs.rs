@@ -100,8 +100,15 @@ impl Fetched {
     }
 
     async fn discard(self) {
-        let _ = self.store.shutdown().await;
-        let _ = tokio::fs::remove_dir_all(&self.dir).await;
+        let Self { store, dir, .. } = self;
+        let _ = store.shutdown().await;
+        drop(store);
+        for _ in 0..40 {
+            if tokio::fs::remove_dir_all(&dir).await.is_ok() || !dir.exists() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
     }
 
     async fn keep(self, cause: impl std::fmt::Display) -> Error {
