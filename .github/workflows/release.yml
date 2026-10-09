@@ -25,6 +25,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REF: ${{ github.event.inputs.tag || github.ref }}
   PUBLISH: ${{ github.event_name != 'pull_request' }}
@@ -47,7 +51,6 @@ jobs:
             runs-on: macos-latest
           - target: x86_64-apple-darwin
             runs-on: macos-latest
-            cross: true
           - target: x86_64-pc-windows-msvc
             runs-on: windows-latest
             msi: x64
@@ -94,14 +97,12 @@ jobs:
           echo "VERSION=$crate" >>"$GITHUB_ENV"
 
       - name: Test
-        if: ${{ !matrix.cross }}
         run: cargo test --locked --target ${{ matrix.target }}
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: The binary reports the version
-        if: ${{ !matrix.cross }}
         run: |
           printed=$(target/${{ matrix.target }}/release/wyrmyon --version)
           echo "$printed"
@@ -241,6 +242,7 @@ jobs:
         if: matrix.pkg
         run: |
           docker run --rm -v "$PWD/dist:/d:ro" archlinux:latest sh -ec '
+            sed -i "/^NoExtract/d" /etc/pacman.conf
             pacman -U --noconfirm /d/wyrmyon-bin-*-${{ matrix.pkg }}.pkg.tar.zst >/dev/null
             wyrm --version; pacman -Qkk wyrmyon-bin'
 
@@ -355,3 +357,10 @@ jobs:
           body_path: release-notes.md
           files: dist/*
           fail_on_unmatched_files: true
+          draft: true
+
+      - name: Publish it once every file is up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest
