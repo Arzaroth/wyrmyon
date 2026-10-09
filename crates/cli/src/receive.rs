@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
-use wyrmyon_transport_iroh::{Fetched, IrohInfo, IrohTransport, Role as IrohRole};
+use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
@@ -125,37 +125,22 @@ struct Incoming {
     partial: Partial,
     dest: PathBuf,
     digest: Option<[u8; 32]>,
-    fetched: Option<Fetched>,
     pipe: Pipe,
 }
 
 impl Incoming {
-    async fn settle(
-        self,
-        finish: impl AsyncFnOnce(&Partial, &Path) -> anyhow::Result<()>,
-    ) -> anyhow::Result<PathBuf> {
-        let Self {
-            partial,
-            dest,
-            digest,
-            fetched,
-            mut pipe,
-        } = self;
-        let done = async {
-            finish(&partial, &dest).await?;
-            transfer::send_ack(&mut pipe, digest.as_ref()).await
-        }
-        .await;
-        if let Some(fetched) = fetched {
-            fetched.discard().await;
-        }
+    async fn complete(mut self, finished: anyhow::Result<()>) -> anyhow::Result<PathBuf> {
+        let done = match finished {
+            Ok(()) => transfer::send_ack(&mut self.pipe, self.digest.as_ref()).await,
+            Err(e) => Err(e),
+        };
         match done {
             Ok(()) => {
-                pipe.shutdown().await;
-                Ok(dest)
+                self.pipe.shutdown().await;
+                Ok(self.dest)
             }
             Err(e) => {
-                pipe.abort().await;
+                self.pipe.abort().await;
                 Err(e)
             }
         }
@@ -207,26 +192,26 @@ async fn receive_payload(
         match &mut pipe {
             Pipe::Iroh(iroh) => {
                 let fetched = iroh
-                    .fetch(&cache_dir()?, size, |n| bar.set_position(n))
+                    .fetch(&cache_dir()?, size, &mut |n| bar.set_position(n))
                     .await?;
                 bar.finish_and_clear();
                 drop(file);
-                Ok((None, Some(fetched.export_to(&partial.path).await?)))
+                fetched.export_to(&partial.path).await?;
+                Ok(None)
             }
             Pipe::Classic(records) => {
                 let digest = transfer::receive_stream(records, &mut file, size, &bar).await?;
                 file.sync_all().await.context("writing the data")?;
-                anyhow::Ok((Some(digest), None))
+                anyhow::Ok(Some(digest))
             }
         }
     }
     .await;
     match received {
-        Ok((digest, fetched)) => Ok(Incoming {
+        Ok(digest) => Ok(Incoming {
             partial,
             dest,
             digest,
-            fetched,
             pipe,
         }),
         Err(e) => {
@@ -301,9 +286,8 @@ async fn receive_file(
         args,
     )
     .await?;
-    let dest = incoming
-        .settle(async |partial: &Partial, dest: &Path| partial.finish(dest))
-        .await?;
+    let finished = incoming.partial.finish(&incoming.dest);
+    let dest = incoming.complete(finished).await?;
     eprintln!("Received file written to {}", dest.display());
     Ok(())
 }
@@ -338,21 +322,18 @@ async fn receive_directory(
         numbytes: offer.numbytes,
         numfiles: offer.numfiles,
     };
-    let dest = incoming
-        .settle(async |partial: &Partial, dest: &Path| {
-            let (target, zip) = (dest.to_owned(), partial.path.clone());
-            let cancel = zipdir::Cancel::default();
-            let _cancel_on_drop = cancel.on_drop();
-            tokio::task::spawn_blocking(move || {
-                let dir = zipdir::NewDir::create(&target)?;
-                zipdir::extract(&zip, &target, &limits, &cancel)?;
-                dir.keep();
-                anyhow::Ok(())
-            })
-            .await
-            .context("unpacking the zip file")?
-        })
-        .await?;
+    let (target, zip) = (incoming.dest.clone(), incoming.partial.path.clone());
+    let cancel = zipdir::Cancel::default();
+    let _cancel_on_drop = cancel.on_drop();
+    let unpacked = tokio::task::spawn_blocking(move || {
+        let dir = zipdir::NewDir::create(&target)?;
+        zipdir::extract(&zip, &target, &limits, &cancel)?;
+        dir.keep();
+        anyhow::Ok(())
+    })
+    .await
+    .context("unpacking the zip file");
+    let dest = incoming.complete(unpacked.and_then(|r| r)).await?;
     eprintln!("Received files written to {}", dest.display());
     Ok(())
 }

@@ -165,7 +165,13 @@ async fn send_data(
     }
     let offered = if use_iroh {
         eprintln!("Hashing..");
-        Some(Offered::import(path).await?)
+        match Offered::import(path).await {
+            Ok(offered) => Some(offered),
+            Err(e) => {
+                protocol::send_error(wormhole, "the sender could not read its data").await?;
+                return Err(e.into());
+            }
+        }
     } else {
         None
     };
@@ -239,13 +245,13 @@ async fn send_over(
                 None
             }
             Pipe::Classic(records) => {
-                let source = tokio::fs::File::open(path)
+                let mut source = tokio::fs::File::open(path)
                     .await
                     .with_context(|| format!("opening {}", path.display()))?;
-                Some(transfer::send_stream(records, source, size, &bar).await?)
+                Some(transfer::send_stream(records, &mut source, size, &bar).await?)
             }
         };
-        eprintln!("Sent.. waiting for confirmation");
+        eprintln!("Waiting for the receiver to confirm..");
         transfer::await_ack(&mut pipe, digest.as_ref()).await
     }
     .await;

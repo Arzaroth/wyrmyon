@@ -255,31 +255,11 @@ impl IrohPipe {
         &self.description
     }
 
-    pub async fn send_chunk(&mut self, data: &[u8]) -> Result<(), Error> {
+    pub async fn send_last(&mut self, data: &[u8]) -> Result<(), Error> {
         self.send
             .write_all(data)
             .await
-            .map_err(|e| Error::Stream(e.to_string()))
-    }
-
-    pub async fn receive_chunk(&mut self, max: usize) -> Result<Vec<u8>, Error> {
-        let mut buf = vec![0u8; max];
-        match self
-            .recv
-            .read(&mut buf)
-            .await
-            .map_err(|e| Error::Stream(e.to_string()))?
-        {
-            Some(n) => {
-                buf.truncate(n);
-                Ok(buf)
-            }
-            None => Err(Error::Stream("the peer closed the stream early".into())),
-        }
-    }
-
-    pub async fn send_last(&mut self, data: &[u8]) -> Result<(), Error> {
-        self.send_chunk(data).await?;
+            .map_err(|e| Error::Stream(e.to_string()))?;
         self.send.finish().map_err(|e| Error::Stream(e.to_string()))
     }
 

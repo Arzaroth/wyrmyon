@@ -161,13 +161,15 @@ fn cache_dir_from(
     home: Option<std::ffi::OsString>,
 ) -> anyhow::Result<std::path::PathBuf> {
     use std::path::PathBuf;
-    if let Some(dir) = ours {
-        return Ok(dir.into());
+    let absolute =
+        |dir: Option<std::ffi::OsString>| dir.map(PathBuf::from).filter(|d| d.is_absolute());
+    if let Some(dir) = absolute(ours) {
+        return Ok(dir);
     }
-    let base = match (xdg, home) {
-        (Some(xdg), _) => PathBuf::from(xdg),
-        (None, Some(home)) => PathBuf::from(home).join(".cache"),
-        (None, None) => anyhow::bail!("no HOME to keep partial transfers in"),
+    let base = match (absolute(xdg), absolute(home)) {
+        (Some(xdg), _) => xdg,
+        (None, Some(home)) => home.join(".cache"),
+        (None, None) => anyhow::bail!("no absolute HOME to keep partial transfers in"),
     };
     Ok(base.join("wyrmyon").join("partial"))
 }
@@ -206,6 +208,10 @@ mod tests {
             Path::new("/h/.cache/wyrmyon/partial")
         );
         assert!(cache_dir_from(None, None, None).is_err());
+        assert_eq!(
+            cache_dir_from(os(""), os("relative"), os("/h")).unwrap(),
+            Path::new("/h/.cache/wyrmyon/partial")
+        );
     }
 
     #[test]

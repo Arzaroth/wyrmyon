@@ -31,18 +31,16 @@ async fn two_endpoints_bind_the_channel_and_move_data() {
     let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
     assert!(upstream.describe().starts_with("iroh"));
 
-    let data = vec![9u8; 300_000];
+    upstream.send_last(b"over the bound stream").await.unwrap();
+    assert_eq!(
+        within(downstream.receive_last()).await.unwrap(),
+        b"over the bound stream"
+    );
     let writer = tokio::spawn(async move {
-        upstream.send_chunk(&data).await.unwrap();
         let ack = upstream.receive_last().await.unwrap();
         upstream.finish().await;
         ack
     });
-    let mut got = Vec::new();
-    while got.len() < 300_000 {
-        got.extend(within(downstream.receive_chunk(1 << 16)).await.unwrap());
-    }
-    assert_eq!(got, vec![9u8; 300_000]);
     downstream.send_last(b"done").await.unwrap();
     assert_eq!(within(writer).await.unwrap(), b"done");
     downstream.finish().await;
@@ -145,17 +143,12 @@ async fn a_stream_that_ends_early_is_an_error_and_abort_is_prompt() {
         )
     })
     .await;
-    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
-    upstream.send_last(b"short").await.unwrap();
-    assert_eq!(
-        within(downstream.receive_chunk(16)).await.unwrap(),
-        b"short"
-    );
+    let (upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    within(upstream.abort()).await;
     assert!(matches!(
-        within(downstream.receive_chunk(16)).await,
+        within(downstream.receive_last()).await,
         Err(Error::Stream(_))
     ));
-    within(upstream.abort()).await;
     within(downstream.finish()).await;
 }
 

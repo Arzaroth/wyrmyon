@@ -70,7 +70,7 @@ pub fn progress(size: u64, hidden: bool) -> ProgressBar {
 
 pub async fn send_stream(
     pipe: &mut RecordPipe,
-    mut source: impl AsyncRead + Unpin,
+    source: &mut (dyn AsyncRead + Unpin + Send),
     size: u64,
     bar: &ProgressBar,
 ) -> anyhow::Result<[u8; 32]> {
@@ -100,7 +100,7 @@ pub async fn send_stream(
 
 pub async fn receive_stream(
     pipe: &mut RecordPipe,
-    mut sink: impl AsyncWrite + Unpin,
+    sink: &mut (dyn AsyncWrite + Unpin + Send),
     size: u64,
     bar: &ProgressBar,
 ) -> anyhow::Result<[u8; 32]> {
@@ -166,10 +166,10 @@ mod tests {
     async fn a_source_that_does_not_match_its_offer_fails_the_send() {
         let (mut pipe, _other) = pair().await;
         let bar = progress(0, true);
-        let grew = send_stream(&mut pipe, &b"longer than offered"[..], 4, &bar).await;
+        let grew = send_stream(&mut pipe, &mut &b"longer than offered"[..], 4, &bar).await;
         assert!(grew.unwrap_err().to_string().contains("grew"));
         let (mut pipe, _other) = pair().await;
-        let shrank = send_stream(&mut pipe, &b"ab"[..], 4, &bar).await;
+        let shrank = send_stream(&mut pipe, &mut &b"ab"[..], 4, &bar).await;
         assert!(shrank.unwrap_err().to_string().contains("shrank"));
     }
 }

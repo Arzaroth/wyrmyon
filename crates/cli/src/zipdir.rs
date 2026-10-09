@@ -42,12 +42,12 @@ impl Drop for CancelOnDrop {
     }
 }
 
-struct Checked<'a, R> {
-    inner: R,
+struct Checked<'a> {
+    inner: &'a mut dyn Read,
     cancel: &'a Cancel,
 }
 
-impl<R: Read> Read for Checked<'_, R> {
+impl Read for Checked<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.cancel.0.load(Ordering::Relaxed) {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "interrupted"));
@@ -122,10 +122,10 @@ impl Walk<'_> {
                     .unix_permissions(meta.permissions().mode() & 0o777)
                     .large_file(meta.len() >= ZIP64_FROM);
                 zip.start_file(arcname(&name)?, options)?;
-                let source =
+                let mut source =
                     File::open(&path).with_context(|| format!("opening {}", path.display()))?;
                 let mut reader = Checked {
-                    inner: source,
+                    inner: &mut source,
                     cancel: self.cancel,
                 };
                 let copied = io::copy(&mut reader, zip)?;
@@ -196,8 +196,9 @@ pub fn extract(
             .open(&target)
             .with_context(|| format!("creating {}", target.display()))?;
         let budget = limits.numbytes - bytes;
+        let mut entry = (&mut entry).take(budget.saturating_add(1));
         let mut limited = Checked {
-            inner: (&mut entry).take(budget.saturating_add(1)),
+            inner: &mut entry,
             cancel,
         };
         let copied = io::copy(&mut limited, &mut out)?;
@@ -406,8 +407,9 @@ mod tests {
     #[test]
     fn a_cancelled_read_stops_mid_file() {
         let cancel = Cancel::default();
+        let mut data = &b"data"[..];
         let mut reader = Checked {
-            inner: &b"data"[..],
+            inner: &mut data,
             cancel: &cancel,
         };
         let mut buf = [0u8; 2];
