@@ -71,12 +71,14 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M6 - CLI polish
 
-- [ ] The argument decides the action: paths send, a code receives, piped
+- [x] The argument decides the action: paths send, a code receives, piped
       stdin sends text, nothing prompts. An argument that is both a code and a
-      path on disk is refused until a subcommand says which.
-- [ ] Code prompt with word completion; prefer it over codes on the command
-      line, which leak into `ps` and shell history.
-- [ ] Receiver-first mode (`wyrm receive --new`), indicatif progress bars.
+      path on disk is refused until a subcommand says which. Decided: several
+      paths travel as one directory named `files`.
+- [x] Code prompt with word completion (rustyline, Tab); prefer it over codes
+      on the command line, which leak into `ps` and shell history.
+- [x] Receiver-first mode (`wyrm receive --new`), indicatif progress bars
+      (both landed with M3).
 
 ## M7 - Packaging
 

@@ -9,23 +9,29 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: early.** Text, files and directories work with any magic-wormhole
+**Status: feature-complete, not yet packaged.** Text, files and directories work with any magic-wormhole
 client, directly or through the transit relay (`wyrm send --text`,
 `wyrm send PATH`, `wyrm receive`, `wyrm receive --new`), and over iroh between
 two wyrms, verified chunk by chunk and resumable after an interruption.
 Packaging follows [ROADMAP.md](ROADMAP.md).
 
-## Usage (planned)
+## Usage
 
 The package installs two identical binaries, `wyrmyon` and the short `wyrm`.
 
 ```
-wyrm report.pdf photos/      # paths: send, prints a code
+wyrm report.pdf photos/      # paths: send (several go as one bundle), prints a code
 echo "hello" | wyrm          # piped stdin: send text
-wyrm                         # no arguments: prompt for a code, receive
+wyrm                         # no arguments: prompt for a code (Tab completes), receive
 wyrm 7-guitarist-revenge     # a code: receive
 wyrm receive --new           # receiver first: allocate a code and wait
+wyrm send --code CODE FILE   # use a code the receiver allocated
 ```
+
+`wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,
+`--code-length`, `--text`); `wyrm --help` lists the global ones
+(`--relay-url`, `--transit-helper`, `--no-listen`, `--force-classic`,
+`--hide-progress`...).
 
 | Sender | Receiver | Transport |
 | --- | --- | --- |
