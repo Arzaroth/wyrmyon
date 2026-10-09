@@ -480,3 +480,124 @@ async fn an_iroh_transfer_leaves_nothing_in_the_cache() {
     assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
     assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 1);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bare_arguments_pick_the_action() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("bare.txt"), b"no subcommand").unwrap();
+    std::fs::create_dir(to.path().join("in")).unwrap();
+    let mut sender = wyrm(&server.url())
+        .arg("bare.txt")
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["--hide-progress", &code])
+            .current_dir(to.path())
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(!ok, "a bare receive still asks before accepting: {stderr}");
+    assert!(stderr.contains("--accept-file"), "{stderr}");
+    let _ = finish(sender).await;
+
+    let mut sender = wyrm(&server.url())
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = sender.stdin.take().unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut stdin, b"piped, bare")
+        .await
+        .unwrap();
+    drop(stdin);
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, stdout, stderr) = finish(wyrm(&server.url()).arg(&code).spawn().unwrap()).await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "piped, bare\n");
+    assert!(finish(sender).await.0);
+}
+
+#[test]
+fn a_target_that_is_both_a_code_and_a_file_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("7-guitarist-revenge"), b"x").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .arg("7-guitarist-revenge")
+        .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("both a code and a file"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn several_paths_travel_as_one_bundle() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"alpha").unwrap();
+    std::fs::create_dir_all(from.path().join("photos/2026")).unwrap();
+    std::fs::write(from.path().join("photos/2026/p.raw"), vec![1u8; 50_000]).unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["a.txt", "photos"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    let files = to.path().join("files");
+    assert_eq!(std::fs::read(files.join("a.txt")).unwrap(), b"alpha");
+    assert_eq!(
+        std::fs::read(files.join("photos/2026/p.raw")).unwrap(),
+        vec![1u8; 50_000]
+    );
+
+    std::fs::create_dir(from.path().join("again")).unwrap();
+    std::fs::write(from.path().join("again/a.txt"), b"twin").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args(["send", "a.txt", "again/a.txt"])
+        .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+        .current_dir(from.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("two of the paths"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn without_a_terminal_the_code_is_read_from_stdin() {
+    let server = MailboxServer::start().await;
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--text", "via stdin"])
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let mut receiver = wyrm(&server.url())
+        .arg("receive")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = receiver.stdin.take().unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut stdin, format!("{code}\n").as_bytes())
+        .await
+        .unwrap();
+    drop(stdin);
+    let (ok, stdout, stderr) = finish(receiver).await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "via stdin\n");
+    assert!(finish(sender).await.0);
+}

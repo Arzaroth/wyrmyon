@@ -448,7 +448,7 @@ async fn in_a_terminal(
             "import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)",
         ])
         .arg(env!("CARGO_BIN_EXE_wyrm"))
-        .args(command.split(' '))
+        .args(command.split_whitespace())
         .env("WYRMYON_RELAY_URL", server.url())
         .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
         .env("WYRMYON_IROH_RELAYS", "disabled")
@@ -561,4 +561,31 @@ async fn an_unreadable_file_is_reported_to_an_iroh_receiver() {
     );
     receiver.close(Mood::Happy).await;
     fails(sender).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bare_wyrm_in_a_terminal_asks_for_the_code_and_completes_its_words() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let pending = wyrmyon_wormhole::create(&config(&server, false), 2)
+        .await
+        .unwrap();
+    let code = pending.code().to_string();
+    let (nameplate, words) = code.split_once('-').unwrap();
+    let (first, second) = words.split_once('-').unwrap();
+    let typed = format!("{nameplate}-{}\t{second}", &first[..first.len() - 1]);
+    let questions = [("wormhole code", typed.as_str())];
+    let terminal = in_a_terminal(&server, dir.path(), "", &questions);
+    let peer = async {
+        let mut sender = pending.pair().await.unwrap();
+        sender
+            .send_json(&json!({"offer": {"message": "completed"}}))
+            .await
+            .unwrap();
+        until(&mut sender, "answer").await;
+        sender.close(Mood::Happy).await;
+    };
+    let ((ok, output), ()) = tokio::join!(terminal, peer);
+    assert!(ok, "{output}");
+    assert!(output.contains("completed"), "{output}");
 }
