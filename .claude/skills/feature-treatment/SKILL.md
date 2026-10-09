@@ -136,7 +136,8 @@ gh pr create -R Arzaroth/wyrmyon --head <branch> ... || gh pr edit ...
 gh pr checks --watch -R Arzaroth/wyrmyon
 ```
 
-CI runs fmt, clippy and tests on x86_64 and aarch64, and the coverage floor.
+CI runs fmt, clippy and tests on x86_64 and aarch64 Linux, macOS and Windows,
+and the coverage floor.
 It must be green.
 
 ## 7. Merge (keep the layers)
@@ -152,7 +153,7 @@ git push origin master                         # the mirror carries it; GitHub m
 
 ## 8. Release
 
-When the branch closes a roadmap milestone and packaging exists (M7), run the
+When the branch closes a roadmap milestone, run the
 **release** skill: minor for a user-facing feature, patch for fix-only.
 Otherwise leave the changes in `[Unreleased]`.
 

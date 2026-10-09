@@ -9,10 +9,11 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: feature-complete, not yet packaged.** Text, files, directories and
-several paths at once work with any magic-wormhole client, directly or through
-the transit relay, and over iroh between two wyrms, verified chunk by chunk and
-resumable after an interruption. Packaging follows [ROADMAP.md](ROADMAP.md).
+**Status: feature-complete, packaged, no release yet.** Text, files,
+directories and several paths at once work with any magic-wormhole client,
+directly or through the transit relay, and over iroh between two wyrms,
+verified chunk by chunk and resumable after an interruption, on Linux, macOS
+and Windows.
 
 ## Usage
 
@@ -38,15 +39,20 @@ wyrm send --code CODE FILE   # use a code the receiver allocated
 | wyrmyon | `wormhole` (Python) | classic transit |
 | wyrmyon | wyrmyon | iroh-v1 |
 
-## Install (planned)
+## Install
+
+Once the first release is out:
 
 ```
-uvx wyrmyon                  # or: pipx install wyrmyon
+uvx wyrmyon                  # or: pipx install wyrmyon, uv tool install wyrmyon
+brew install Arzaroth/tap/wyrmyon
+curl -LsSf https://github.com/Arzaroth/wyrmyon/releases/latest/download/wyrmyon-installer.sh | sh
+powershell -c "irm https://github.com/Arzaroth/wyrmyon/releases/latest/download/wyrmyon-installer.ps1 | iex"
 ```
 
-Wheels carry the native binary and need no Python runtime, the way ruff and uv
-ship. GitHub releases add archives, shell and PowerShell installers, and a
-Homebrew tap.
+Wheels carry the native binaries and need no Python runtime, the way ruff and
+uv ship. Every [GitHub release](https://github.com/Arzaroth/wyrmyon/releases)
+also has plain archives for Linux, macOS and Windows.
 
 ## How it works
 

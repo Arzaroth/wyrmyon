@@ -82,10 +82,12 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M7 - Packaging
 
-- [ ] maturin with `bindings = "bin"`: wheels on PyPI, so `uvx wyrmyon` and
+- [x] maturin with `bindings = "bin"`: wheels on PyPI, so `uvx wyrmyon` and
       `pipx install wyrmyon` work without a Python runtime.
-- [ ] cargo-dist: GitHub release archives, shell and PowerShell installers, a
+- [x] cargo-dist: GitHub release archives, shell and PowerShell installers, a
       Homebrew tap. The release workflow and `scripts/release.sh` land here.
+      Decided: Linux (glibc), macOS and Windows on x86_64 and aarch64 (Windows
+      x86_64 only), all tested in CI; wheels published by trusted publishing.
 
 ## Later
 

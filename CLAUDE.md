@@ -56,7 +56,8 @@ never touch n0's iroh relays: `tests/support` disables them.
 - The Rust toolchain is pinned in `rust-toolchain.toml` and `.mise.toml`;
   bump both together.
 - Before finishing: `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`,
-  `cargo test`. CI runs the same on x86_64 and aarch64.
+  `cargo test`. CI runs the same on x86_64 and aarch64 Linux, macOS and
+  Windows; keep platform-specific code behind `cfg` with a fallback.
 - Line coverage stays at or above 98% (`scripts/coverage.sh --check`, a CI
   job). New code comes with tests that keep it there; `scripts/coverage.sh`
   ranks the files with the most uncovered lines.
