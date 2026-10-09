@@ -82,16 +82,19 @@ free; the iroh path is then a pure upgrade on top of it.
 
 ## M7 - Packaging
 
-- [x] maturin with `bindings = "bin"`: wheels on PyPI, so `uvx wyrmyon` and
-      `pipx install wyrmyon` work without a Python runtime.
-- [x] cargo-dist: GitHub release archives, shell and PowerShell installers, a
-      Homebrew tap. The release workflow and `scripts/release.sh` land here.
-      Decided: Linux (glibc) and macOS on x86_64 and aarch64, Windows on
-      x86_64; CI tests one target per OS and both Linux ones; wheels are built
-      before the release is public and published by trusted publishing.
+- [x] maturin with `bindings = "bin"`: the wheels build (CI checks it);
+      publishing them to PyPI is deferred, see Later.
+- [x] cargo-dist: GitHub release archives, shell and PowerShell installers.
+      The release workflow and `scripts/release.sh` land here. Decided: Linux
+      (glibc) and macOS on x86_64 and aarch64, Windows on x86_64; CI tests one
+      target per OS and both Linux ones; releases go to GitHub only for now.
 
 ## Later
 
+- [ ] Publish the wheels to PyPI (`uvx wyrmyon`, `pipx install wyrmyon`) and
+      a Homebrew formula in `Arzaroth/homebrew-tap`: needs the PyPI project
+      with trusted publishers and the tap repository with a push token; how
+      to wire them back is in `brain/architecture/distribution.md`.
 - [ ] Fallback mailbox of our own, used only when the public one is
       unreachable; its codes carry a prefix (`m7-guitarist-revenge`) that
       legacy clients reject as malformed, which is correct.

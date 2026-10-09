@@ -44,21 +44,20 @@ disagree). It builds:
 - archives for each target (`.tar.xz`, `.zip` on Windows) with both binaries,
   the README, the licence and the changelog, plus their checksums;
 - shell and PowerShell installers, which install into `$CARGO_HOME/bin`;
-- a Homebrew formula pushed to the `Arzaroth/homebrew-tap` repository (needs
-  the `HOMEBREW_TAP_TOKEN` secret);
 - the GitHub release, its notes taken from the version's `CHANGELOG.md`
   section.
 
-Two custom jobs are reusable workflows it calls. `build-wheels.yml` runs with
-the archive builds, before anything is published: **maturin**
-(`pyproject.toml`, `bindings = "bin"`) builds a wheel per target and an sdist,
-so a broken wheel stops the release while nothing is public yet.
-`publish-pypi.yml` runs after the GitHub release and uploads them to PyPI with
-trusted publishing (the `pypi` environment, no token), skipping files already
-there so a re-run can finish a partial upload. The wheels carry the native
-binaries and no Python code, so `uvx wyrmyon` and `pipx install wyrmyon` work
-without a Python runtime, the way ruff and uv ship. CI builds the x86_64
+Not yet published: PyPI wheels and a Homebrew formula, held back until the
+PyPI project and the `Arzaroth/homebrew-tap` repository exist. The groundwork
+stays: `pyproject.toml` builds the wheels with **maturin** (`bindings =
+"bin"`: the native binaries, no Python code, so `uvx wyrmyon` would work
+without a Python runtime, the way ruff and uv ship), and CI builds the x86_64
 manylinux wheel on every pull request and checks it carries both binaries.
+Turning them on is `installers`, `tap`, `local-artifacts-jobs` and
+`publish-jobs` in `dist-workspace.toml`, plus the `build-wheels.yml` and
+`publish-pypi.yml` reusable workflows removed in commit `7a0a02a` (the wheels
+must be built as a local-artifacts job, before the GitHub release is public,
+and the PyPI trusted publisher registered under both workflow names).
 
 Every artefact carries both binaries, `wyrmyon` and `wyrm`. The package name is
 always `wyrmyon`; `wyrm` is taken on crates.io and PyPI. The crates themselves
@@ -73,8 +72,6 @@ commits, tags and pushes master and the tag atomically ([the release skill](../.
 
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
 - [.github/workflows/release.yml](../../.github/workflows/release.yml)
-- [.github/workflows/build-wheels.yml](../../.github/workflows/build-wheels.yml)
-- [.github/workflows/publish-pypi.yml](../../.github/workflows/publish-pypi.yml)
 - [dist-workspace.toml](../../dist-workspace.toml)
 - [pyproject.toml](../../pyproject.toml)
 - [scripts/release.sh](../../scripts/release.sh)

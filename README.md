@@ -44,15 +44,13 @@ wyrm send --code CODE FILE   # use a code the receiver allocated
 Once the first release is out:
 
 ```
-uvx wyrmyon                  # or: pipx install wyrmyon, uv tool install wyrmyon
-brew install Arzaroth/tap/wyrmyon
 curl -LsSf https://github.com/Arzaroth/wyrmyon/releases/latest/download/wyrmyon-installer.sh | sh
 powershell -c "irm https://github.com/Arzaroth/wyrmyon/releases/latest/download/wyrmyon-installer.ps1 | iex"
 ```
 
-Wheels carry the native binaries and need no Python runtime, the way ruff and
-uv ship. Every [GitHub release](https://github.com/Arzaroth/wyrmyon/releases)
-also has plain archives for Linux, macOS and Windows.
+Both install into `~/.cargo/bin`. Every
+[GitHub release](https://github.com/Arzaroth/wyrmyon/releases) also has plain
+archives for Linux, macOS and Windows. PyPI and Homebrew come later.
 
 ## How it works
 

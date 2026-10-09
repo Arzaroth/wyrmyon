@@ -141,8 +141,8 @@ Python runtime involved, as ruff and uv do.
 
 ## Binaries, not crates
 
-wyrmyon ships as release archives, installers, a Homebrew formula and PyPI
-wheels; no crate goes to crates.io (`publish = false` everywhere). The crates
+wyrmyon ships as release archives and installers (PyPI wheels and a Homebrew
+formula later); no crate goes to crates.io (`publish = false` everywhere). The crates
 are internals of one tool, not a library with a stable API, and publishing
 them would freeze names and versions nobody asked for; `cargo install --git`
 still works for Rust users. The workspace crates depend on each other by path
