@@ -1,9 +1,9 @@
 #!/bin/bash
 # Usage: scripts/release.sh <x.y.z> [--dry-run]
 #
-# Moves CHANGELOG.md's [Unreleased] into a dated section, bumps Cargo.toml and
-# Cargo.lock, runs the gate, commits, tags vX.Y.Z and pushes. The tag push is
-# what starts .github/workflows/release.yml.
+# Moves CHANGELOG.md's [Unreleased] into a dated section, bumps Cargo.toml,
+# Cargo.lock and the PKGBUILDs, runs the gate, commits, tags vX.Y.Z and
+# pushes. The tag push is what starts .github/workflows/release.yml.
 
 set -euo pipefail
 
@@ -62,7 +62,7 @@ if $dry_run; then
 fi
 
 restore() {
-  git checkout -- CHANGELOG.md Cargo.toml Cargo.lock
+  git checkout -- CHANGELOG.md Cargo.toml Cargo.lock packaging/arch
   echo "release: the gate failed, the bump was undone" >&2
 }
 trap restore ERR
@@ -74,6 +74,7 @@ awk -v hdr="## [$version] - $date" '
 mv CHANGELOG.md.new CHANGELOG.md
 sed -i "0,/^version = \".*\"/s//version = \"$version\"/" Cargo.toml
 cargo update -q --workspace --offline
+sed -i "s/^pkgver=.*/pkgver=$version/" packaging/arch/*/PKGBUILD
 
 cargo fmt --all --check
 cargo clippy -q --all-targets --locked -- -D warnings
@@ -85,7 +86,7 @@ if [[ $printed != "wyrmyon $version" ]]; then
 fi
 trap - ERR
 
-git add CHANGELOG.md Cargo.toml Cargo.lock
+git add CHANGELOG.md Cargo.toml Cargo.lock packaging/arch
 git commit -q -m "[master] chore(release): $version"
 git tag -a "v$version" -m "wyrmyon $version"
 git push -q --atomic origin master "v$version"

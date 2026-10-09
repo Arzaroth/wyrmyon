@@ -1,0 +1,58 @@
+# Maintainer: Marc-Etienne Barrut <anthropic@barrut.me>
+#
+# Builds wyrmyon from the release's source tarball. The release workflow
+# attaches a copy of this file with pkgver and sha256sums filled in; the copy
+# in the repository keeps SKIP, since it lives inside the tarball it would
+# have to checksum.
+
+pkgname=wyrmyon
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="A magic-wormhole client that switches to iroh when both peers run wyrmyon"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Arzaroth/wyrmyon"
+license=('MIT')
+depends=('gcc-libs' 'glibc')
+makedepends=('cargo')
+provides=('wyrm')
+conflicts=('wyrmyon-bin')
+options=('!lto' '!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p wyrmyon
+  cargo run --frozen --release -p wyrmyon-xtask -- assets target/assets
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo test --frozen -p wyrmyon-wormhole -p wyrmyon-transport-classic
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/wyrmyon "$pkgdir/usr/bin/wyrmyon"
+  ln -s wyrmyon "$pkgdir/usr/bin/wyrm"
+  _install_assets target/assets
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
+
+_install_assets() {
+  install -Dm644 -t "$pkgdir/usr/share/man/man1" "$1"/man/*.1
+  for bin in wyrmyon wyrm; do
+    install -Dm644 "$1/completions/$bin.bash" "$pkgdir/usr/share/bash-completion/completions/$bin"
+    install -Dm644 "$1/completions/_$bin" "$pkgdir/usr/share/zsh/site-functions/_$bin"
+    install -Dm644 "$1/completions/$bin.fish" "$pkgdir/usr/share/fish/vendor_completions.d/$bin.fish"
+  done
+}
