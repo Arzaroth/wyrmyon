@@ -10,6 +10,12 @@ done.
       mailbox reorder deliveries.
 - [ ] Mailbox reconnection after a dropped connection, as the Python client
       does.
+- [ ] A directory from Linux holding names that differ only by case
+      (`Makefile`, `makefile`) or Unicode normalization is refused whole on
+      macOS and Windows (`create_new` fails on the second one); say which
+      names collide, or rename the second.
+- [ ] macOS keeps partial transfers in `~/.cache/wyrmyon/partial`; decide
+      whether `~/Library/Caches` is worth the second convention.
 
 ## Decisions before roadmap work
 

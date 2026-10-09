@@ -86,8 +86,9 @@ free; the iroh path is then a pure upgrade on top of it.
       `pipx install wyrmyon` work without a Python runtime.
 - [x] cargo-dist: GitHub release archives, shell and PowerShell installers, a
       Homebrew tap. The release workflow and `scripts/release.sh` land here.
-      Decided: Linux (glibc), macOS and Windows on x86_64 and aarch64 (Windows
-      x86_64 only), all tested in CI; wheels published by trusted publishing.
+      Decided: Linux (glibc) and macOS on x86_64 and aarch64, Windows on
+      x86_64; CI tests one target per OS and both Linux ones; wheels are built
+      before the release is public and published by trusted publishing.
 
 ## Later
 

@@ -136,8 +136,8 @@ gh pr create -R Arzaroth/wyrmyon --head <branch> ... || gh pr edit ...
 gh pr checks --watch -R Arzaroth/wyrmyon
 ```
 
-CI runs fmt, clippy and tests on x86_64 and aarch64 Linux, macOS and Windows,
-and the coverage floor.
+CI runs fmt, clippy and tests on Linux (x86_64, aarch64), macOS (aarch64) and
+Windows (x86_64), builds the manylinux wheel, and checks the coverage floor.
 It must be green.
 
 ## 7. Merge (keep the layers)

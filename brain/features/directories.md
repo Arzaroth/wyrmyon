@@ -11,7 +11,8 @@ it works both ways with any magic-wormhole client.
 ## Sender
 
 `zipdir::build` walks the directory in name order into a temporary zip file
-(`tempfile`, removed on exit): files deflated with their permission bits,
+(`tempfile`, removed on exit): files deflated with their permission bits
+(`0o644`, or `0o444` when read-only, on Windows),
 empty directories as directory entries (an empty top directory as `./`, which
 the Python receiver needs to create anything), symlinks followed as the Python
 client does, except one leading back to a directory already being walked,
@@ -36,10 +37,13 @@ the destination, then `zipdir::extract`:
 
 - creates the destination directory itself, so it fails rather than merge
   into one that appeared meanwhile, and removes it again if extraction fails;
-- refuses any entry whose path leaves the directory (absolute, `..`);
+- refuses any entry whose path leaves the directory (absolute, `..`), and on
+  Windows any component it cannot hold, the names a single file refuses
+  ([files.md](files.md)): a drive-relative `c:x` in the middle of a path
+  would otherwise land outside it;
 - skips symlink entries;
 - creates every file fresh, with its permission bits masked to `0o777` (no
-  setuid);
+  setuid) on Unix, with the platform's defaults elsewhere;
 - stops with an error as soon as the files outnumber `numfiles` or their bytes
   exceed `numbytes`, so a small zip that inflates far past what was offered
   never fills the disk.

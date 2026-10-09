@@ -42,8 +42,10 @@ Python client. Only the side that allocates prints the code.
 1. On the sender's `transit`, starts its own `Transit` and answers with its
    hints. Then waits for the offer.
 2. Takes only the last path component of the offered name, with control
-   characters stripped; `.`, `..` and empty names are refused, and so is an
-   offer that came without a `transit` message, all before asking anything.
+   characters stripped; `.`, `..` and empty names are refused, on Windows
+   also names it cannot hold (a colon, `<>"|?*`, a trailing dot or space,
+   device names such as `CON` or `COM1`), and so is an offer that came
+   without a `transit` message, all before asking anything.
 3. Refuses to overwrite: anything at the destination, a dangling symlink
    included, is answered with an `error`. `-o DIR` naming an existing
    directory puts the file inside it, as the Python client does.
