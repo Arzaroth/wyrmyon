@@ -1,6 +1,8 @@
 //! Against the Python `wormhole` CLI and mailbox server. Needs `wormhole` and
 //! `uvx` on PATH: `cargo test -p wyrmyon --test interop -- --ignored`.
 
+#![cfg(unix)]
+
 mod support;
 
 use std::net::TcpListener;
