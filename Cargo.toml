@@ -17,6 +17,6 @@ missing_panics_doc = "allow"
 must_use_candidate = "allow"
 struct_excessive_bools = "allow"
 
-[profile.dist]
-inherits = "release"
+[profile.release]
 lto = "thin"
+strip = true
