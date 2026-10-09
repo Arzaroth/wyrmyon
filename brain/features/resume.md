@@ -26,7 +26,8 @@ wyrm send big.iso        # a new code; the receiver fetches only what it lacks
   refused: either way the data is wrong and its cache entry is deleted, so a
   peer cannot fill the cache with more than the user accepted. The blob is
   exported into the partial file next to the destination (moved rather than
-  copied when the store owns the data on the same filesystem, then fsynced),
+  copied when the store owns the data on the same filesystem, except on
+  Windows, which cannot move a file the store holds open; then fsynced),
   finished the usual way ([files.md](files.md),
   [directories.md](directories.md)), and acked with `{"ack": "ok"}`: no
   SHA-256, since BLAKE3 already verified every byte.
