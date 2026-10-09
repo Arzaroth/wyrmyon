@@ -207,7 +207,7 @@ async fn receive_payload(
                     .fetch(&cache_dir()?, size, &mut |n| bar.set_position(n))
                     .await?;
                 bar.finish_and_clear();
-                drop(file);
+                drop(file.into_std().await);
                 fetched.export_to(&partial.path).await?;
                 Ok(None)
             }
@@ -404,7 +404,7 @@ fn unique_suffix() -> String {
 
 fn safe_name(offered: &str) -> Option<String> {
     let name = printable(Path::new(offered).file_name()?.to_str()?);
-    (!name.is_empty() && name != "." && name != "..").then_some(name)
+    crate::usable_name(&name, cfg!(windows)).then_some(name)
 }
 
 async fn confirm(question: &str) -> anyhow::Result<bool> {

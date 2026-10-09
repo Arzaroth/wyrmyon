@@ -196,9 +196,9 @@ pub fn extract(
     for index in 0..archive.len() {
         cancel.check()?;
         let mut entry = archive.by_index(index)?;
-        let Some(relative) = entry.enclosed_name() else {
+        let Some(relative) = entry.enclosed_name().filter(|r| holdable(r, cfg!(windows))) else {
             bail!(
-                "the zip file has an entry outside its directory: {}",
+                "the zip file has an entry outside its directory or unusable here: {}",
                 crate::printable(entry.name())
             );
         };
@@ -240,6 +240,15 @@ pub fn extract(
         set_mode(&target, mode)?;
     }
     Ok(())
+}
+
+fn holdable(relative: &Path, windows: bool) -> bool {
+    relative.components().all(|c| match c {
+        std::path::Component::Normal(name) => name
+            .to_str()
+            .is_some_and(|n| crate::usable_name(n, windows)),
+        _ => false,
+    })
 }
 
 #[cfg(unix)]
@@ -430,6 +439,16 @@ mod tests {
         .unwrap();
         assert_eq!(std::fs::read(dest.path().join("link/x")).unwrap(), b"x");
         assert!(!dest.path().join("real/up").exists());
+    }
+
+    #[test]
+    fn entries_must_be_plain_names_this_system_can_hold() {
+        assert!(holdable(Path::new("a/b:c/d.txt"), false));
+        assert!(!holdable(Path::new("a/b:c/d.txt"), true));
+        assert!(!holdable(Path::new("a/NUL"), true));
+        assert!(holdable(Path::new("a/b/c"), true));
+        assert!(!holdable(Path::new("/abs"), false));
+        assert!(!holdable(Path::new("a/../b"), false));
     }
 
     #[test]
