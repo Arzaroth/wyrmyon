@@ -213,6 +213,35 @@ fn printable(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
 
+fn usable_name(name: &str, windows: bool) -> bool {
+    if name.is_empty() || name == "." || name == ".." {
+        return false;
+    }
+    if !windows {
+        return true;
+    }
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    let device = match (stem.get(..3), stem.get(3..)) {
+        (Some("COM" | "LPT"), Some(n)) => {
+            n.chars().count() == 1 && n.chars().all(|c| c.is_ascii_digit() || "¹²³".contains(c))
+        }
+        _ => matches!(
+            stem.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+        ),
+    };
+    !device
+        && !name.ends_with(['.', ' '])
+        && !name
+            .chars()
+            .any(|c| c.is_control() || r#"<>:"/\|?*"#.contains(c))
+}
+
 fn mood_for(result: &anyhow::Result<()>) -> Mood {
     match result {
         Ok(()) => Mood::Happy,
@@ -247,6 +276,34 @@ mod tests {
             cache_dir_from(raw(""), raw("relative"), os("h")).unwrap(),
             at("h/.cache/wyrmyon/partial")
         );
+    }
+
+    #[test]
+    fn names_windows_cannot_hold_are_unusable_there_only() {
+        for name in ["a.txt", "CONSOLE", "com10", "lpt", ".hidden", "a b"] {
+            assert!(usable_name(name, true), "{name}");
+        }
+        for name in [
+            "con",
+            "NUL.txt",
+            "aux .tar.gz",
+            "COM1",
+            "lpt9.log",
+            "COM¹",
+            "conin$",
+            "c:x",
+            "a?b",
+            "a|b",
+            "trailing.",
+            "trailing ",
+            "tab\tname",
+        ] {
+            assert!(!usable_name(name, true), "{name}");
+            assert_eq!(usable_name(name, false), !name.is_empty(), "{name}");
+        }
+        for name in ["", ".", ".."] {
+            assert!(!usable_name(name, true) && !usable_name(name, false));
+        }
     }
 
     #[test]

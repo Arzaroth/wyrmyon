@@ -78,7 +78,12 @@ impl Fetched {
                 })
                 .await
                 .map_err(std::io::Error::other)?;
-            tokio::fs::File::open(target).await?.sync_all().await
+            tokio::fs::OpenOptions::new()
+                .write(true)
+                .open(target)
+                .await?
+                .sync_all()
+                .await
         }
         .await;
         match exported {
