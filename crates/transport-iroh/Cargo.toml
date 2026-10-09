@@ -19,7 +19,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.53.2", features = ["time", "rt-multi-thread"] }
-wyrmyon-wormhole = { version = "0.0.0", path = "../wormhole-core" }
+wyrmyon-wormhole = { path = "../wormhole-core" }
 
 [dev-dependencies]
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros"] }
