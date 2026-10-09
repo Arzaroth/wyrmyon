@@ -122,6 +122,10 @@ impl Global {
     }
 }
 
+pub fn command() -> clap::Command {
+    <Cli as clap::CommandFactory>::command()
+}
+
 pub fn main() -> ExitCode {
     let cli = Cli::parse();
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
