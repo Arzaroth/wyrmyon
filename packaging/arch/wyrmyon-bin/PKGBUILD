@@ -5,7 +5,7 @@
 # and the packages it builds from it.
 
 pkgname=wyrmyon-bin
-pkgver=0.0.0
+pkgver=0.1.0
 pkgrel=1
 pkgdesc="A magic-wormhole client that switches to iroh when both peers run wyrmyon (static binary)"
 arch=('x86_64' 'aarch64')

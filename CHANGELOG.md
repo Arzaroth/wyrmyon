@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-10
+
 ### Added
 
 - `wyrm send --text` and `wyrm receive`: text messages to and from any
