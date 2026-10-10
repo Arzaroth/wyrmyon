@@ -23,7 +23,8 @@
 - Between two wyrms, transfers are verified chunk by chunk (BLAKE3) and
   resume after an interruption: sending the same file again, with a new code,
   fetches only what the receiver does not have yet. Partial data waits in
-  `~/.cache/wyrmyon/partial` (or `WYRMYON_CACHE_DIR`).
+  `~/.cache/wyrmyon/partial`, `%LOCALAPPDATA%\wyrmyon\partial` on Windows,
+  or `WYRMYON_CACHE_DIR`.
 - No subcommand needed: `wyrm FILE...` sends, `wyrm CODE` receives, `echo hi |
   wyrm` sends text, and plain `wyrm` asks for a code. An argument that is both
   a code and a file here is refused rather than guessed.
