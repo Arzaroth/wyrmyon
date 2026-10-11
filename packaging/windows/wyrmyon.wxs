@@ -55,7 +55,8 @@
       <!--
         Part="last" appends to the user's PATH, and MSI takes it back out on
         uninstall. The keypath is a registry value: an Environment element
-        cannot be one.
+        cannot be one. ProductCode tells `wyrm --update` this copy is the
+        MSI's.
       -->
       <Component Id="PathEntry" Guid="*">
         <Environment
@@ -64,6 +65,9 @@
         <RegistryValue
             Root="HKCU" Key="Software\wyrmyon" Name="PathEntry"
             Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue
+            Root="HKCU" Key="Software\wyrmyon" Name="ProductCode"
+            Type="string" Value="[ProductCode]" />
       </Component>
     </ComponentGroup>
   </Package>
