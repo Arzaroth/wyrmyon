@@ -1,11 +1,14 @@
 mod blobs;
 
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use iroh::endpoint::{Connection, RecvStream, SendStream, presets};
+use futures_util::StreamExt;
+use iroh::endpoint::{Connection, PathEvent, PathStats, RecvStream, SendStream, presets};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr};
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 use wyrmyon_wormhole::Key;
 
 pub use blobs::{Fetched, Offered};
@@ -49,6 +52,38 @@ impl std::str::FromStr for Relays {
                 })
                 .collect::<Result<_, _>>()
                 .map(Self::Custom),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route {
+    Direct,
+    Relay,
+}
+
+impl Route {
+    fn of(addr: &TransportAddr) -> Self {
+        if addr.is_relay() {
+            Self::Relay
+        } else {
+            Self::Direct
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Traffic {
+    pub direct: u64,
+    pub relay: u64,
+}
+
+impl Traffic {
+    fn add(&mut self, route: Route, stats: &PathStats) {
+        let bytes = stats.udp_tx.bytes + stats.udp_rx.bytes;
+        match route {
+            Route::Direct => self.direct += bytes,
+            Route::Relay => self.relay += bytes,
         }
     }
 }
@@ -124,6 +159,9 @@ pub struct IrohPipe {
     endpoint: Endpoint,
     description: String,
     server: Option<tokio::task::JoinHandle<()>>,
+    route: watch::Receiver<Option<Route>>,
+    closed_paths: Arc<Mutex<Traffic>>,
+    follower: tokio::task::JoinHandle<()>,
 }
 
 impl IrohTransport {
@@ -161,15 +199,36 @@ impl IrohTransport {
 
     pub async fn connect(self, theirs: &IrohInfo, wormhole_key: &Key) -> Result<IrohPipe, Error> {
         match self.establish(theirs, wormhole_key).await {
-            Ok((connection, send, recv, description)) => Ok(IrohPipe {
-                role: self.role,
-                send,
-                recv,
-                connection,
-                endpoint: self.endpoint,
-                description,
-                server: None,
-            }),
+            Ok((connection, send, recv)) => {
+                let events = connection.path_events();
+                let initial = selected_route(&connection);
+                let description = match initial {
+                    Some(Route::Relay) => "iroh, via relay until a direct path opens",
+                    Some(Route::Direct) => "iroh, direct",
+                    None => "iroh",
+                }
+                .to_owned();
+                let (route_tx, route) = watch::channel(initial);
+                let closed_paths = Arc::default();
+                let follower = tokio::spawn(follow_paths(
+                    events,
+                    connection.clone(),
+                    route_tx,
+                    Arc::clone(&closed_paths),
+                ));
+                Ok(IrohPipe {
+                    role: self.role,
+                    send,
+                    recv,
+                    connection,
+                    endpoint: self.endpoint,
+                    description,
+                    server: None,
+                    route,
+                    closed_paths,
+                    follower,
+                })
+            }
             Err(e) => {
                 self.endpoint.close().await;
                 Err(e)
@@ -181,7 +240,7 @@ impl IrohTransport {
         &self,
         theirs: &IrohInfo,
         wormhole_key: &Key,
-    ) -> Result<(Connection, SendStream, RecvStream, String), Error> {
+    ) -> Result<(Connection, SendStream, RecvStream), Error> {
         let addr = theirs.to_addr()?;
         let confirm = wormhole_key.derive(CONFIRM_LABEL);
         let ours = self.endpoint.id();
@@ -246,17 +305,46 @@ impl IrohTransport {
             connection.close(2u8.into(), b"binding");
             return Err(Error::WrongPeer);
         }
+        Ok((connection, send, recv))
+    }
+}
 
-        let description = match connection
-            .paths()
-            .into_iter()
-            .find(iroh::endpoint::Path::is_selected)
-        {
-            Some(path) if path.is_relay() => "iroh, via relay until a direct path opens".to_owned(),
-            Some(_) => "iroh, direct".to_owned(),
-            None => "iroh".to_owned(),
-        };
-        Ok((connection, send, recv, description))
+fn selected_route(connection: &Connection) -> Option<Route> {
+    connection
+        .paths()
+        .into_iter()
+        .find(iroh::endpoint::Path::is_selected)
+        .map(|path| Route::of(path.remote_addr()))
+}
+
+fn select(route: &watch::Sender<Option<Route>>, selected: Route) {
+    route.send_if_modified(|now| now.replace(selected) != Some(selected));
+}
+
+async fn follow_paths(
+    mut events: iroh::endpoint::PathEventStream,
+    connection: Connection,
+    route: watch::Sender<Option<Route>>,
+    closed_paths: Arc<Mutex<Traffic>>,
+) {
+    while let Some(event) = events.next().await {
+        match event {
+            PathEvent::Selected { remote_addr, .. } => select(&route, Route::of(&remote_addr)),
+            PathEvent::Closed {
+                remote_addr,
+                last_stats,
+                ..
+            } => closed_paths
+                .lock()
+                .expect("the traffic lock is never poisoned")
+                .add(Route::of(&remote_addr), &last_stats),
+            PathEvent::Lagged { .. } => {
+                if let Some(selected) = selected_route(&connection) {
+                    select(&route, selected);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -278,6 +366,23 @@ impl IrohPipe {
         &self.description
     }
 
+    #[must_use]
+    pub fn route(&self) -> watch::Receiver<Option<Route>> {
+        self.route.clone()
+    }
+
+    #[must_use]
+    pub fn traffic(&self) -> Traffic {
+        let mut traffic = *self
+            .closed_paths
+            .lock()
+            .expect("the traffic lock is never poisoned");
+        for path in &self.connection.paths() {
+            traffic.add(Route::of(path.remote_addr()), &path.stats());
+        }
+        traffic
+    }
+
     pub async fn send_last(&mut self, data: &[u8]) -> Result<(), Error> {
         self.send
             .write_all(data)
@@ -294,6 +399,7 @@ impl IrohPipe {
     }
 
     pub async fn abort(mut self) {
+        self.follower.abort();
         if let Some(server) = self.server.take() {
             server.abort();
         }
@@ -302,6 +408,7 @@ impl IrohPipe {
     }
 
     pub async fn finish(mut self) {
+        self.follower.abort();
         if let Some(server) = self.server.take() {
             server.abort();
         }
