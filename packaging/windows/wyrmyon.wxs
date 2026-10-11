@@ -55,7 +55,7 @@
       <!--
         Part="last" appends to the user's PATH, and MSI takes it back out on
         uninstall. The keypath is a registry value: an Environment element
-        cannot be one. ProductCode and InstallDir tell `wyrm --update`
+        cannot be one. ProductCode and InstallDir tell the updater
         which copy is the MSI's.
       -->
       <Component Id="PathEntry" Guid="*">
