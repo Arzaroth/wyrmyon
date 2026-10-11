@@ -1,3 +1,4 @@
+mod netcheck;
 mod protocol;
 mod receive;
 mod send;
@@ -69,6 +70,8 @@ enum Command {
     Send(send::SendArgs),
     /// Receive what the other side sends
     Receive(receive::ReceiveArgs),
+    /// Check how this network lets iroh connect: public address, NAT, port mapping, relays
+    Netcheck,
 }
 
 impl Global {
@@ -140,6 +143,7 @@ pub fn main() -> ExitCode {
             match cli.command.map_or_else(|| bare(&cli.targets), Ok) {
                 Ok(Command::Send(args)) => send::run(&cli.global, args).await,
                 Ok(Command::Receive(args)) => receive::run(&cli.global, args).await,
+                Ok(Command::Netcheck) => netcheck::run(&cli.global).await,
                 Err(e) => Err(e),
             }
         };
