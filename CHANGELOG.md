@@ -16,6 +16,12 @@
   how to upgrade it instead. The MSI now records its ProductCode and install
   directory under `HKCU\Software\wyrmyon`, so its copy can be told apart
   from one `install.ps1` put in the same directory.
+- `--iroh-relays` takes relay URLs (`http` or `https`, separated by commas)
+  besides `default` and `disabled`, for relays of your own.
+- Between two wyrms, a line says when hole-punching moves the connection
+  from the relay to a direct path (or back), and the end of the transfer
+  says how much went direct: `Went direct`, `Went through the relay`, or
+  `Went 97% direct, the rest through the relay`.
 
 ## [0.1.0] - 2026-10-10
 

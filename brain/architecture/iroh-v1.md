@@ -9,8 +9,10 @@ exchanged through the PAKE channel and bound to the code by a MAC exchange.
 
 | Item | What it does |
 | --- | --- |
-| `IrohTransport::bind(Role, Relays)` | A fresh endpoint with a fresh secret key, ALPN `wyrmyon/1`, the `Minimal` preset (no pkarr or DNS publishing: addresses only ever travel through the mailbox), n0's default relays or none |
+| `IrohTransport::bind(Role, Relays)` | A fresh endpoint with a fresh secret key, ALPN `wyrmyon/1`, the `Minimal` preset (no pkarr or DNS publishing: addresses only ever travel through the mailbox), n0's default relays, none, or `Relays::Custom` URLs (`--iroh-relays http://...`, parsed by `Relays::from_str`) |
 | `IrohTransport::info()` | Our `IrohInfo`, after waiting up to 5 s for the home relay (when relays are on) and a direct address |
+| `IrohPipe::route()` | A `watch` of the path QUIC currently sends on, `Route::Direct` or `Route::Relay`, updated from iroh's path events |
+| `IrohPipe::traffic()` | Bytes sent and received per route so far, closed paths included |
 | `IrohTransport::connect(&their_info, wormhole_key)` | Sender dials, receiver accepts; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s |
 | `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` / `abort` | Raw bytes on the stream; the last message finishes it; `finish` closes in order, `abort` closes at once with an error code |
 | `IrohTransport::close()` | Closes an endpoint that never connected, e.g. when the receiver refuses the offer |
@@ -51,8 +53,14 @@ On the connection:
    pipe, so the peer learns at once instead of at the 30 s idle timeout.
 
 The `Receiving (...)` line says `iroh, direct` or `iroh, via relay until a
-direct path opens`: it is a snapshot at connect time, and iroh moves to a
-direct path by itself once hole-punching succeeds.
+direct path opens`, from the path selected at connect time. iroh keeps
+hole-punching over the relayed connection (every 5 s, and whenever either
+side's addresses change) and moves to a direct path by itself; a task on each
+pipe follows `Connection::path_events`, so the CLI prints `Now direct:
+hole-punching opened a path` (or `Back through the relay`) when the selected
+path changes, and, once the data is through, `Went direct`, `Went through the
+relay` or `Went N% direct` from the per-path byte counts (`transfer::went`).
+Each side selects its own path, so the two summaries can differ slightly.
 
 The node ID pin proves the connection reaches the endpoint the peer announced
 through the encrypted mailbox; the binding proves that endpoint belongs to
