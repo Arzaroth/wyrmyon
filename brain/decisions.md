@@ -56,6 +56,19 @@ try next, a second negotiation that can itself go wrong; iroh already falls
 back to its relays, which reach almost anywhere. `--force-classic` is the
 manual way out.
 
+## Both peers dial
+
+With relays, iroh hole-punches over the relayed connection and a direct path
+follows by itself. Without them (`--iroh-relays disabled`), a connection only
+exists if one side can reach the other, and before this the sender was always
+the one dialling. Both sides now dial and accept, and the sender's choice of
+connection (the one it writes its tag on) settles which one both use, so
+nothing new travels on the wire and an older wyrm still connects. The cost is
+a second, discarded handshake when both directions work, and a sender whose
+dial fails now waits for the receiver's dial rather than failing at once.
+True simultaneous hole-punching without relays would also need each side's
+public address, which only the relays' QAD probes provide.
+
 ## Our own wire form for iroh addresses
 
 `IrohInfo` (`id`, `relays`, `direct`) is defined here rather than serialising

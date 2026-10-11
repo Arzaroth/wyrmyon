@@ -16,6 +16,9 @@
   how to upgrade it instead. The MSI now records its ProductCode and install
   directory under `HKCU\Software\wyrmyon`, so its copy can be told apart
   from one `install.ps1` put in the same directory.
+- Between two wyrms, both sides dial each other, so with
+  `--iroh-relays disabled` a transfer works when either side can reach the
+  other, not only when the sender can reach the receiver.
 - `--iroh-relays` takes relay URLs (`http` or `https`, separated by commas)
   besides `default` and `disabled`, for relays of your own.
 - Between two wyrms, a line says when hole-punching moves the connection

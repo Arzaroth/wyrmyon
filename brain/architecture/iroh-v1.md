@@ -13,7 +13,7 @@ exchanged through the PAKE channel and bound to the code by a MAC exchange.
 | `IrohTransport::info()` | Our `IrohInfo`, after waiting up to 5 s for the home relay (when relays are on) and a direct address |
 | `IrohPipe::route()` | A `watch` of the path QUIC currently sends on, `Route::Direct` or `Route::Relay`, updated from iroh's path events |
 | `IrohPipe::traffic()` | Bytes sent and received per route so far, closed paths included |
-| `IrohTransport::connect(&their_info, wormhole_key)` | Sender dials, receiver accepts; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s |
+| `IrohTransport::connect(&their_info, wormhole_key)` | Both sides dial and accept; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s (a failed dial is reported then, if nothing reached us meanwhile) |
 | `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` / `abort` | Raw bytes on the stream; the last message finishes it; `finish` closes in order, `abort` closes at once with an error code |
 | `IrohTransport::close()` | Closes an endpoint that never connected, e.g. when the receiver refuses the offer |
 
@@ -32,11 +32,21 @@ address with neither is refused.
 
 On the connection:
 
-1. The sender dials the receiver's address with ALPN `wyrmyon/1`; iroh's TLS
-   only completes against the node ID dialled, so the sender's side of the pin
-   is iroh's own. The receiver accepts only a connection whose remote node ID
-   is the one the sender announced; any other is closed and it keeps waiting.
-2. The sender opens one bidirectional stream. Each side writes a 32-byte tag,
+1. Both peers dial each other with ALPN `wyrmyon/1` and accept at the same
+   time (`first_stream`), so a connection gets through when either side can
+   reach the other: a sender behind a NAT with nothing forwarded is reached
+   from a receiver that is, and the other way round, the connection reversal
+   of Tailscale's NAT traversal notes. This matters most with
+   `--iroh-relays disabled`, where iroh has no relay to hole-punch through.
+   iroh's TLS only completes against the node ID dialled, so a dialler's side
+   of the pin is iroh's own; each side accepts only a connection whose remote
+   node ID is the one the peer announced, closes any other and keeps waiting.
+   An older wyrm sender only dials and never accepts; the receiver's own dial
+   then simply loses.
+2. The sender opens one bidirectional stream on the first connection it gets,
+   whichever side dialled it, and writes first; the receiver takes the first
+   connection on which a stream arrives, so both settle on the same one, and
+   every other connection is dropped. Each side writes a 32-byte tag,
    HKDF of `wormhole_key.derive("wyrmyon/iroh-v1/confirm")` with info
    `<role>:<sender id>:<receiver id>`, and reads the other's. Tags are compared
    in constant time; a mismatch closes the connection with `WrongPeer`.
