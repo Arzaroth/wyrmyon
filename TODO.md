@@ -17,6 +17,13 @@ done.
 - [ ] `wyrm --update` takes a copy installed from a PyPI wheel (pip, pipx,
       uvx) for a hand-installed one and replaces it in place; detect the
       wheel's install before PyPI publishing starts.
+- [ ] `wyrm --update` on Windows replaces `wyrmyon.exe` then `wyrm.exe`
+      with no rollback: if the second fails, the two stay a version apart
+      and the next run says up to date. Roll back in selvedge.
+- [ ] `wyrm --update` trusts the archive on TLS alone; check it against
+      `SHA256SUMS`, or sign releases, as the install scripts check them.
+- [ ] `wyrm --update` would take a prerelease as the latest release; none is
+      published yet.
 - [ ] macOS keeps partial transfers in `~/.cache/wyrmyon/partial`; decide
       whether `~/Library/Caches` is worth the second convention.
 

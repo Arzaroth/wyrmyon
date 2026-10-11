@@ -7,8 +7,9 @@
 - `wyrm --update` replaces a copy installed by `install.sh`, `install.ps1` or
   from a release archive with the latest release. A copy installed by the
   .deb, the .rpm, an Arch package, Homebrew, Nix or the MSI is refused, with
-  how to upgrade it instead. The MSI now records its ProductCode under
-  `HKCU\Software\wyrmyon` so the two Windows installs can be told apart.
+  how to upgrade it instead. The MSI now records its ProductCode and install
+  directory under `HKCU\Software\wyrmyon`, so its copy can be told apart
+  from one `install.ps1` put in the same directory.
 
 ## [0.1.0] - 2026-10-10
 

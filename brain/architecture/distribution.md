@@ -69,7 +69,7 @@ packages built from them.
 The MSI is per-user and unsigned (SmartScreen warns): it installs into
 `%LOCALAPPDATA%\Programs\wyrmyon`, the directory `install.ps1` uses, and adds
 it to the user PATH, both undone on uninstall. It records its ProductCode
-under `HKCU\Software\wyrmyon`, which is how `wyrm --update` tells an MSI
+and install directory under `HKCU\Software\wyrmyon`, which is how `wyrm --update` tells an MSI
 install from a scripted one in the same directory
 ([features/update.md](../features/update.md)).
 
