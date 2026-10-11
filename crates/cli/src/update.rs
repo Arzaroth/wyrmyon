@@ -96,7 +96,10 @@ mod tests {
         let err = refuse_if_owned(Some(Owner::Distribution(Some("dpkg"))))
             .unwrap_err()
             .to_string();
-        assert!(err.starts_with("wyrmyon was installed by"), "{err}");
+        assert!(
+            err.starts_with(&format!("{} was installed by", WYRMYON.primary())),
+            "{err}"
+        );
         assert!(err.contains("(dpkg)"), "{err}");
         let err = refuse_if_owned(Some(Owner::Msi)).unwrap_err().to_string();
         assert!(
