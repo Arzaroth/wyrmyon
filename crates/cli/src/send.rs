@@ -4,10 +4,12 @@ use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
-use wyrmyon_transport_iroh::{IrohTransport, Offered, Role as IrohRole};
+use wyrmyon_transport_iroh::{IrohTransport, Offered, Role as IrohRole, Source};
 use wyrmyon_wormhole::{Code, Wormhole};
 
-use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
+use crate::protocol::{
+    self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
+};
 use crate::transfer::Pipe;
 use crate::{CODE_LENGTH, Global, mood_for, show_welcome, transfer, zipdir};
 
@@ -30,7 +32,7 @@ pub struct SendArgs {
 enum Payload {
     Text(String),
     File(PathBuf, FileOffer),
-    Directory(zipdir::Built, DirectoryOffer),
+    Tree(String, Vec<zipdir::Entry>),
 }
 
 impl SendArgs {
@@ -81,17 +83,7 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
             let size = offer.filesize;
             send_data(&mut wormhole, global, Offer::File(offer), &path, size).await
         }
-        Payload::Directory(built, offer) => {
-            let size = offer.zipsize;
-            send_data(
-                &mut wormhole,
-                global,
-                Offer::Directory(offer),
-                built.file.path(),
-                size,
-            )
-            .await
-        }
+        Payload::Tree(name, entries) => send_tree(&mut wormhole, global, name, entries).await,
     };
     wormhole.close(mood_for(&result)).await;
     result
@@ -115,28 +107,18 @@ async fn paths_payload(mut paths: Vec<PathBuf>) -> anyhow::Result<Payload> {
     if paths.len() == 1 {
         return path_payload(paths.remove(0)).await;
     }
-    eprintln!("Building zipfile of {} items..", paths.len());
-    let cancel = zipdir::Cancel::default();
-    let _cancel_on_drop = cancel.on_drop();
-    let built = tokio::task::spawn_blocking(move || zipdir::build_bundle(&paths, &cancel))
-        .await
-        .context("building the zip file")??;
-    Ok(directory_payload(built, "files".into()))
+    let entries = listed(move |cancel| zipdir::list_bundle(&paths, cancel)).await?;
+    Ok(Payload::Tree("files".into(), entries))
 }
 
-fn directory_payload(built: zipdir::Built, name: String) -> Payload {
-    eprintln!(
-        "Sending directory ({} bytes compressed) named '{name}'",
-        built.zipsize
-    );
-    let offer = DirectoryOffer {
-        mode: "zipfile/deflated".into(),
-        dirname: name,
-        zipsize: built.zipsize,
-        numbytes: built.numbytes,
-        numfiles: built.numfiles,
-    };
-    Payload::Directory(built, offer)
+async fn listed(
+    list: impl FnOnce(&zipdir::Cancel) -> anyhow::Result<Vec<zipdir::Entry>> + Send + 'static,
+) -> anyhow::Result<Vec<zipdir::Entry>> {
+    let cancel = zipdir::Cancel::default();
+    let _cancel_on_drop = cancel.on_drop();
+    tokio::task::spawn_blocking(move || list(&cancel))
+        .await
+        .context("reading the files to send")?
 }
 
 async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
@@ -145,14 +127,8 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
         .with_context(|| format!("cannot send {}", path.display()))?;
     let name = display_name(&path)?;
     if meta.is_dir() {
-        eprintln!("Building zipfile..");
-        let dir = path.clone();
-        let cancel = zipdir::Cancel::default();
-        let _cancel_on_drop = cancel.on_drop();
-        let built = tokio::task::spawn_blocking(move || zipdir::build(&dir, &cancel))
-            .await
-            .context("building the zip file")??;
-        return Ok(directory_payload(built, name));
+        let entries = listed(move |cancel| zipdir::list(&path, cancel)).await?;
+        return Ok(Payload::Tree(name, entries));
     }
     if !meta.is_file() {
         bail!("{} is not a regular file", path.display());
@@ -188,6 +164,102 @@ async fn send_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> 
     }
 }
 
+async fn send_tree(
+    wormhole: &mut Wormhole,
+    global: &Global,
+    name: String,
+    entries: Vec<zipdir::Entry>,
+) -> anyhow::Result<()> {
+    if global.use_collection(wormhole) {
+        return send_collection(wormhole, global, name, &entries).await;
+    }
+    eprintln!("Building zipfile..");
+    let cancel = zipdir::Cancel::default();
+    let _cancel_on_drop = cancel.on_drop();
+    let zipped = tokio::task::spawn_blocking(move || zipdir::zip(&entries, &cancel))
+        .await
+        .context("building the zip file")
+        .and_then(|built| built);
+    let built = match zipped {
+        Ok(built) => built,
+        Err(e) => {
+            protocol::send_error(wormhole, "the sender could not read its data").await?;
+            return Err(e);
+        }
+    };
+    eprintln!(
+        "Sending directory ({} bytes compressed) named '{name}'",
+        built.zipsize
+    );
+    let offer = DirectoryOffer {
+        mode: "zipfile/deflated".into(),
+        dirname: name,
+        zipsize: built.zipsize,
+        numbytes: built.numbytes,
+        numfiles: built.numfiles,
+    };
+    let size = offer.zipsize;
+    send_data(
+        wormhole,
+        global,
+        Offer::Directory(offer),
+        built.file.path(),
+        size,
+    )
+    .await
+}
+
+async fn send_collection(
+    wormhole: &mut Wormhole,
+    global: &Global,
+    name: String,
+    entries: &[zipdir::Entry],
+) -> anyhow::Result<()> {
+    let (mut sources, mut dirs) = (Vec::new(), Vec::new());
+    for entry in entries {
+        match entry {
+            zipdir::Entry::File {
+                source, name, mode, ..
+            } => sources.push(Source {
+                path: source.clone(),
+                name: name.clone(),
+                mode: *mode,
+            }),
+            zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
+            zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
+        }
+    }
+    eprintln!("Hashing..");
+    let (offered, manifest) = match Offered::import_collection(&sources, &dirs).await {
+        Ok(imported) => imported,
+        Err(e) => {
+            protocol::send_error(wormhole, "the sender could not read its data").await?;
+            return Err(e.into());
+        }
+    };
+    let offer = CollectionOffer {
+        name,
+        numbytes: manifest.numbytes(),
+        numfiles: manifest.files.len() as u64,
+    };
+    eprintln!(
+        "Sending directory ({} files, {} bytes) named '{}'",
+        offer.numfiles, offer.numbytes, offer.name
+    );
+    let size = offer.numbytes;
+    let result = send_over(
+        wormhole,
+        global,
+        Offer::Collection(offer),
+        None,
+        size,
+        Some(&offered),
+    )
+    .await;
+    offered.close().await;
+    result
+}
+
 async fn send_data(
     wormhole: &mut Wormhole,
     global: &Global,
@@ -212,7 +284,7 @@ async fn send_data(
     } else {
         None
     };
-    let result = send_over(wormhole, global, offer, path, size, offered.as_ref()).await;
+    let result = send_over(wormhole, global, offer, Some(path), size, offered.as_ref()).await;
     if let Some(offered) = offered {
         offered.close().await;
     }
@@ -223,7 +295,7 @@ async fn send_over(
     wormhole: &mut Wormhole,
     global: &Global,
     offer: Offer,
-    path: &Path,
+    path: Option<&Path>,
     size: u64,
     offered: Option<&Offered>,
 ) -> anyhow::Result<()> {
@@ -283,6 +355,7 @@ async fn send_over(
                 None
             }
             Pipe::Classic(records) => {
+                let path = path.expect("classic pipes carry a file");
                 let mut source = tokio::fs::File::open(path)
                     .await
                     .with_context(|| format!("opening {}", path.display()))?;

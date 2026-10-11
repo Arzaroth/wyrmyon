@@ -79,7 +79,10 @@ impl Global {
         let app_versions = if self.force_classic {
             serde_json::json!({})
         } else {
-            serde_json::json!({"wyrmyon": {"transports": [wyrmyon_transport_iroh::TRANSPORT]}})
+            serde_json::json!({"wyrmyon": {
+                "transports": [wyrmyon_transport_iroh::TRANSPORT],
+                "offers": [protocol::COLLECTION],
+            }})
         };
         Config {
             relay_url: self.relay_url.clone(),
@@ -93,6 +96,13 @@ impl Global {
             .as_array()
             .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT));
         theirs && !self.force_classic
+    }
+
+    fn use_collection(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
+        let theirs = wormhole.their_app_versions()["wyrmyon"]["offers"]
+            .as_array()
+            .is_some_and(|o| o.iter().any(|o| o == protocol::COLLECTION));
+        theirs && self.use_iroh(wormhole)
     }
 
     async fn iroh_or_tell(

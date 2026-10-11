@@ -23,8 +23,9 @@ impl Pipe {
     }
 
     pub fn follow_route(&self, bar: &ProgressBar) {
-        let Self::Iroh(pipe) = self else { return };
-        announce_routes(pipe.route(), pipe.first_route(), bar.clone());
+        if let Self::Iroh(pipe) = self {
+            follow_route(pipe, bar);
+        }
     }
 
     pub fn went(&self) -> Option<String> {
@@ -65,6 +66,10 @@ impl Pipe {
             Self::Iroh(pipe) => pipe.finish().await,
         }
     }
+}
+
+pub fn follow_route(pipe: &IrohPipe, bar: &ProgressBar) {
+    announce_routes(pipe.route(), pipe.first_route(), bar.clone());
 }
 
 fn announce_routes(

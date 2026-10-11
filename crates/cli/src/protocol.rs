@@ -5,6 +5,8 @@ use wyrmyon_transport_classic::TransitInfo;
 use wyrmyon_transport_iroh::IrohInfo;
 use wyrmyon_wormhole::Wormhole;
 
+pub const COLLECTION: &str = "collection-v1";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AppMessage {
@@ -22,6 +24,8 @@ pub enum Offer {
     Message(String),
     File(FileOffer),
     Directory(DirectoryOffer),
+    #[serde(rename = "wyrmyon-collection-v1")]
+    Collection(CollectionOffer),
     #[serde(untagged)]
     Other(Value),
 }
@@ -37,6 +41,13 @@ pub struct DirectoryOffer {
     pub mode: String,
     pub dirname: String,
     pub zipsize: u64,
+    pub numbytes: u64,
+    pub numfiles: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollectionOffer {
+    pub name: String,
     pub numbytes: u64,
     pub numfiles: u64,
 }

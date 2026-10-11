@@ -65,14 +65,6 @@ pub enum Entry {
     EmptyDir(String),
 }
 
-pub fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
-    zip(&list(dir, cancel)?, cancel)
-}
-
-pub fn build_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Built> {
-    zip(&list_bundle(paths, cancel)?, cancel)
-}
-
 pub fn list(dir: &Path, cancel: &Cancel) -> anyhow::Result<Vec<Entry>> {
     let mut walk = Walk::new(cancel);
     walk.add_dir(dir, Path::new(""))?;
@@ -267,7 +259,7 @@ pub fn extract(
     Ok(())
 }
 
-fn holdable(relative: &Path, windows: bool) -> bool {
+pub fn holdable(relative: &Path, windows: bool) -> bool {
     relative.components().all(|c| match c {
         std::path::Component::Normal(name) => name
             .to_str()
@@ -351,6 +343,10 @@ impl Drop for NewDir {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
+        zip(&list(dir, cancel)?, cancel)
+    }
 
     #[test]
     fn a_directory_round_trips_through_zip() {

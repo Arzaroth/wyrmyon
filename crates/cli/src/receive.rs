@@ -8,7 +8,9 @@ use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
-use crate::protocol::{self, Answer, AppMessage, DirectoryOffer, FileOffer, Offer};
+use crate::protocol::{
+    self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
+};
 use crate::transfer::Pipe;
 use crate::{CODE_LENGTH, Global, cache_dir, mood_for, printable, show_welcome, transfer, zipdir};
 
@@ -100,6 +102,9 @@ async fn receive_offer(
     match offer {
         Offer::File(file) => receive_file(wormhole, file, connection, global, args).await,
         Offer::Directory(dir) => receive_directory(wormhole, dir, connection, global, args).await,
+        Offer::Collection(collection) => {
+            receive_collection(wormhole, collection, connection, global, args).await
+        }
         Offer::Message(text) => {
             if let Some(connection) = connection {
                 connection.close().await;
@@ -247,7 +252,26 @@ async fn accept(
     args: &ReceiveArgs,
     describe: &str,
 ) -> anyhow::Result<(PathBuf, Partial, tokio::fs::File)> {
-    if global.force_iroh && matches!(connection, Connection::Classic(..)) {
+    let classic = matches!(connection, Connection::Classic(..));
+    let (dest, name) = destination(wormhole, offered_name, classic, global, args, describe).await?;
+    match Partial::create(&dest, &name).await {
+        Ok((partial, file)) => Ok((dest, partial, file)),
+        Err(e) => {
+            protocol::send_error(wormhole, "the receiver cannot write there").await?;
+            Err(e)
+        }
+    }
+}
+
+async fn destination(
+    wormhole: &mut Wormhole,
+    offered_name: &str,
+    classic: bool,
+    global: &Global,
+    args: &ReceiveArgs,
+    describe: &str,
+) -> anyhow::Result<(PathBuf, String)> {
+    if global.force_iroh && classic {
         protocol::send_error(wormhole, "the receiver requires iroh-v1").await?;
         bail!("the other side does not speak iroh-v1 (--force-iroh)");
     }
@@ -277,13 +301,7 @@ async fn accept(
             }
         }
     }
-    match Partial::create(&dest, &name).await {
-        Ok((partial, file)) => Ok((dest, partial, file)),
-        Err(e) => {
-            protocol::send_error(wormhole, "the receiver cannot write there").await?;
-            Err(e)
-        }
-    }
+    Ok((dest, name))
 }
 
 async fn receive_file(
@@ -354,6 +372,86 @@ async fn receive_directory(
     let dest = incoming.complete(unpacked.and_then(|r| r)).await?;
     eprintln!("Received files written to {}", dest.display());
     Ok(())
+}
+
+async fn receive_collection(
+    wormhole: &mut Wormhole,
+    offer: CollectionOffer,
+    connection: Option<Connection>,
+    global: &Global,
+    args: &ReceiveArgs,
+) -> anyhow::Result<()> {
+    let Some(Connection::Iroh(iroh, theirs)) = connection else {
+        return refuse(wormhole, "the sender offered a collection without iroh").await;
+    };
+    let describe = format!(
+        "directory ({} files, {} bytes)",
+        offer.numfiles, offer.numbytes
+    );
+    let chosen = async {
+        let (dest, _) = destination(wormhole, &offer.name, false, global, args, &describe).await?;
+        match zipdir::NewDir::create(&dest) {
+            Ok(dir) => Ok((dest, dir)),
+            Err(e) => {
+                protocol::send_error(wormhole, "the receiver cannot write there").await?;
+                Err(e)
+            }
+        }
+    }
+    .await;
+    let (dest, dir) = match chosen {
+        Ok(chosen) => chosen,
+        Err(e) => {
+            iroh.close().await;
+            return Err(e);
+        }
+    };
+    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
+    let mut pipe = iroh.connect(&theirs, wormhole.key()).await?;
+    eprintln!("Receiving ({})..", pipe.describe());
+    let bar = transfer::progress(offer.numbytes, global.hide_progress);
+    transfer::follow_route(&pipe, &bar);
+    let received = async {
+        let listed = pipe
+            .fetch_manifest(&cache_dir()?, offer.numbytes, offer.numfiles)
+            .await?;
+        let manifest = listed.manifest();
+        let paths = manifest.files.iter().map(|f| &f.path).chain(&manifest.dirs);
+        if let Some(bad) = paths
+            .into_iter()
+            .find(|p| !zipdir::holdable(Path::new(p), cfg!(windows)))
+        {
+            let why = format!("{} cannot be written here", printable(bad));
+            return Err(listed.refuse(&why).await.into());
+        }
+        let fetched = listed.fetch(&pipe, &mut |n| bar.set_position(n)).await?;
+        bar.finish_and_clear();
+        fetched.export_into(&dest).await?;
+        anyhow::Ok(())
+    }
+    .await;
+    let mut pipe = Pipe::Iroh(pipe);
+    let done = match received {
+        Ok(()) => {
+            if let Some(went) = pipe.went() {
+                eprintln!("{went}");
+            }
+            transfer::send_ack(&mut pipe, None).await
+        }
+        Err(e) => Err(e),
+    };
+    match done {
+        Ok(()) => {
+            dir.keep();
+            pipe.shutdown().await;
+            eprintln!("Received files written to {}", dest.display());
+            Ok(())
+        }
+        Err(e) => {
+            pipe.abort().await;
+            Err(e)
+        }
+    }
 }
 
 struct Partial {
