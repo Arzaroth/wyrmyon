@@ -168,6 +168,8 @@ mod tests {
         assert!(wxs.contains(r#"Key="Software\wyrmyon""#));
         assert!(wxs.contains(r#"Name="ProductCode""#));
         assert!(wxs.contains(r#"Value="[ProductCode]""#));
+        assert!(wxs.contains(r#"Name="InstallDir""#));
+        assert!(wxs.contains(r#"Value="[INSTALLFOLDER]""#));
         assert_eq!(WYRMYON.msi_marker_key, Some(r"HKCU\Software\wyrmyon"));
     }
 }
