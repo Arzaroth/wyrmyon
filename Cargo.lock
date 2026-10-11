@@ -744,7 +744,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.6",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3570,8 +3570,8 @@ dependencies = [
 
 [[package]]
 name = "selvedge"
-version = "0.7.0"
-source = "git+https://github.com/Arzaroth/selvedge?tag=v0.7.0#11a8f7e93b12dde8895aef794222a3bc6e0af17b"
+version = "0.7.1"
+source = "git+https://github.com/Arzaroth/selvedge?tag=v0.7.1#9834136311779322ecf7647622c6be3d960242f3"
 dependencies = [
  "anyhow",
  "http",
@@ -3579,6 +3579,7 @@ dependencies = [
  "self_update",
  "serde",
  "serde_json",
+ "zip 6.0.0",
 ]
 
 [[package]]
