@@ -309,12 +309,13 @@ fn an_update_that_cannot_reach_github_fails_and_says_so() {
         .env("NO_PROXY", "")
         .env("XDG_CACHE_HOME", cache.path())
         .env("LOCALAPPDATA", cache.path())
+        .env_remove("WYRMYON_REPO")
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("could not reach GitHub"), "{stderr}");
-    assert!(!cache.path().join("wyrmyon/update.json").exists());
+    assert!(!cache.path().join("wyrmyon").exists());
 }
 
 #[test]

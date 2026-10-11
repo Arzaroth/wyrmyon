@@ -61,11 +61,13 @@ pub(crate) fn run(hide_progress: bool) -> anyhow::Result<()> {
     if hide_progress {
         selvedge::update::silence_progress();
     }
-    let (xdg, home) = crate::cache_env();
-    let cache = crate::cache_root_from(xdg, home)?.join("update.json");
+    let unread = tempfile::tempdir()?;
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let applied = selvedge::update::apply(&WYRMYON, &cache)?;
-    println!("{}", outcome(WYRMYON.version, &applied.version));
+    let applied = selvedge::update::apply(&WYRMYON, &unread.path().join("update.json"))?;
+    println!(
+        "{}",
+        outcome(WYRMYON.version, &applied.version, &WYRMYON.repo())
+    );
     Ok(())
 }
 
@@ -76,11 +78,16 @@ fn refuse_if_owned(owner: Option<Owner>) -> anyhow::Result<()> {
     }
 }
 
-fn outcome(running: &str, installed: &str) -> String {
-    if running == installed {
-        format!("wyrmyon {running} is the latest release")
+fn outcome(running: &str, installed: &str, repo: &str) -> String {
+    let said = if running == installed {
+        format!("wyrmyon {running} is up to date")
     } else {
         format!("wyrmyon updated from {running} to {installed}")
+    };
+    if repo == WYRMYON.repo {
+        said
+    } else {
+        format!("{said}, from {repo}")
     }
 }
 
@@ -105,13 +112,18 @@ mod tests {
 
     #[test]
     fn the_outcome_says_whether_anything_changed() {
+        let ours = WYRMYON.repo;
         assert_eq!(
-            outcome("0.2.0", "0.2.0"),
-            "wyrmyon 0.2.0 is the latest release"
+            outcome("0.2.0", "0.2.0", ours),
+            "wyrmyon 0.2.0 is up to date"
         );
         assert_eq!(
-            outcome("0.2.0", "0.3.0"),
+            outcome("0.2.0", "0.3.0", ours),
             "wyrmyon updated from 0.2.0 to 0.3.0"
+        );
+        assert_eq!(
+            outcome("0.2.0", "0.3.0", "someone/fork"),
+            "wyrmyon updated from 0.2.0 to 0.3.0, from someone/fork"
         );
     }
 
