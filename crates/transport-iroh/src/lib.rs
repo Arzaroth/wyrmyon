@@ -5,7 +5,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
+use futures_util::{FutureExt, StreamExt};
 use iroh::endpoint::{Connection, PathEvent, PathId, PathStats, RecvStream, SendStream, presets};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr};
 use serde::{Deserialize, Serialize};
@@ -290,42 +291,7 @@ impl IrohTransport {
         let addr = theirs.to_addr(&self.relays)?;
         let confirm = wormhole_key.derive(CONFIRM_LABEL);
         let ours = self.endpoint.id();
-        let attempt = async {
-            match self.role {
-                Role::Sender => {
-                    let connection = self
-                        .endpoint
-                        .connect(addr.clone(), ALPN)
-                        .await
-                        .map_err(|e| Error::Connect(e.to_string()))?;
-                    let (send, recv) = connection
-                        .open_bi()
-                        .await
-                        .map_err(|e| Error::Stream(e.to_string()))?;
-                    Ok((connection, send, recv))
-                }
-                Role::Receiver => loop {
-                    let Some(incoming) = self.endpoint.accept().await else {
-                        return Err(Error::Connect("the endpoint closed".into()));
-                    };
-                    let Ok(connection) = incoming.await else {
-                        continue;
-                    };
-                    if connection.remote_id() != addr.id {
-                        connection.close(1u8.into(), b"not you");
-                        continue;
-                    }
-                    let (send, recv) = connection
-                        .accept_bi()
-                        .await
-                        .map_err(|e| Error::Stream(e.to_string()))?;
-                    break Ok((connection, send, recv));
-                },
-            }
-        };
-        let (connection, mut send, mut recv) = tokio::time::timeout(CONNECT_TIMEOUT, attempt)
-            .await
-            .map_err(|_| Error::Connect("timed out".into()))??;
+        let (connection, mut send, mut recv) = self.first_stream(&addr).await?;
 
         let (sender_id, receiver_id) = match self.role {
             Role::Sender => (ours, addr.id),
@@ -352,6 +318,67 @@ impl IrohTransport {
             return Err(Error::WrongPeer);
         }
         Ok((connection, send, recv))
+    }
+}
+
+impl IrohTransport {
+    async fn first_stream(
+        &self,
+        addr: &EndpointAddr,
+    ) -> Result<(Connection, SendStream, RecvStream), Error> {
+        let role = self.role;
+        let stream = move |connection: Connection| async move {
+            let streams = match role {
+                Role::Sender => connection.open_bi().await,
+                Role::Receiver => connection.accept_bi().await,
+            };
+            streams.ok().map(|(send, recv)| (connection, send, recv))
+        };
+        let deadline = tokio::time::sleep(CONNECT_TIMEOUT);
+        let mut deadline = std::pin::pin!(deadline);
+        let mut dialing = std::pin::pin!(self.endpoint.connect(addr.clone(), ALPN));
+        let mut dial_failed = None;
+        let mut waiting = FuturesUnordered::new();
+        loop {
+            tokio::select! {
+                dialled = &mut dialing, if dial_failed.is_none() => match dialled {
+                    Ok(connection) => {
+                        dial_failed = Some(String::new());
+                        waiting.push(stream(connection).boxed());
+                    }
+                    Err(e) => dial_failed = Some(e.to_string()),
+                },
+                incoming = self.endpoint.accept() => {
+                    let Some(incoming) = incoming else {
+                        return Err(Error::Connect("the endpoint closed".into()));
+                    };
+                    let id = addr.id;
+                    waiting.push(
+                        async move {
+                            let connection = incoming.await.ok()?;
+                            if connection.remote_id() != id {
+                                connection.close(1u8.into(), b"not you");
+                                return None;
+                            }
+                            stream(connection).await
+                        }
+                        .boxed(),
+                    );
+                }
+                Some(won) = waiting.next() => {
+                    if let Some(won) = won {
+                        return Ok(won);
+                    }
+                }
+                () = &mut deadline => {
+                    return Err(Error::Connect(
+                        dial_failed
+                            .filter(|e| !e.is_empty())
+                            .unwrap_or_else(|| "timed out".into()),
+                    ));
+                }
+            }
+        }
     }
 }
 
