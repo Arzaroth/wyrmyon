@@ -53,24 +53,14 @@ struct Global {
     /// Fail rather than fall back to classic transit with a legacy peer
     #[arg(long, global = true)]
     force_iroh: bool,
-    /// iroh relays: n0's public ones, or none (direct connections only)
-    #[arg(long, global = true, env = "WYRMYON_IROH_RELAYS", value_enum, default_value_t = IrohRelays::Default)]
-    iroh_relays: IrohRelays,
-}
-
-#[derive(Clone, Copy, clap::ValueEnum)]
-enum IrohRelays {
-    Default,
-    Disabled,
-}
-
-impl From<IrohRelays> for wyrmyon_transport_iroh::Relays {
-    fn from(relays: IrohRelays) -> Self {
-        match relays {
-            IrohRelays::Default => Self::Default,
-            IrohRelays::Disabled => Self::Disabled,
-        }
-    }
+    /// iroh relays: `default` (n0's public ones), `disabled` (direct connections only), or relay URLs separated by commas
+    #[arg(
+        long,
+        global = true,
+        env = "WYRMYON_IROH_RELAYS",
+        default_value = "default"
+    )]
+    iroh_relays: wyrmyon_transport_iroh::Relays,
 }
 
 #[derive(Subcommand)]
@@ -107,7 +97,7 @@ impl Global {
         wormhole: &mut wyrmyon_wormhole::Wormhole,
         role: wyrmyon_transport_iroh::Role,
     ) -> anyhow::Result<IrohTransport> {
-        let bound = IrohTransport::bind(role, self.iroh_relays.into()).await;
+        let bound = IrohTransport::bind(role, self.iroh_relays.clone()).await;
         if bound.is_err() {
             protocol::send_error(wormhole, "cannot open an iroh endpoint").await?;
         }
@@ -338,12 +328,5 @@ mod tests {
         for name in ["", ".", ".."] {
             assert!(!usable_name(name, true) && !usable_name(name, false));
         }
-    }
-
-    #[test]
-    fn iroh_relay_flags_map_to_the_transport() {
-        use wyrmyon_transport_iroh::Relays;
-        assert_eq!(Relays::from(IrohRelays::Default), Relays::Default);
-        assert_eq!(Relays::from(IrohRelays::Disabled), Relays::Disabled);
     }
 }

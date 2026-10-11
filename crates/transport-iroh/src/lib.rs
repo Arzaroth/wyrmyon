@@ -25,10 +25,32 @@ pub enum Role {
     Receiver,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Relays {
     Default,
     Disabled,
+    Custom(Vec<RelayUrl>),
+}
+
+impl std::str::FromStr for Relays {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Self::Default),
+            "disabled" => Ok(Self::Disabled),
+            urls => urls
+                .split(',')
+                .map(|url| match url.trim().parse::<RelayUrl>() {
+                    Ok(relay) if matches!(relay.scheme(), "http" | "https") => Ok(relay),
+                    _ => Err(format!(
+                        "`{url}` is not `default`, `disabled` or an http(s) relay URL"
+                    )),
+                })
+                .collect::<Result<_, _>>()
+                .map(Self::Custom),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -113,7 +135,7 @@ impl IrohTransport {
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::generate())
             .alpns(vec![ALPN.to_vec()])
-            .relay_mode(relay_mode(relays))
+            .relay_mode(relay_mode(&relays))
             .bind()
             .await
             .map_err(|e| Error::Bind(e.to_string()))?;
@@ -126,7 +148,7 @@ impl IrohTransport {
 
     pub async fn info(&self) -> IrohInfo {
         let ready = async {
-            if self.relays == Relays::Default {
+            if self.relays != Relays::Disabled {
                 self.endpoint.online().await;
             }
             while self.endpoint.addr().ip_addrs().next().is_none() {
@@ -238,10 +260,11 @@ impl IrohTransport {
     }
 }
 
-fn relay_mode(relays: Relays) -> RelayMode {
+fn relay_mode(relays: &Relays) -> RelayMode {
     match relays {
         Relays::Default => iroh::endpoint::default_relay_mode(),
         Relays::Disabled => RelayMode::Disabled,
+        Relays::Custom(urls) => RelayMode::Custom(urls.iter().cloned().collect()),
     }
 }
 
@@ -299,11 +322,30 @@ mod tests {
 
     #[test]
     fn relays_map_to_iroh_relay_modes() {
-        assert_eq!(relay_mode(Relays::Disabled), RelayMode::Disabled);
+        assert_eq!(relay_mode(&Relays::Disabled), RelayMode::Disabled);
         assert_eq!(
-            relay_mode(Relays::Default),
+            relay_mode(&Relays::Default),
             iroh::endpoint::default_relay_mode()
         );
+        let url: RelayUrl = "http://127.0.0.1:3340".parse().unwrap();
+        assert_eq!(
+            relay_mode(&Relays::Custom(vec![url.clone()])),
+            RelayMode::Custom(url.into())
+        );
+    }
+
+    #[test]
+    fn relays_parse_from_their_names_or_urls() {
+        assert_eq!("default".parse(), Ok(Relays::Default));
+        assert_eq!("disabled".parse(), Ok(Relays::Disabled));
+        let Ok(Relays::Custom(urls)) = "http://127.0.0.1:3340, https://relay.example".parse()
+        else {
+            panic!("two relay URLs");
+        };
+        assert_eq!(urls.len(), 2);
+        for bad in ["", "nowhere", "ftp://relay.example", "https://a, nope"] {
+            assert!(bad.parse::<Relays>().is_err(), "{bad}");
+        }
     }
 
     #[test]
