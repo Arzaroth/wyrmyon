@@ -252,3 +252,65 @@ async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
     upstream.finish().await;
     downstream.finish().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sender_nobody_can_dial_into_is_reached_from_the_receiver_side() {
+    let key = Key::from_bytes([11; 32]);
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let (sender_info, mut receiver_info) = (sender.info().await, receiver.info().await);
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    receiver_info.direct = vec![silent.local_addr().unwrap().to_string()];
+
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info, &key),
+            receiver.connect(&sender_info, &key)
+        )
+    })
+    .await;
+    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    upstream.send_last(b"the other way round").await.unwrap();
+    assert_eq!(
+        within(downstream.receive_last()).await.unwrap(),
+        b"the other way round"
+    );
+    upstream.finish().await;
+    downstream.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stranger_dialling_the_sender_is_turned_away() {
+    let key = Key::from_bytes([12; 32]);
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let stranger = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let (sender_info, mut receiver_info) = (sender.info().await, receiver.info().await);
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    receiver_info.direct = vec![silent.local_addr().unwrap().to_string()];
+    let waiting = tokio::spawn({
+        let key = key.clone();
+        async move { sender.connect(&receiver_info, &key).await }
+    });
+    let lurking = tokio::spawn({
+        let (key, sender_info) = (key.clone(), sender_info.clone());
+        async move { stranger.connect(&sender_info, &key).await }
+    });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let downstream = within(receiver.connect(&sender_info, &key)).await;
+    let upstream = within(waiting).await.unwrap();
+    assert!(upstream.is_ok(), "{:?}", upstream.err());
+    assert!(downstream.is_ok(), "{:?}", downstream.err());
+    assert!(!lurking.is_finished());
+    lurking.abort();
+}
