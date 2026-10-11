@@ -2,6 +2,7 @@ mod protocol;
 mod receive;
 mod send;
 mod transfer;
+mod update;
 mod zipdir;
 
 use std::process::ExitCode;
@@ -27,6 +28,9 @@ struct Cli {
     command: Option<Command>,
     /// Paths to send, or a code to receive
     targets: Vec<String>,
+    /// Replace this copy with the latest release, unless a package manager installed it
+    #[arg(long, conflicts_with = "targets")]
+    update: bool,
 }
 
 #[derive(Args)]
@@ -127,7 +131,19 @@ pub fn command() -> clap::Command {
 }
 
 pub fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cmd = command();
+    let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&cmd.get_matches_mut())
+        .unwrap_or_else(|e| e.exit());
+    if cli.update {
+        if cli.command.is_some() {
+            cmd.error(
+                clap::error::ErrorKind::ArgumentConflict,
+                "--update cannot be used with a subcommand",
+            )
+            .exit();
+        }
+        return exit_code(update::run(cli.global.hide_progress));
+    }
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
     let result = runtime.block_on(async {
         let work = async {
@@ -142,6 +158,10 @@ pub fn main() -> ExitCode {
             _ = tokio::signal::ctrl_c() => Err(anyhow::anyhow!("interrupted")),
         }
     });
+    exit_code(result)
+}
+
+fn exit_code(result: anyhow::Result<()>) -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -218,7 +238,7 @@ fn cache_root_from(
     let base = match (absolute(xdg), absolute(home)) {
         (Some(xdg), _) => xdg,
         (None, Some(home)) => home.join(".cache"),
-        (None, None) => anyhow::bail!("no absolute HOME to keep partial transfers in"),
+        (None, None) => anyhow::bail!("no absolute HOME to keep a cache in"),
     };
     Ok(base.join("wyrmyon"))
 }
