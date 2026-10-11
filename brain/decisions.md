@@ -162,3 +162,15 @@ ship. Every package is installed on a matching system before the release
 job (all but the aarch64 Arch package, for want of an arm64 Arch image), and
 the release job runs last, so a broken package never reaches a published
 release.
+
+## `--update` leaves packages to their package managers
+
+A .deb, .rpm, Arch package, Homebrew keg or MSI records the version and the
+files it installed; replacing them in place leaves that record describing a
+version that is gone, and the next upgrade comparing against it. So
+`--update` only replaces a copy nobody else keeps a record of, and tells
+everyone else how to upgrade instead. The updater is selvedge's, shared with
+TailGauge and TokenGauge, rather than a third copy of the same download,
+lock and replace logic; its `updater` feature leaves the TLS provider to
+wyrmyon, which installs ring, the one iroh links, so the binary carries one
+crypto library and no C build of aws-lc for musl and Windows arm64.

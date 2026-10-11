@@ -68,7 +68,10 @@ packages built from them.
 
 The MSI is per-user and unsigned (SmartScreen warns): it installs into
 `%LOCALAPPDATA%\Programs\wyrmyon`, the directory `install.ps1` uses, and adds
-it to the user PATH, both undone on uninstall.
+it to the user PATH, both undone on uninstall. It records its ProductCode
+under `HKCU\Software\wyrmyon`, which is how `wyrm --update` tells an MSI
+install from a scripted one in the same directory
+([features/update.md](../features/update.md)).
 
 macOS gets the tarballs and `install.sh`. A `.pkg` or `.dmg` would need a
 Developer ID signature and notarization to open without a Gatekeeper
@@ -88,6 +91,12 @@ man pages and completions under `~/.local/share` and `~/.config/fish`;
 `wyrm.exe` is renamed aside rather than overwritten, and the PATH entry is
 written to the registry as `REG_EXPAND_SZ` so the user's other `%VAR%`
 entries survive.
+
+A copy installed this way, or unpacked from an archive, updates itself with
+`wyrm --update`, which reads the same assets: the archive for the machine's
+target triple, binaries in its `wyrmyon-vX.Y.Z-<target>/` directory. The
+packages are left to their package managers
+([features/update.md](../features/update.md)).
 
 ## The release workflow
 

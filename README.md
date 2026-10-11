@@ -62,6 +62,10 @@ into `~/.local/bin`, with man pages and shell completions
 (`%LOCALAPPDATA%\Programs\wyrmyon` on Windows, binaries only). The Linux binaries are static, so they run on any
 distribution. PyPI, Homebrew and the AUR come later.
 
+A copy installed by the script or from a `.tar.gz` updates itself with
+`wyrm --update`. The packages and the MSI are upgraded the way they were
+installed, and `--update` says so rather than going around them.
+
 ## How it works
 
 Both peers meet on the public magic-wormhole mailbox and run SPAKE2 on the code,

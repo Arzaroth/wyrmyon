@@ -14,6 +14,9 @@ done.
       (`Makefile`, `makefile`) or Unicode normalization is refused whole on
       macOS and Windows (`create_new` fails on the second one); say which
       names collide, or rename the second.
+- [ ] `wyrm --update` takes a copy installed from a PyPI wheel (pip, pipx,
+      uvx) for a hand-installed one and replaces it in place; detect the
+      wheel's install before PyPI publishing starts.
 - [ ] macOS keeps partial transfers in `~/.cache/wyrmyon/partial`; decide
       whether `~/Library/Caches` is worth the second convention.
 

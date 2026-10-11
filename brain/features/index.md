@@ -10,3 +10,4 @@ is in [ROADMAP.md](../../ROADMAP.md).
 | A directory, as a zip file | [directories.md](directories.md) |
 | Verified, resumable transfers between two wyrms | [resume.md](resume.md) |
 | The command line: bare arguments, completion, several paths | [cli.md](cli.md) |
+| `wyrm --update`, and the installs it leaves to a package manager | [update.md](update.md) |
