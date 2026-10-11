@@ -11,23 +11,29 @@ use iroh_blobs::{BlobFormat, Hash};
 use crate::{Error, IrohPipe};
 
 pub struct Offered {
-    store: FsStore,
-    tag: TempTag,
-    _dir: tempfile::TempDir,
+    pub(crate) store: FsStore,
+    pub(crate) root: Hash,
+    pub(crate) tags: Vec<TempTag>,
+    pub(crate) _dir: tempfile::TempDir,
 }
 
 pub struct Fetched {
-    store: FsStore,
-    hash: Hash,
-    dir: PathBuf,
+    pub(crate) store: FsStore,
+    pub(crate) hash: Hash,
+    pub(crate) dir: PathBuf,
+}
+
+pub(crate) async fn throwaway_store() -> Result<(tempfile::TempDir, FsStore), Error> {
+    let dir = tempfile::tempdir().map_err(|e| Error::Blob(e.to_string()))?;
+    let store = FsStore::load(dir.path())
+        .await
+        .map_err(|e| Error::Blob(e.to_string()))?;
+    Ok((dir, store))
 }
 
 impl Offered {
     pub async fn import(path: &Path) -> Result<Self, Error> {
-        let dir = tempfile::tempdir().map_err(|e| Error::Blob(e.to_string()))?;
-        let store = FsStore::load(dir.path())
-            .await
-            .map_err(|e| Error::Blob(e.to_string()))?;
+        let (dir, store) = throwaway_store().await?;
         let absolute = std::path::absolute(path).map_err(|e| Error::Blob(e.to_string()))?;
         let added = store
             .blobs()
@@ -47,18 +53,19 @@ impl Offered {
         };
         Ok(Self {
             store,
-            tag,
+            root: tag.hash(),
+            tags: vec![tag],
             _dir: dir,
         })
     }
 
     #[must_use]
     pub fn hash(&self) -> [u8; 32] {
-        *self.tag.hash().as_bytes()
+        *self.root.as_bytes()
     }
 
     pub async fn close(self) {
-        drop(self.tag);
+        drop(self.tags);
         let _ = self.store.shutdown().await;
     }
 }
@@ -99,7 +106,7 @@ impl Fetched {
         }
     }
 
-    async fn discard(self) {
+    pub(crate) async fn discard(self) {
         let Self { store, dir, .. } = self;
         let _ = store.shutdown().await;
         drop(store);
@@ -111,7 +118,7 @@ impl Fetched {
         }
     }
 
-    async fn keep(self, cause: impl std::fmt::Display) -> Error {
+    pub(crate) async fn keep(self, cause: impl std::fmt::Display) -> Error {
         let _ = self.store.shutdown().await;
         Error::Blob(format!(
             "{cause}; what arrived is kept in {} for the next attempt (delete it to free the space)",
@@ -121,6 +128,20 @@ impl Fetched {
 }
 
 impl IrohPipe {
+    pub(crate) async fn open_fetch(&mut self, cache: &Path) -> Result<Fetched, Error> {
+        let mut hash = [0u8; 32];
+        self.recv
+            .read_exact(&mut hash)
+            .await
+            .map_err(|e| Error::Stream(e.to_string()))?;
+        let hash = Hash::from_bytes(hash);
+        let dir = cache.join(hash.to_hex());
+        let store = FsStore::load(&dir)
+            .await
+            .map_err(|e| Error::Blob(e.to_string()))?;
+        Ok(Fetched { store, hash, dir })
+    }
+
     pub async fn provide(&mut self, offered: &Offered) -> Result<(), Error> {
         self.send
             .write_all(&offered.hash())
@@ -148,17 +169,8 @@ impl IrohPipe {
         size: u64,
         progress: &mut (dyn FnMut(u64) + Send),
     ) -> Result<Fetched, Error> {
-        let mut hash = [0u8; 32];
-        self.recv
-            .read_exact(&mut hash)
-            .await
-            .map_err(|e| Error::Stream(e.to_string()))?;
-        let hash = Hash::from_bytes(hash);
-        let dir = cache.join(hash.to_hex());
-        let store = FsStore::load(&dir)
-            .await
-            .map_err(|e| Error::Blob(e.to_string()))?;
-        let fetched = Fetched { store, hash, dir };
+        let fetched = self.open_fetch(cache).await?;
+        let hash = fetched.hash;
         let local = fetched
             .store
             .remote()
