@@ -11,3 +11,4 @@ is in [ROADMAP.md](../../ROADMAP.md).
 | Verified, resumable transfers between two wyrms | [resume.md](resume.md) |
 | The command line: bare arguments, completion, several paths | [cli.md](cli.md) |
 | `wyrm --update`, and the installs it leaves to a package manager | [update.md](update.md) |
+| `wyrm netcheck`: public address, NAT, port mapping, relays | [netcheck.md](netcheck.md) |

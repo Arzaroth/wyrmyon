@@ -39,6 +39,7 @@ wyrmyon.
 | How is the iroh connection authenticated? | [architecture/iroh-v1.md](architecture/iroh-v1.md) |
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |
 | Why does `wyrm --update` refuse a .deb or MSI install? | [features/update.md](features/update.md) |
+| Why would a transfer go through a relay here? | [features/netcheck.md](features/netcheck.md) |
 | How do tests avoid the public servers? | [architecture/testing.md](architecture/testing.md) |
 | Why `wyrmyon` and `wyrm`? | [decisions.md](decisions.md) |
 
@@ -52,5 +53,6 @@ wyrmyon.
 | Verified, resumable transfers | [features/resume.md](features/resume.md) |
 | The command line: bare arguments, the code prompt, bundles | [features/cli.md](features/cli.md) |
 | Updating itself | [features/update.md](features/update.md) |
+| Checking the network | [features/netcheck.md](features/netcheck.md) |
 
 What comes next is in [ROADMAP.md](../ROADMAP.md).
