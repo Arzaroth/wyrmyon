@@ -170,5 +170,12 @@ mod tests {
         assert!(wxs.contains(r#"Name="InstallDir""#));
         assert!(wxs.contains(r#"Value="[INSTALLFOLDER]""#));
         assert_eq!(WYRMYON.msi_marker_key, Some(r"HKCU\Software\wyrmyon"));
+        for comment in wxs.split("<!--").skip(1) {
+            let body = comment.split("-->").next().unwrap();
+            assert!(
+                !body.contains("--"),
+                "WiX refuses `--` in a comment: {body}"
+            );
+        }
     }
 }
