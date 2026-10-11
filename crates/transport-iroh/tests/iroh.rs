@@ -181,3 +181,39 @@ async fn a_connection_for_another_protocol_is_ignored() {
     assert!(upstream.is_ok());
     assert!(within(waiting).await.unwrap().is_ok());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_endpoints_meet_through_a_relay_of_our_own() {
+    let relay = wyrmyon_testkit::IrohRelay::start().await;
+    let relays: Relays = relay.url().parse().unwrap();
+    let key = Key::from_bytes([9; 32]);
+    let sender = IrohTransport::bind(Role::Sender, relays.clone())
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, relays).await.unwrap();
+    let (mut sender_info, mut receiver_info) =
+        within(async { tokio::join!(sender.info(), receiver.info()) }).await;
+    assert_eq!(receiver_info.relays, vec![format!("{}/", relay.url())]);
+    sender_info.direct.clear();
+    receiver_info.direct.clear();
+
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info, &key),
+            receiver.connect(&sender_info, &key)
+        )
+    })
+    .await;
+    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    assert_eq!(
+        upstream.describe(),
+        "iroh, via relay until a direct path opens"
+    );
+    upstream.send_last(b"through the relay").await.unwrap();
+    assert_eq!(
+        within(downstream.receive_last()).await.unwrap(),
+        b"through the relay"
+    );
+    upstream.finish().await;
+    downstream.finish().await;
+}

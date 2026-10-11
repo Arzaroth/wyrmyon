@@ -456,6 +456,30 @@ async fn two_wyrms_pick_iroh_unless_either_forces_classic() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn two_wyrms_can_share_a_relay_of_their_own() {
+    let server = MailboxServer::start().await;
+    let relay = wyrmyon_testkit::IrohRelay::start().await;
+    let flags = ["--iroh-relays", &relay.url()];
+    let outcome = transfer_with(&server, &flags, &flags, false).await;
+    assert!(outcome.ok, "{}", outcome.receiver);
+    assert!(
+        outcome.receiver.contains("Receiving (iroh"),
+        "{}",
+        outcome.receiver
+    );
+}
+
+#[test]
+fn an_iroh_relay_must_be_a_name_or_a_url() {
+    let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args(["--iroh-relays", "sometimes", "receive", "7-a-b"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("relay URL"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn force_iroh_refuses_a_legacy_peer_on_either_side() {
     let server = MailboxServer::start().await;
     let outcome = transfer_with(&server, &["--force-iroh"], &["--force-classic"], false).await;

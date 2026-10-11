@@ -322,3 +322,23 @@ async fn relay(mut stream: TcpStream, waiting: Waiting) {
     }
     let _ = tokio::io::copy_bidirectional(&mut stream, &mut other).await;
 }
+
+pub struct IrohRelay {
+    server: iroh_relay::server::Server,
+}
+
+impl IrohRelay {
+    pub async fn start() -> Self {
+        let mut config = iroh_relay::server::ServerConfig::default();
+        config.relay = Some(iroh_relay::server::RelayConfig::new((
+            std::net::Ipv4Addr::LOCALHOST,
+            0,
+        )));
+        let server = iroh_relay::server::Server::spawn(config).await.unwrap();
+        Self { server }
+    }
+
+    pub fn url(&self) -> String {
+        format!("http://{}", self.server.http_addr().unwrap())
+    }
+}
