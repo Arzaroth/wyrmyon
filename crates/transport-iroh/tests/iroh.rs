@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use wyrmyon_transport_iroh::{Error, IrohInfo, IrohTransport, Relays, Role};
+use wyrmyon_transport_iroh::{Error, IrohInfo, IrohTransport, Relays, Role, Route};
 use wyrmyon_wormhole::Key;
 
 async fn within<T>(future: impl Future<Output = T>) -> T {
@@ -214,6 +214,44 @@ async fn two_endpoints_meet_through_a_relay_of_our_own() {
         within(downstream.receive_last()).await.unwrap(),
         b"through the relay"
     );
+    upstream.finish().await;
+    downstream.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
+    let relay = wyrmyon_testkit::IrohRelay::start().await;
+    let relays: Relays = relay.url().parse().unwrap();
+    let key = Key::from_bytes([10; 32]);
+    let sender = IrohTransport::bind(Role::Sender, relays.clone())
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, relays).await.unwrap();
+    let (sender_info, mut receiver_info) =
+        within(async { tokio::join!(sender.info(), receiver.info()) }).await;
+    receiver_info.direct.clear();
+
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info, &key),
+            receiver.connect(&sender_info, &key)
+        )
+    })
+    .await;
+    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    assert_eq!(*upstream.route().borrow(), Some(Route::Relay));
+    for pipe in [&upstream, &downstream] {
+        within(pipe.route().wait_for(|now| *now == Some(Route::Direct)))
+            .await
+            .unwrap();
+    }
+
+    upstream.send_last(&[1u8; 4000]).await.unwrap();
+    assert_eq!(within(downstream.receive_last()).await.unwrap().len(), 4000);
+    for traffic in [upstream.traffic(), downstream.traffic()] {
+        assert!(traffic.relay > 0, "{traffic:?}");
+        assert!(traffic.direct > 4000, "{traffic:?}");
+    }
     upstream.finish().await;
     downstream.finish().await;
 }

@@ -440,6 +440,12 @@ async fn two_wyrms_pick_iroh_unless_either_forces_classic() {
             "{}",
             outcome.receiver
         );
+        assert!(
+            outcome.receiver.contains("Went direct"),
+            "{}",
+            outcome.receiver
+        );
+        assert!(outcome.sender.contains("Went direct"), "{}", outcome.sender);
     }
     for (send_flags, receive_flags) in [
         (&["--force-classic"][..], &[][..]),
@@ -452,6 +458,7 @@ async fn two_wyrms_pick_iroh_unless_either_forces_classic() {
             "{}",
             outcome.receiver
         );
+        assert!(!outcome.receiver.contains("Went"), "{}", outcome.receiver);
     }
 }
 
