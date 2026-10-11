@@ -1,4 +1,5 @@
 mod blobs;
+mod netcheck;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -14,6 +15,7 @@ use tokio::sync::watch;
 use wyrmyon_wormhole::Key;
 
 pub use blobs::{Fetched, Offered};
+pub use netcheck::{NetCheck, PortMapping, netcheck};
 
 pub const TRANSPORT: &str = "iroh-v1";
 pub const ALPN: &[u8] = b"wyrmyon/1";

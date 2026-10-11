@@ -5246,6 +5246,7 @@ dependencies = [
  "futures-util",
  "iroh",
  "iroh-blobs",
+ "portmapper",
  "serde",
  "tempfile",
  "thiserror 2.0.21",

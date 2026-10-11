@@ -13,8 +13,9 @@ workspace = true
 
 [dependencies]
 futures-util = "0.3.34"
-iroh = "1.3"
+iroh = { version = "1.3", features = ["unstable-net-report"] }
 iroh-blobs = "0.103"
+portmapper = "0.19"
 serde = { version = "1.0.229", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
