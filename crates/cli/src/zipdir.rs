@@ -55,11 +55,31 @@ impl Read for Checked<'_> {
     }
 }
 
+pub enum Entry {
+    File {
+        source: PathBuf,
+        name: String,
+        mode: u32,
+        size: u64,
+    },
+    EmptyDir(String),
+}
+
 pub fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
-    zip_with(cancel, |walk, zip| walk.add_dir(zip, dir, Path::new("")))
+    zip(&list(dir, cancel)?, cancel)
 }
 
 pub fn build_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Built> {
+    zip(&list_bundle(paths, cancel)?, cancel)
+}
+
+pub fn list(dir: &Path, cancel: &Cancel) -> anyhow::Result<Vec<Entry>> {
+    let mut walk = Walk::new(cancel);
+    walk.add_dir(dir, Path::new(""))?;
+    Ok(walk.entries)
+}
+
+pub fn list_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Vec<Entry>> {
     let mut named = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for path in paths {
@@ -69,49 +89,72 @@ pub fn build_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Built>
         }
         named.push((path, PathBuf::from(name)));
     }
-    zip_with(cancel, |walk, zip| {
-        named
-            .iter()
-            .try_for_each(|(path, name)| walk.add_entry(zip, path, name))
-    })
+    let mut walk = Walk::new(cancel);
+    for (path, name) in &named {
+        walk.add_entry(path, name)?;
+    }
+    Ok(walk.entries)
 }
 
-fn zip_with(
-    cancel: &Cancel,
-    add: impl FnOnce(&mut Walk<'_>, &mut ZipWriter<File>) -> anyhow::Result<()>,
-) -> anyhow::Result<Built> {
+pub fn zip(entries: &[Entry], cancel: &Cancel) -> anyhow::Result<Built> {
     let file = tempfile::NamedTempFile::new().context("creating a temporary zip file")?;
     let mut zip = ZipWriter::new(file.reopen().context("opening the temporary zip file")?);
-    let mut walk = Walk {
-        totals: (0, 0),
-        ancestors: Vec::new(),
-        cancel,
-    };
-    add(&mut walk, &mut zip)?;
-    let totals = walk.totals;
+    let (mut numbytes, mut numfiles) = (0, 0);
+    for entry in entries {
+        cancel.check()?;
+        match entry {
+            Entry::EmptyDir(name) if name.is_empty() => {
+                zip.add_directory("./", SimpleFileOptions::default())?;
+            }
+            Entry::EmptyDir(name) => zip.add_directory(name, SimpleFileOptions::default())?,
+            Entry::File {
+                source,
+                name,
+                mode,
+                size,
+            } => {
+                let options = SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Deflated)
+                    .unix_permissions(*mode)
+                    .large_file(*size >= ZIP64_FROM);
+                zip.start_file(name, options)?;
+                let mut source =
+                    File::open(source).with_context(|| format!("opening {}", source.display()))?;
+                let mut reader = Checked {
+                    inner: &mut source,
+                    cancel,
+                };
+                numbytes += io::copy(&mut reader, &mut zip)?;
+                numfiles += 1;
+            }
+        }
+    }
     zip.finish().context("writing the zip file")?;
     let zipsize = file.as_file().metadata()?.len();
     Ok(Built {
         file,
         zipsize,
-        numbytes: totals.0,
-        numfiles: totals.1,
+        numbytes,
+        numfiles,
     })
 }
 
 struct Walk<'a> {
-    totals: (u64, u64),
+    entries: Vec<Entry>,
     ancestors: Vec<PathBuf>,
     cancel: &'a Cancel,
 }
 
-impl Walk<'_> {
-    fn add_dir(
-        &mut self,
-        zip: &mut ZipWriter<File>,
-        dir: &Path,
-        prefix: &Path,
-    ) -> anyhow::Result<()> {
+impl<'a> Walk<'a> {
+    fn new(cancel: &'a Cancel) -> Self {
+        Self {
+            entries: Vec::new(),
+            ancestors: Vec::new(),
+            cancel,
+        }
+    }
+
+    fn add_dir(&mut self, dir: &Path, prefix: &Path) -> anyhow::Result<()> {
         let real =
             std::fs::canonicalize(dir).with_context(|| format!("reading {}", dir.display()))?;
         if self.ancestors.contains(&real) {
@@ -124,46 +167,28 @@ impl Walk<'_> {
             .collect::<Result<_, _>>()?;
         entries.sort_by_key(std::fs::DirEntry::file_name);
         if entries.is_empty() {
-            let name = if prefix.as_os_str().is_empty() {
-                "./".to_owned()
-            } else {
-                arcname(prefix)?
-            };
-            zip.add_directory(name, SimpleFileOptions::default())?;
+            self.entries.push(Entry::EmptyDir(arcname(prefix)?));
         }
         for entry in entries {
-            self.add_entry(zip, &entry.path(), &prefix.join(entry.file_name()))?;
+            self.add_entry(&entry.path(), &prefix.join(entry.file_name()))?;
         }
         self.ancestors.pop();
         Ok(())
     }
 
-    fn add_entry(
-        &mut self,
-        zip: &mut ZipWriter<File>,
-        path: &Path,
-        name: &Path,
-    ) -> anyhow::Result<()> {
+    fn add_entry(&mut self, path: &Path, name: &Path) -> anyhow::Result<()> {
         self.cancel.check()?;
         let meta =
             std::fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
         if meta.is_dir() {
-            self.add_dir(zip, path, name)?;
+            self.add_dir(path, name)?;
         } else if meta.is_file() {
-            let options = SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Deflated)
-                .unix_permissions(mode_of(&meta))
-                .large_file(meta.len() >= ZIP64_FROM);
-            zip.start_file(arcname(name)?, options)?;
-            let mut source =
-                File::open(path).with_context(|| format!("opening {}", path.display()))?;
-            let mut reader = Checked {
-                inner: &mut source,
-                cancel: self.cancel,
-            };
-            let copied = io::copy(&mut reader, zip)?;
-            self.totals.0 += copied;
-            self.totals.1 += 1;
+            self.entries.push(Entry::File {
+                source: path.to_owned(),
+                name: arcname(name)?,
+                mode: mode_of(&meta),
+                size: meta.len(),
+            });
         } else {
             eprintln!("skipping {}: not a regular file", path.display());
         }
