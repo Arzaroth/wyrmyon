@@ -671,3 +671,28 @@ async fn without_a_terminal_the_code_is_read_from_stdin() {
     assert_eq!(stdout, "via stdin\n");
     assert!(finish(sender).await.0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn netcheck_reports_this_network() {
+    let relay = wyrmyon_testkit::IrohRelay::start().await;
+    let (ok, out, _) = finish(
+        wyrm("ws://127.0.0.1:9/v1")
+            .args(["--iroh-relays", &relay.url(), "netcheck"])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{out}");
+    assert!(out.starts_with("Local addresses "), "{out}");
+    assert!(!out.starts_with("Local addresses none"), "{out}");
+    assert!(out.contains("No UDP answer"), "{out}");
+    assert!(
+        out.contains(&format!("Relays          {}/", relay.url())),
+        "{out}"
+    );
+
+    let (ok, out, _) = finish(wyrm("ws://127.0.0.1:9/v1").arg("netcheck").spawn().unwrap()).await;
+    assert!(ok, "{out}");
+    assert!(out.contains("Relays          disabled"), "{out}");
+    assert!(out.contains("Without relays"), "{out}");
+}
