@@ -200,6 +200,7 @@ async fn receive_payload(
     };
     eprintln!("Receiving ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);
+    pipe.follow_route(&bar);
     let received = async {
         match &mut pipe {
             Pipe::Iroh(iroh) => {
@@ -220,12 +221,17 @@ async fn receive_payload(
     }
     .await;
     match received {
-        Ok(digest) => Ok(Incoming {
-            partial,
-            dest,
-            digest,
-            pipe,
-        }),
+        Ok(digest) => {
+            if let Some(went) = pipe.went() {
+                eprintln!("{went}");
+            }
+            Ok(Incoming {
+                partial,
+                dest,
+                digest,
+                pipe,
+            })
+        }
         Err(e) => {
             pipe.abort().await;
             Err(e)

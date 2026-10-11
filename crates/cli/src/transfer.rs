@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use wyrmyon_transport_classic::RecordPipe;
-use wyrmyon_transport_iroh::IrohPipe;
+use wyrmyon_transport_iroh::{IrohPipe, Route, Traffic};
 
 const CHUNK: usize = 1 << 16;
 
@@ -18,6 +18,27 @@ impl Pipe {
         match self {
             Self::Classic(pipe) => pipe.describe().to_owned(),
             Self::Iroh(pipe) => pipe.describe().to_owned(),
+        }
+    }
+
+    pub fn follow_route(&self, bar: &ProgressBar) {
+        let Self::Iroh(pipe) = self else { return };
+        let mut route = pipe.route();
+        route.mark_unchanged();
+        let bar = bar.clone();
+        tokio::spawn(async move {
+            while route.changed().await.is_ok() {
+                if let Some(now) = *route.borrow_and_update() {
+                    bar.suspend(|| eprintln!("{}", route_change(now)));
+                }
+            }
+        });
+    }
+
+    pub fn went(&self) -> Option<String> {
+        match self {
+            Self::Classic(_) => None,
+            Self::Iroh(pipe) => went(pipe.traffic()),
         }
     }
 
@@ -51,6 +72,26 @@ impl Pipe {
             Self::Classic(pipe) => pipe.shutdown().await,
             Self::Iroh(pipe) => pipe.finish().await,
         }
+    }
+}
+
+fn route_change(route: Route) -> &'static str {
+    match route {
+        Route::Direct => "Now direct: hole-punching opened a path",
+        Route::Relay => "Back through the relay: the direct path closed",
+    }
+}
+
+fn went(traffic: Traffic) -> Option<String> {
+    let Traffic { direct, relay } = traffic;
+    match (direct, relay) {
+        (0, 0) => None,
+        (_, 0) => Some("Went direct".to_owned()),
+        (0, _) => Some("Went through the relay".to_owned()),
+        _ => Some(format!(
+            "Went {}% direct, the rest through the relay",
+            u128::from(direct) * 100 / (u128::from(direct) + u128::from(relay))
+        )),
     }
 }
 
@@ -160,6 +201,24 @@ mod tests {
             receiver.connect(&sender_info)
         );
         (a.unwrap(), b.unwrap())
+    }
+
+    #[test]
+    fn the_route_summary_says_where_the_bytes_went() {
+        let went = |direct, relay| went(Traffic { direct, relay });
+        assert_eq!(went(0, 0), None);
+        assert_eq!(went(5, 0).as_deref(), Some("Went direct"));
+        assert_eq!(went(0, 5).as_deref(), Some("Went through the relay"));
+        assert_eq!(
+            went(97, 3).as_deref(),
+            Some("Went 97% direct, the rest through the relay")
+        );
+        assert_eq!(
+            went(u64::MAX, u64::MAX).as_deref(),
+            Some("Went 50% direct, the rest through the relay")
+        );
+        assert!(route_change(Route::Direct).starts_with("Now direct"));
+        assert!(route_change(Route::Relay).starts_with("Back through the relay"));
     }
 
     #[tokio::test]

@@ -274,6 +274,7 @@ async fn send_over(
     };
     eprintln!("Sending ({})..", pipe.describe());
     let bar = transfer::progress(size, global.hide_progress);
+    pipe.follow_route(&bar);
     let sent = async {
         let digest = match &mut pipe {
             Pipe::Iroh(iroh) => {
@@ -296,7 +297,11 @@ async fn send_over(
         pipe.abort().await;
         return Err(e);
     }
+    let went = pipe.went();
     pipe.shutdown().await;
     eprintln!("Confirmation received. Transfer complete.");
+    if let Some(went) = went {
+        eprintln!("{went}");
+    }
     Ok(())
 }
