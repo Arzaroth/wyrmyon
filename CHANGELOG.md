@@ -10,6 +10,12 @@
 
 ### Added
 
+- Between two wyrms, a directory or several paths travel as a collection:
+  one verified blob per file, with no temporary zip on the sender and no
+  extraction on the receiver. An interrupted collection resumes when the same
+  files are sent again. Older wyrms and other magic-wormhole clients still get
+  a zip, which is now built only once the receiver's client is known.
+
 - `wyrm --update` replaces a copy installed by `install.sh`, `install.ps1` or
   from a release archive with the latest release. A copy installed by the
   .deb, the .rpm, an Arch package, Homebrew, Nix or the MSI is refused, with

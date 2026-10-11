@@ -6,12 +6,16 @@ wyrm receive --accept-file CODE    # writes ./photos/
 ```
 
 A directory travels as one zip file, the way the Python client sends it, so
-it works both ways with any magic-wormhole client.
+it works both ways with any magic-wormhole client. Between two wyrms that both
+advertise `collection-v1` it travels as a collection instead: one blob per
+file, no zip ([Between two wyrms](#between-two-wyrms-a-collection)).
 
 ## Sender
 
-`zipdir::build` walks the directory in name order into a temporary zip file
-(`tempfile`, removed on exit): files deflated with their permission bits
+`zipdir::list` walks the directory in name order into a list of entries, before
+the code is shown; once the peer is known, `zipdir::zip` writes that list into a
+temporary zip file (`tempfile`, removed on exit), or the list becomes a
+collection. In the zip: files deflated with their permission bits
 (`0o644`, or `0o444` when read-only, on Windows),
 empty directories as directory entries (an empty top directory as `./`, which
 the Python receiver needs to create anything), symlinks followed as the Python
@@ -50,6 +54,48 @@ the destination, then `zipdir::extract`:
 
 The ack carries the SHA-256 of the zip file as received.
 
+## Between two wyrms: a collection
+
+When iroh-v1 is chosen and the peer's version message lists `collection-v1`
+under `offers` ([negotiation.md](../architecture/negotiation.md)), there is no
+zip. The sender imports every file of the list into its throwaway store by
+reference, hashing it in place, and offers
+
+```json
+{"wyrmyon-collection-v1": {"name": "photos", "numbytes": 5678, "numfiles": 3}}
+```
+
+The data is an iroh-blobs hash sequence: the first child is our manifest, a
+JSON list of every file's `/`-separated path, size and permission bits, plus
+the empty directories; the other children are the files, in the manifest's
+order.
+
+```json
+{"files": [{"path": "sub/b.bin", "size": 100, "mode": 420}], "dirs": ["empty"]}
+```
+
+The receiver asks the same question as for a zipped directory, creates the
+destination itself (failing if anything is there), and then:
+
+- fetches only the hash sequence and the manifest, at most
+  `32 × (numfiles + 1)` bytes plus 16 MiB, and checks the manifest before any
+  file data: as many files as offered, sizes adding up to the offered bytes,
+  no path twice, no path both a file and a directory's parent, and every path
+  holdable here by the same rules as a zip entry (nothing absolute, no `..`,
+  nothing Windows cannot hold);
+- fetches the files, stopping the moment more bytes arrive than were offered,
+  and checks every file is complete at its listed size;
+- exports each file into place (moved out of the store where it can, copied
+  for a second file with the same content and on Windows), with its permission
+  bits masked to `0o777` on Unix, and creates the empty directories.
+
+A manifest or data that does not check out deletes the cache entry and the
+destination; an interrupted transfer keeps the cache entry for the next
+attempt ([resume.md](resume.md)). Symlinks are followed on the sender as for a
+zip, and never created on the receiver.
+
+## Cancelling
+
 Building and extracting run on blocking threads. Both check a cancel flag
 between files and between reads, set when the transfer is dropped (Ctrl-C
 included), so an interrupted transfer stops promptly and leaves no
@@ -59,5 +105,6 @@ I/O error: `io::copy` retries an `Interrupted` one forever.
 ## Sources
 
 - [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs)
+- [crates/transport-iroh/src/collection.rs](../../crates/transport-iroh/src/collection.rs)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)

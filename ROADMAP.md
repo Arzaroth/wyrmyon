@@ -57,8 +57,8 @@ free; the iroh path is then a pure upgrade on top of it.
 - [x] Channel binding: HKDF a confirm key (`wyrmyon/iroh-v1/confirm`) from the
       wormhole key and exchange MACs on the first stream. ALPN `wyrmyon/1`.
 - [x] One stream per transfer; n0's public relays (`--iroh-relays disabled`
-      turns them off). A transfer is one offer today, so one stream is all it
-      needs; a control stream comes with multi-file transfers.
+      turns them off). A transfer is one offer, so one control stream is all
+      it needs, several files included (see M8).
 - [x] `--force-classic` / `--force-iroh` for testing. Decided: no fallback to
       classic transit when iroh fails.
 
@@ -92,6 +92,15 @@ free; the iroh path is then a pure upgrade on top of it.
       install script, no unsigned .pkg or .dmg; the MSI is unsigned;
       every package but the aarch64 Arch one is installed on a matching
       system before a release.
+
+## M8 - Collections
+
+- [x] A directory or several paths between two wyrms travel as an iroh-blobs
+      collection: one blob per file, no temporary zip, each file verified.
+      Decided: an `offers: ["collection-v1"]` advert beside `transports`, so
+      older wyrms and legacy clients keep the zip; the zip is built only once
+      the peer is known; our own JSON manifest as the first child, checked
+      against the offer before any file data; the control stream unchanged.
 
 ## Later
 

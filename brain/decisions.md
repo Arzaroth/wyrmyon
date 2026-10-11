@@ -100,6 +100,22 @@ rather than corrupting it. Exporting replaces the placeholder partial file by
 path, which a local user able to write the destination directory could race
 with a symlink; such a user can already write there, so this is left as is.
 
+## Collections between wyrms, decided after pairing, with our own manifest
+
+Between two wyrms a directory is a collection of blobs rather than one zip:
+no temporary copy of the whole directory on the sender's disk, no zip
+inflated on the receiver's, and every file verified on its own. The sender
+cannot know which client the receiver runs before the version messages, so it
+only lists the directory before showing the code, and zips it, for a legacy
+peer or an older wyrm, once the peer is known; the receiver may wait for the
+zip a little longer than with the Python client. The capability is a separate
+`offers` entry rather than a new transport name, so an older wyrm keeps iroh
+and gets a zip. The manifest is our own JSON rather than iroh-blobs'
+`Collection` format, for the same reason as `IrohInfo`: an iroh-blobs upgrade
+cannot change the wire, and it carries what we need (sizes up front, so the
+offer can be checked before the data, permission bits and empty
+directories). The hash sequence itself is a plain list of BLAKE3 hashes.
+
 ## Interoperate first, upgrade second
 
 wyrmyon is a magic-wormhole client before it is anything else. A tool that

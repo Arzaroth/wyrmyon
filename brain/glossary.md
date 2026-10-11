@@ -44,6 +44,14 @@ URLs and direct socket addresses, sent as `wyrmyon-iroh-v1` through the mailbox.
 checked chunk by chunk; partial blobs live in the receiver's cache until
 complete.
 
+**Collection**: a directory or several paths sent between two wyrms as an
+iroh-blobs hash sequence: our manifest first, then one blob per file. Offered
+as `wyrmyon-collection-v1`, only to a peer advertising `collection-v1`.
+
+**Manifest**: the JSON list of a collection's files (path, size, permission
+bits) and empty directories, checked against the offer before any file data
+is fetched.
+
 **Channel binding**: the MAC exchange on the first iroh stream, keyed from the
 wormhole key, that ties the iroh connection to the code.
 

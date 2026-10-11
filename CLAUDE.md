@@ -64,8 +64,9 @@ never touch n0's iroh relays: `tests/support` disables them.
   ranks the files with the most uncovered lines.
 - Protocol identifiers are part of the wire format; changing any of them breaks
   older wyrmyon peers: the `app_versions` key `wyrmyon`, the transport name
-  `iroh-v1`, the app message `wyrmyon-iroh-v1` and its `IrohInfo` fields, the
-  ALPN `wyrmyon/1`, the HKDF label `wyrmyon/iroh-v1/confirm`, the binding
+  `iroh-v1`, the `offers` entry `collection-v1` with its offer
+  `wyrmyon-collection-v1` and the manifest's fields, the app message
+  `wyrmyon-iroh-v1` and its `IrohInfo` fields, the ALPN `wyrmyon/1`, the HKDF label `wyrmyon/iroh-v1/confirm`, the binding
   tag info `<role>:<sender id>:<receiver id>`, and what follows the tags on
   the control stream: the 32-byte BLAKE3 hash, then the ack.
 - Never put an `iroh-blobs` ALPN on the endpoint: blobs are served only on the

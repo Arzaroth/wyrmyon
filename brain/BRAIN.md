@@ -30,6 +30,7 @@ wyrmyon.
 | How does file data travel to a legacy client? | [architecture/transit-classic.md](architecture/transit-classic.md) |
 | What protects the receiver from a hostile file offer? | [features/files.md](features/files.md) |
 | What stops a zip bomb or a path escape in a directory? | [features/directories.md](features/directories.md) |
+| How do several files travel between two wyrms? | [features/directories.md](features/directories.md) |
 | When is the transit relay used? | [architecture/transit-classic.md](architecture/transit-classic.md) |
 | How do two peers decide between classic transit and iroh? | [architecture/negotiation.md](architecture/negotiation.md) |
 | Can a malicious mailbox downgrade the connection? | [architecture/negotiation.md](architecture/negotiation.md) |
@@ -49,7 +50,7 @@ wyrmyon.
 | --- | --- |
 | Text messages | [features/text.md](features/text.md) |
 | Files, relays, receiver-first codes | [features/files.md](features/files.md) |
-| Directories | [features/directories.md](features/directories.md) |
+| Directories, and collections between two wyrms | [features/directories.md](features/directories.md) |
 | Verified, resumable transfers | [features/resume.md](features/resume.md) |
 | The command line: bare arguments, the code prompt, bundles | [features/cli.md](features/cli.md) |
 | Updating itself | [features/update.md](features/update.md) |

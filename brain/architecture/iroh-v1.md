@@ -60,7 +60,11 @@ On the connection:
 3. The sender writes the 32-byte BLAKE3 hash of the data on that stream and
    serves iroh-blobs requests on further bidirectional streams of the same
    connection; the receiver fetches the blob, verified and resumable
-   ([features/resume.md](../features/resume.md)). The receiver then writes
+   ([features/resume.md](../features/resume.md)). For a collection the hash
+   is the root of a hash sequence (manifest first, then the files), which the
+   receiver fetches in two requests: the root and the manifest, checked
+   against the offer, then the rest
+   ([features/directories.md](../features/directories.md)). The receiver then writes
    `{"ack": "ok"}` on the first stream and finishes its side; the sender reads
    it to the end (at most 4 KiB).
 4. The sender closes the connection; the receiver waits up to 5 s for that
@@ -103,6 +107,7 @@ store cannot be reached by anyone who has not passed the pin and the binding.
 
 - [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs)
 - [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs)
+- [crates/transport-iroh/src/collection.rs](../../crates/transport-iroh/src/collection.rs)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
 - [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)

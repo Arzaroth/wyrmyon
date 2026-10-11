@@ -7,7 +7,7 @@ is in [ROADMAP.md](../../ROADMAP.md).
 | --- | --- |
 | Text messages, both ways with any magic-wormhole client | [text.md](text.md) |
 | A file, both ways with any magic-wormhole client; relays, receiver-first codes | [files.md](files.md) |
-| A directory, as a zip file | [directories.md](directories.md) |
+| A directory, as a zip file, or a collection between two wyrms | [directories.md](directories.md) |
 | Verified, resumable transfers between two wyrms | [resume.md](resume.md) |
 | The command line: bare arguments, completion, several paths | [cli.md](cli.md) |
 | `wyrm --update`, and the installs it leaves to a package manager | [update.md](update.md) |

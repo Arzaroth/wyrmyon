@@ -35,11 +35,11 @@ can be piped in.
 
 ## Several paths
 
-`wyrm send a.txt photos/` (or bare `wyrm a.txt photos/`) zips the paths
-side by side, each under its own name, and offers them as one directory named
-`files`; any receiver unpacks it like a directory
-([directories.md](directories.md)). Two paths with the same name are refused
-before anything is sent.
+`wyrm send a.txt photos/` (or bare `wyrm a.txt photos/`) offers the paths
+side by side, each under its own name, as one directory named `files`: a
+collection between two wyrms, a zip file any other receiver unpacks like a
+directory ([directories.md](directories.md)). Two paths with the same name are
+refused before anything is sent.
 
 ## Sources
 

@@ -11,8 +11,15 @@ the same for every client; only the data transport differs.
    after SPAKE2. wyrmyon adds its capabilities to it:
 
    ```json
-   {"app_versions": {"wyrmyon": {"transports": ["iroh-v1"]}}}
+   {"app_versions": {"wyrmyon": {"transports": ["iroh-v1"],
+                                 "offers": ["collection-v1"]}}}
    ```
+
+   `transports` picks the transport; `offers` lists the kinds of offer beyond
+   the standard ones this side can receive. Today that is only
+   `collection-v1`, a directory as a collection of blobs
+   ([features/directories.md](../features/directories.md)); a wyrmyon older
+   than it advertises no `offers` and gets a zip.
 
 4. **Decision**: both peers now hold both adverts and decide at the same time,
    so there is no race. Both advertise `iroh-v1`: the iroh-v1 transport
@@ -31,7 +38,8 @@ code, so it cannot push two wyrmyon peers onto classic transit.
 ## In the code
 
 `Global::config` puts the advert in `app_versions` unless `--force-classic`;
-`Global::use_iroh` reads the peer's from `Wormhole::their_app_versions()`.
+`Global::use_iroh` reads the peer's from `Wormhole::their_app_versions()`, and
+`Global::use_collection` adds the peer's `offers` to it.
 Each side decides on its own from the same two adverts:
 
 | Our flags | Peer advertises `iroh-v1` | Transport |
