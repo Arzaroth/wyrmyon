@@ -84,3 +84,78 @@ fn outcome(running: &str, installed: &str) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_package_managers_copy_is_left_to_the_package_manager() {
+        let err = refuse_if_owned(Some(Owner::Distribution(Some("dpkg"))))
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("wyrmyon was installed by"), "{err}");
+        assert!(err.contains("(dpkg)"), "{err}");
+        let err = refuse_if_owned(Some(Owner::Msi)).unwrap_err().to_string();
+        assert!(
+            err.contains("github.com/Arzaroth/wyrmyon/releases/latest"),
+            "{err}"
+        );
+        assert!(refuse_if_owned(None).is_ok());
+    }
+
+    #[test]
+    fn the_outcome_says_whether_anything_changed() {
+        assert_eq!(
+            outcome("0.2.0", "0.2.0"),
+            "wyrmyon 0.2.0 is the latest release"
+        );
+        assert_eq!(
+            outcome("0.2.0", "0.3.0"),
+            "wyrmyon updated from 0.2.0 to 0.3.0"
+        );
+    }
+
+    #[test]
+    fn every_release_target_has_an_asset_name_the_updater_looks_for() {
+        let workflow = include_str!("../../../.github/workflows/release.yml");
+        let built: Vec<&str> = workflow
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("- target: "))
+            .collect();
+        assert_eq!(built.len(), TARGETS.len());
+        for target in &built {
+            assert!(
+                TARGETS.iter().any(|t| t.name == *target),
+                "{target} is released but the updater never asks for it"
+            );
+        }
+        for t in TARGETS {
+            assert!(built.contains(&t.name), "{} is never released", t.name);
+            for other in TARGETS {
+                assert!(
+                    t == other || !other.name.contains(t.name),
+                    "{} matches {}'s asset",
+                    t.name,
+                    other.name
+                );
+            }
+        }
+        assert!(selvedge::update::arch_target(&WYRMYON).is_ok());
+    }
+
+    #[test]
+    fn the_archive_is_named_the_way_package_sh_names_it() {
+        let script = include_str!("../../../scripts/package.sh");
+        assert!(script.contains(r#"name="wyrmyon-v$version-$target""#));
+        assert_eq!(WYRMYON.primary().trim_end_matches(".exe"), "wyrmyon");
+    }
+
+    #[test]
+    fn the_msi_writes_the_marker_the_updater_reads() {
+        let wxs = include_str!("../../../packaging/windows/wyrmyon.wxs");
+        assert!(wxs.contains(r#"Key="Software\wyrmyon""#));
+        assert!(wxs.contains(r#"Name="ProductCode""#));
+        assert!(wxs.contains(r#"Value="[ProductCode]""#));
+        assert_eq!(WYRMYON.msi_marker_key, Some(r"HKCU\Software\wyrmyon"));
+    }
+}

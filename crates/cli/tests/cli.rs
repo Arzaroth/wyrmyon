@@ -280,6 +280,44 @@ async fn the_receiver_can_allocate_the_code() {
 }
 
 #[test]
+fn update_is_refused_beside_anything_to_send_or_receive() {
+    for args in [
+        vec!["--update", "send", "--text", "x"],
+        vec!["--update", "receive"],
+        vec!["--update", "7-a-b"],
+        vec!["--update", "notes.txt"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+            .args(&args)
+            .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?} was accepted");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("--update"), "{args:?}: {stderr}");
+        assert!(stderr.contains("Usage: wyrm"), "{args:?}: {stderr}");
+    }
+}
+
+#[test]
+fn an_update_that_cannot_reach_github_fails_and_says_so() {
+    let cache = tempfile::tempdir().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args(["--update", "--hide-progress"])
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("ALL_PROXY", "http://127.0.0.1:9")
+        .env("NO_PROXY", "")
+        .env("XDG_CACHE_HOME", cache.path())
+        .env("LOCALAPPDATA", cache.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("could not reach GitHub"), "{stderr}");
+    assert!(!cache.path().join("wyrmyon/update.json").exists());
+}
+
+#[test]
 fn conflicting_code_flags_are_refused() {
     for args in [
         vec!["receive", "--new", "7-a-b"],
