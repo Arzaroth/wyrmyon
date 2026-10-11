@@ -56,7 +56,7 @@ const WYRMYON: Project = Project {
     msi_marker_key: Some(r"HKCU\Software\wyrmyon"),
 };
 
-pub(crate) fn run(hide_progress: bool) -> anyhow::Result<()> {
+pub(crate) fn run(hide_progress: bool) -> anyhow::Result<String> {
     refuse_if_owned(selvedge::update::owner(&WYRMYON)?)?;
     if hide_progress {
         selvedge::update::silence_progress();
@@ -64,11 +64,7 @@ pub(crate) fn run(hide_progress: bool) -> anyhow::Result<()> {
     let unread = tempfile::tempdir()?;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let applied = selvedge::update::apply(&WYRMYON, &unread.path().join("update.json"))?;
-    println!(
-        "{}",
-        outcome(WYRMYON.version, &applied.version, &WYRMYON.repo())
-    );
-    Ok(())
+    Ok(outcome(WYRMYON.version, &applied.version, &WYRMYON.repo()))
 }
 
 fn refuse_if_owned(owner: Option<Owner>) -> anyhow::Result<()> {

@@ -142,7 +142,7 @@ pub fn main() -> ExitCode {
             )
             .exit();
         }
-        return exit_code(update::run(cli.global.hide_progress));
+        return exit_code(update::run(cli.global.hide_progress).map(|said| println!("{said}")));
     }
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
     let result = runtime.block_on(async {
