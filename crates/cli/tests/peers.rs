@@ -19,6 +19,10 @@ fn config(server: &MailboxServer, iroh: bool) -> Config {
     } else {
         json!({})
     };
+    config_with(server, app_versions)
+}
+
+fn config_with(server: &MailboxServer, app_versions: Value) -> Config {
     Config {
         relay_url: server.url(),
         app_versions,
@@ -635,5 +639,221 @@ async fn bare_wyrm_in_a_terminal_asks_for_the_code_and_completes_its_words() {
         let ((ok, output), ()) = tokio::join!(terminal, peer);
         assert!(ok, "{output}");
         assert!(output.contains("completed"), "{output}");
+    }
+}
+
+fn collections() -> Value {
+    json!({"wyrmyon": {"transports": ["iroh-v1"], "offers": ["collection-v1"]}})
+}
+
+async fn wyrm_sends_to(
+    server: &MailboxServer,
+    args: &[&str],
+    dir: &Path,
+    app_versions: Value,
+) -> (Wormhole, Child) {
+    let mut child = wyrm(&server.url())
+        .arg("send")
+        .args(args)
+        .current_dir(dir)
+        .spawn()
+        .unwrap();
+    let code = read_code(child.stderr.take().unwrap())
+        .await
+        .parse()
+        .unwrap();
+    let wormhole = wyrmyon_wormhole::join(&config_with(server, app_versions), code)
+        .await
+        .unwrap()
+        .pair()
+        .await
+        .unwrap();
+    (wormhole, child)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_older_wyrm_gets_a_zip_and_a_newer_one_a_collection() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("d")).unwrap();
+    std::fs::write(dir.path().join("d/x"), b"x").unwrap();
+    for (app_versions, expected) in [
+        (json!({"wyrmyon": {"transports": ["iroh-v1"]}}), "directory"),
+        (collections(), "wyrmyon-collection-v1"),
+    ] {
+        let (mut receiver, sender) = wyrm_sends_to(&server, &["d"], dir.path(), app_versions).await;
+        let offer = until(&mut receiver, "offer").await;
+        assert!(offer.get(expected).is_some(), "{offer}");
+        receiver
+            .send_json(&json!({"error": "no thanks"}))
+            .await
+            .unwrap();
+        receiver.close(Mood::Happy).await;
+        fails(sender).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_collection_offered_without_iroh_is_refused() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let (mut sender, receiver) =
+        wyrm_receives(&server, &["--accept-file"], dir.path(), false).await;
+    let transit = Transit::new(Role::Sender, sender.transit_key()).await;
+    sender
+        .send_json(&json!({"transit": serde_json::to_value(transit.info()).unwrap()}))
+        .await
+        .unwrap();
+    sender
+        .send_json(&json!({"offer": {"wyrmyon-collection-v1": {
+            "name": "d", "numbytes": 1, "numfiles": 1}}}))
+        .await
+        .unwrap();
+    let error = until(&mut sender, "error").await;
+    assert!(error.as_str().unwrap().contains("without iroh"), "{error}");
+    sender.close(Mood::Happy).await;
+    assert!(fails(receiver).await.contains("without iroh"));
+    assert!(!dir.path().join("d").exists());
+}
+
+struct CollectionPeer {
+    sender: Wormhole,
+    receiver: Child,
+    offered: wyrmyon_transport_iroh::Offered,
+    iroh: IrohTransport,
+}
+
+async fn offer_collection(
+    server: &MailboxServer,
+    args: &[&str],
+    at: &Path,
+    source: &Path,
+    name: &str,
+) -> CollectionPeer {
+    let pending = wyrmyon_wormhole::create(&config_with(server, collections()), 2)
+        .await
+        .unwrap();
+    let receiver = wyrm(&server.url())
+        .arg("receive")
+        .args(args)
+        .arg(pending.code().as_str())
+        .current_dir(at)
+        .spawn()
+        .unwrap();
+    let mut sender = pending.pair().await.unwrap();
+    std::fs::write(source, b"evil").unwrap();
+    let (offered, _) = wyrmyon_transport_iroh::Offered::import_collection(
+        &[wyrmyon_transport_iroh::Source {
+            path: source.to_owned(),
+            name: name.into(),
+            mode: 0o644,
+        }],
+        &[],
+    )
+    .await
+    .unwrap();
+    let iroh = IrohTransport::bind(IrohRole::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    sender
+        .send_json(&json!({"wyrmyon-iroh-v1": serde_json::to_value(iroh.info().await).unwrap()}))
+        .await
+        .unwrap();
+    sender
+        .send_json(&json!({"offer": {"wyrmyon-collection-v1": {
+            "name": "d", "numbytes": 4, "numfiles": 1}}}))
+        .await
+        .unwrap();
+    CollectionPeer {
+        sender,
+        receiver,
+        offered,
+        iroh,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_collection_naming_paths_outside_its_directory_leaves_nothing_behind() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let inside = dir.path().join("inside");
+    std::fs::create_dir(&inside).unwrap();
+    let peer = offer_collection(
+        &server,
+        &["--accept-file"],
+        &inside,
+        &dir.path().join("source"),
+        "../escaped",
+    )
+    .await;
+    let CollectionPeer {
+        mut sender,
+        receiver,
+        offered,
+        iroh,
+    } = peer;
+    let theirs: IrohInfo =
+        serde_json::from_value(until(&mut sender, "wyrmyon-iroh-v1").await).unwrap();
+    until(&mut sender, "answer").await;
+    let mut pipe = iroh.connect(&theirs, sender.key()).await.unwrap();
+    pipe.provide(&offered).await.unwrap();
+    assert!(fails(receiver).await.contains("cannot be written here"));
+    assert!(!inside.join("d").exists());
+    assert!(!inside.join("escaped").exists() && !dir.path().join("escaped").exists());
+    pipe.abort().await;
+    offered.close().await;
+    sender.close(Mood::Happy).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_collection_is_refused_where_it_cannot_be_written() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("d")).unwrap();
+    for (args, why) in [
+        (&["--accept-file"][..], "refusing to overwrite"),
+        (
+            &["--accept-file", "-o", "missing/d"][..],
+            "cannot write there",
+        ),
+    ] {
+        let peer = offer_collection(&server, args, dir.path(), &dir.path().join("src"), "x").await;
+        let CollectionPeer {
+            mut sender,
+            receiver,
+            offered,
+            iroh,
+        } = peer;
+        let error = until(&mut sender, "error").await;
+        assert!(error.as_str().unwrap().contains(why), "{error}");
+        fails(receiver).await;
+        iroh.close().await;
+        offered.close().await;
+        sender.close(Mood::Happy).await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreadable_file_in_a_directory_is_reported_to_either_kind_of_peer() {
+    use std::os::unix::fs::PermissionsExt;
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("d")).unwrap();
+    let locked = dir.path().join("d/locked.bin");
+    std::fs::write(&locked, b"secret").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&locked).is_ok() {
+        return;
+    }
+    for app_versions in [json!({}), collections()] {
+        let (mut receiver, sender) = wyrm_sends_to(&server, &["d"], dir.path(), app_versions).await;
+        let error = until(&mut receiver, "error").await;
+        assert!(
+            error.as_str().unwrap().contains("could not read"),
+            "{error}"
+        );
+        receiver.close(Mood::Happy).await;
+        fails(sender).await;
     }
 }

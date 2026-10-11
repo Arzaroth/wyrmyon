@@ -446,19 +446,28 @@ async fn two_wyrms_pick_iroh_unless_either_forces_classic() {
             outcome.receiver
         );
         assert!(outcome.sender.contains("Went direct"), "{}", outcome.sender);
+        assert!(!outcome.sender.contains("zipfile"), "{}", outcome.sender);
     }
-    for (send_flags, receive_flags) in [
-        (&["--force-classic"][..], &[][..]),
-        (&[][..], &["--force-classic"][..]),
-    ] {
-        let outcome = transfer_with(&server, send_flags, receive_flags, false).await;
-        assert!(outcome.ok, "{}", outcome.receiver);
-        assert!(
-            outcome.receiver.contains("Receiving (directly"),
-            "{}",
-            outcome.receiver
-        );
-        assert!(!outcome.receiver.contains("Went"), "{}", outcome.receiver);
+    for directory in [false, true] {
+        for (send_flags, receive_flags) in [
+            (&["--force-classic"][..], &[][..]),
+            (&[][..], &["--force-classic"][..]),
+        ] {
+            let outcome = transfer_with(&server, send_flags, receive_flags, directory).await;
+            assert!(outcome.ok, "{}", outcome.receiver);
+            assert!(
+                outcome.receiver.contains("Receiving (directly"),
+                "{}",
+                outcome.receiver
+            );
+            assert!(!outcome.receiver.contains("Went"), "{}", outcome.receiver);
+            assert_eq!(
+                outcome.sender.contains("Building zipfile"),
+                directory,
+                "{}",
+                outcome.sender
+            );
+        }
     }
 }
 
@@ -484,6 +493,37 @@ fn an_iroh_relay_must_be_a_name_or_a_url() {
         .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("relay URL"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_directories_arrive_in_a_collection() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir_all(from.path().join("t/void")).unwrap();
+    std::fs::write(from.path().join("t/x"), b"x").unwrap();
+    std::fs::create_dir(from.path().join("e")).unwrap();
+    for what in ["t", "e"] {
+        let mut sender = wyrm(&server.url())
+            .args(["send", what])
+            .current_dir(from.path())
+            .spawn()
+            .unwrap();
+        let code = read_code(sender.stderr.take().unwrap()).await;
+        let (ok, _, stderr) = finish(
+            wyrm(&server.url())
+                .args(["receive", "--accept-file", &code])
+                .current_dir(to.path())
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(ok, "{stderr}");
+        assert!(stderr.contains("Receiving (iroh"), "{stderr}");
+        assert!(finish(sender).await.0);
+    }
+    assert!(to.path().join("t/void").is_dir());
+    assert_eq!(std::fs::read(to.path().join("t/x")).unwrap(), b"x");
+    assert!(to.path().join("e").is_dir());
 }
 
 #[tokio::test(flavor = "multi_thread")]
