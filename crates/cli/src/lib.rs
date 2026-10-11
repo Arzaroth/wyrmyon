@@ -183,15 +183,21 @@ fn show_welcome(welcome: &Welcome) {
 }
 
 fn cache_dir() -> anyhow::Result<std::path::PathBuf> {
+    let (xdg, home) = cache_env();
+    cache_dir_from(std::env::var_os("WYRMYON_CACHE_DIR"), xdg, home)
+}
+
+fn cache_env() -> (Option<std::ffi::OsString>, Option<std::ffi::OsString>) {
     #[cfg(windows)]
     let (base, home) = ("LOCALAPPDATA", "USERPROFILE");
     #[cfg(not(windows))]
     let (base, home) = ("XDG_CACHE_HOME", "HOME");
-    cache_dir_from(
-        std::env::var_os("WYRMYON_CACHE_DIR"),
-        std::env::var_os(base),
-        std::env::var_os(home),
-    )
+    (std::env::var_os(base), std::env::var_os(home))
+}
+
+fn absolute(dir: Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
+    dir.map(std::path::PathBuf::from)
+        .filter(|d| d.is_absolute())
 }
 
 fn cache_dir_from(
@@ -199,18 +205,22 @@ fn cache_dir_from(
     xdg: Option<std::ffi::OsString>,
     home: Option<std::ffi::OsString>,
 ) -> anyhow::Result<std::path::PathBuf> {
-    use std::path::PathBuf;
-    let absolute =
-        |dir: Option<std::ffi::OsString>| dir.map(PathBuf::from).filter(|d| d.is_absolute());
     if let Some(dir) = absolute(ours) {
         return Ok(dir);
     }
+    Ok(cache_root_from(xdg, home)?.join("partial"))
+}
+
+fn cache_root_from(
+    xdg: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> anyhow::Result<std::path::PathBuf> {
     let base = match (absolute(xdg), absolute(home)) {
         (Some(xdg), _) => xdg,
         (None, Some(home)) => home.join(".cache"),
         (None, None) => anyhow::bail!("no absolute HOME to keep partial transfers in"),
     };
-    Ok(base.join("wyrmyon").join("partial"))
+    Ok(base.join("wyrmyon"))
 }
 
 fn printable(s: &str) -> String {
