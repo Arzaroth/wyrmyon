@@ -75,6 +75,8 @@ async fn a_collection_arrives_file_by_file_and_the_cache_is_cleared() {
         .await
         .unwrap();
     assert_eq!(seen, 600_005);
+    let mut sent = upstream.sent();
+    within(sent.wait_for(|n| *n == 600_005)).await.unwrap();
     let out = dir.path().join("out");
     std::fs::create_dir(&out).unwrap();
     collection.export_into(&out).await.unwrap();

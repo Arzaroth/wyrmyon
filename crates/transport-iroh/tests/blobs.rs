@@ -47,6 +47,8 @@ async fn a_file_arrives_verified_and_the_cache_is_cleared() {
         .await
         .unwrap();
     assert_eq!(seen, 1_000_000);
+    let mut sent = upstream.sent();
+    within(sent.wait_for(|n| *n == 1_000_000)).await.unwrap();
     let target = dir.path().join("target.bin");
     std::fs::write(&target, b"placeholder").unwrap();
     fetched.export_to(&target).await.unwrap();
