@@ -858,3 +858,40 @@ async fn an_unreadable_file_in_a_directory_is_reported_to_either_kind_of_peer() 
         fails(sender).await;
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_collection_of_too_many_files_is_refused_before_accepting() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let pending = wyrmyon_wormhole::create(&config_with(&server, collections()), 2)
+        .await
+        .unwrap();
+    let receiver = wyrm(&server.url())
+        .args(["receive", "--accept-file", pending.code().as_str()])
+        .current_dir(dir.path())
+        .spawn()
+        .unwrap();
+    let mut sender = pending.pair().await.unwrap();
+    let iroh = IrohTransport::bind(IrohRole::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    sender
+        .send_json(&json!({"wyrmyon-iroh-v1": serde_json::to_value(iroh.info().await).unwrap()}))
+        .await
+        .unwrap();
+    sender
+        .send_json(&json!({"offer": {"wyrmyon-collection-v1": {
+            "name": "d", "numbytes": 0,
+            "numfiles": wyrmyon_transport_iroh::MAX_FILES + 1}}}))
+        .await
+        .unwrap();
+    let error = until(&mut sender, "error").await;
+    assert!(
+        error.as_str().unwrap().contains("too many files"),
+        "{error}"
+    );
+    assert!(fails(receiver).await.contains("too many files"));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    iroh.close().await;
+    sender.close(Mood::Happy).await;
+}

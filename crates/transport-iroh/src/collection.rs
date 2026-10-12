@@ -454,9 +454,37 @@ mod tests {
             bad(vec![file("", 1), file("c", 2)], &[]),
             bad(vec![file("a//b", 1), file("c", 2)], &[]),
             bad(vec![file("a", u64::MAX), file("c", 4)], &[]),
+            bad(vec![file("d/b", 1), file("a", 2)], &["d/b/x"]),
+            bad(vec![file("d/b", 1), file("d/./b", 2)], &[]),
+            bad(vec![file("d/../a", 1), file("c", 2)], &[]),
+            bad(vec![file("d\\b", 1), file("c", 2)], &[]),
+            bad(vec![file(&"x".repeat(MAX_PATH + 1), 1), file("c", 2)], &[]),
         ] {
             assert!(manifest.check(3, 2).is_err(), "{manifest:?}");
         }
+        let many: Vec<String> = (0..=MAX_DIRS).map(|n| n.to_string()).collect();
+        let crowded = Manifest {
+            files: vec![file("a", 3)],
+            dirs: many,
+        };
+        assert!(crowded.check(3, 1).is_err());
+        let repeated = Manifest {
+            files: vec![file("a", 3)],
+            dirs: vec!["e".into(), "e".into(), "d/e".into(), "d".into()],
+        };
+        assert_eq!(repeated.check(3, 1), Ok(()));
+    }
+
+    #[test]
+    fn a_deep_path_is_checked_in_linear_time() {
+        let deep = vec!["a"; MAX_PATH / 4].join("/");
+        let manifest = Manifest {
+            files: (0..64).map(|n| file(&format!("{deep}{n}"), 0)).collect(),
+            dirs: Vec::new(),
+        };
+        let started = std::time::Instant::now();
+        assert_eq!(manifest.check(0, 64), Ok(()));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
     #[test]

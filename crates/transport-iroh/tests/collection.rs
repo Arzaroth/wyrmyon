@@ -266,3 +266,54 @@ fn an_empty_manifest_has_no_bytes() {
     };
     assert_eq!(manifest.numbytes(), 0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn too_many_files_are_refused_before_anything_is_fetched() {
+    let cache = tempfile::tempdir().unwrap();
+    let (mut upstream, mut downstream) = connected().await;
+    upstream.send_last(&[0; 32]).await.unwrap();
+    let refused = downstream
+        .fetch_manifest(cache.path(), 0, wyrmyon_transport_iroh::MAX_FILES + 1)
+        .await;
+    assert!(refused.err().unwrap().to_string().contains("files offered"));
+    assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+    upstream.abort().await;
+    downstream.abort().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cache_left_mid_export_is_started_afresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let sources = sources(dir.path(), &[("a", data(5_000))]);
+    let (offered, _) = Offered::import_collection(&sources, &[]).await.unwrap();
+    let cache = dir.path().join("cache");
+    let root = hex(&offered.hash());
+    std::fs::create_dir_all(cache.join(&root)).unwrap();
+    std::fs::write(cache.join(&root).join("stale"), b"left by a killed export").unwrap();
+    std::fs::write(cache.join(format!("{root}.exporting")), b"").unwrap();
+    let (mut upstream, mut downstream) = connected().await;
+    upstream.provide(&offered).await.unwrap();
+    let collection = within(downstream.fetch_manifest(&cache, 5_000, 1))
+        .await
+        .unwrap();
+    assert!(!cache.join(&root).join("stale").exists());
+    assert!(!cache.join(format!("{root}.exporting")).exists());
+    let collection = within(collection.fetch(&downstream, &mut |_| {}))
+        .await
+        .unwrap();
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    collection.export_into(&out).await.unwrap();
+    assert_eq!(std::fs::read(out.join("a")).unwrap(), data(5_000));
+    upstream.abort().await;
+    downstream.abort().await;
+    offered.close().await;
+}
+
+fn hex(bytes: &[u8; 32]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
+}

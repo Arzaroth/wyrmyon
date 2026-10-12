@@ -542,6 +542,15 @@ async fn force_iroh_refuses_a_legacy_peer_on_either_side() {
         outcome.receiver
     );
 
+    let outcome = transfer_with(&server, &["--force-iroh"], &["--force-classic"], true).await;
+    assert!(!outcome.ok);
+    assert!(
+        outcome.sender.contains("does not speak iroh-v1")
+            && !outcome.sender.contains("Building zipfile"),
+        "{}",
+        outcome.sender
+    );
+
     let outcome = transfer_with(&server, &["--force-classic"], &["--force-iroh"], false).await;
     assert!(!outcome.ok);
     assert!(
