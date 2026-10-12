@@ -72,6 +72,17 @@ pub fn follow_route(pipe: &IrohPipe, bar: &ProgressBar) {
     announce_routes(pipe.route(), pipe.first_route(), bar.clone());
 }
 
+pub fn follow_sent(pipe: &IrohPipe, bar: &ProgressBar) {
+    let mut sent = pipe.sent();
+    let bar = bar.clone();
+    tokio::spawn(async move {
+        while sent.changed().await.is_ok() {
+            let n = *sent.borrow_and_update();
+            bar.set_position(bar.length().map_or(n, |total| n.min(total)));
+        }
+    });
+}
+
 fn announce_routes(
     mut route: watch::Receiver<Option<Route>>,
     mut last: Option<Route>,

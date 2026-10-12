@@ -362,6 +362,7 @@ async fn send_over(
             Pipe::Iroh(iroh) => {
                 iroh.provide(offered.expect("iroh pipes carry a blob"))
                     .await?;
+                transfer::follow_sent(iroh, &bar);
                 None
             }
             Pipe::Classic(records) => {
@@ -372,8 +373,12 @@ async fn send_over(
                 Some(transfer::send_stream(records, &mut source, size, &bar).await?)
             }
         };
-        eprintln!("Waiting for the receiver to confirm..");
-        transfer::await_ack(&mut pipe, digest.as_ref()).await
+        if digest.is_some() {
+            eprintln!("Waiting for the receiver to confirm..");
+        }
+        let acked = transfer::await_ack(&mut pipe, digest.as_ref()).await;
+        bar.finish_and_clear();
+        acked
     }
     .await;
     if let Err(e) = sent {
