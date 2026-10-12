@@ -1,5 +1,5 @@
 use anyhow::{Context, bail};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -124,18 +124,59 @@ fn went(traffic: Traffic) -> Option<String> {
     }
 }
 
-pub fn progress(size: u64, hidden: bool) -> ProgressBar {
+const WYRM_LENGTH: usize = 30;
+
+pub fn progress(size: u64, hidden: bool, ascii: bool) -> ProgressBar {
     if hidden {
         return ProgressBar::hidden();
     }
     let bar = ProgressBar::new(size);
     bar.set_style(
         ProgressStyle::with_template(
-            "{bar:30} {bytes}/{total_bytes} {binary_bytes_per_sec} eta {eta}",
+            "{wyrm} {bytes}/{total_bytes} {binary_bytes_per_sec} eta {eta}",
         )
-        .expect("the progress template is valid"),
+        .expect("the progress template is valid")
+        .with_key(
+            "wyrm",
+            move |state: &ProgressState, out: &mut dyn std::fmt::Write| {
+                let chomp = (state.elapsed().as_millis() / 250).is_multiple_of(2);
+                let _ = out.write_str(&wyrm(state.pos(), state.len(), WYRM_LENGTH, chomp, ascii));
+            },
+        ),
     );
+    bar.enable_steady_tick(std::time::Duration::from_millis(125));
     bar
+}
+
+fn wyrm(done: u64, total: Option<u64>, length: usize, chomp: bool, ascii: bool) -> String {
+    let (body, open, shut, crumb) = if ascii {
+        ('~', '<', '-', '.')
+    } else {
+        ('∿', 'ᗧ', '●', '·')
+    };
+    let last = length.saturating_sub(1);
+    let head = match total {
+        Some(total) if total > 0 => {
+            let (done, total, span) =
+                (u128::from(done.min(total)), u128::from(total), last as u128);
+            usize::try_from((done * span + total / 2) / total).unwrap_or(last)
+        }
+        _ => 0,
+    };
+    (0..length)
+        .map(|at| match at {
+            at if at < head => body,
+            at if at == head => {
+                if chomp {
+                    open
+                } else {
+                    shut
+                }
+            }
+            at if at % 2 == 0 => crumb,
+            _ => ' ',
+        })
+        .collect()
 }
 
 pub async fn send_stream(
@@ -274,7 +315,7 @@ mod tests {
     #[tokio::test]
     async fn the_announcer_follows_the_route_until_the_pipe_goes() {
         let (tx, rx) = watch::channel(Some(Route::Relay));
-        let announcer = announce_routes(rx, Some(Route::Relay), progress(0, true));
+        let announcer = announce_routes(rx, Some(Route::Relay), progress(0, true, false));
         for now in [Some(Route::Direct), None, Some(Route::Relay)] {
             tx.send(now).unwrap();
             tokio::task::yield_now().await;
@@ -283,10 +324,28 @@ mod tests {
         announcer.await.unwrap();
     }
 
+    #[test]
+    fn the_wyrm_eats_its_way_along_the_bar() {
+        assert_eq!(wyrm(0, Some(10), 10, true, true), "< . . . . ");
+        assert_eq!(wyrm(5, Some(10), 10, false, true), "~~~~~-. . ");
+        assert_eq!(wyrm(10, Some(10), 10, true, true), "~~~~~~~~~<");
+        assert_eq!(wyrm(20, Some(10), 10, true, true), "~~~~~~~~~<");
+        assert_eq!(wyrm(5, Some(10), 10, true, false), "∿∿∿∿∿ᗧ· · ");
+        assert_eq!(
+            wyrm(u64::MAX, Some(u64::MAX), 30, true, false)
+                .chars()
+                .count(),
+            30
+        );
+        assert_eq!(wyrm(7, Some(0), 4, true, true), "< . ");
+        assert_eq!(wyrm(7, None, 4, true, true), "< . ");
+        assert_eq!(wyrm(3, Some(10), 0, true, true), "");
+    }
+
     #[tokio::test]
     async fn a_source_that_does_not_match_its_offer_fails_the_send() {
         let (mut pipe, _other) = pair().await;
-        let bar = progress(0, true);
+        let bar = progress(0, true, false);
         let grew = send_stream(&mut pipe, &mut &b"longer than offered"[..], 4, &bar).await;
         assert!(grew.unwrap_err().to_string().contains("grew"));
         let (mut pipe, _other) = pair().await;

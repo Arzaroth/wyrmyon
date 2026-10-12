@@ -208,7 +208,7 @@ async fn receive_payload(
         Connection::Classic(transit, theirs) => Pipe::Classic(transit.connect(&theirs).await?),
     };
     eprintln!("Receiving ({})..", pipe.describe());
-    let bar = transfer::progress(size, global.hide_progress);
+    let bar = transfer::progress(size, global.hide_progress, global.ascii);
     pipe.follow_route(&bar);
     let received = async {
         match &mut pipe {
@@ -417,7 +417,7 @@ async fn receive_collection(
     protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
     let mut pipe = iroh.connect(&theirs, wormhole.key()).await?;
     eprintln!("Receiving ({})..", pipe.describe());
-    let bar = transfer::progress(offer.numbytes, global.hide_progress);
+    let bar = transfer::progress(offer.numbytes, global.hide_progress, global.ascii);
     transfer::follow_route(&pipe, &bar);
     let received = async {
         let listed = pipe
