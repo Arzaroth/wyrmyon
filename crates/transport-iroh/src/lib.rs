@@ -214,6 +214,7 @@ pub struct IrohPipe {
     first_route: Option<Route>,
     paths: PathBytes,
     follower: tokio::task::JoinHandle<()>,
+    sent: watch::Sender<u64>,
 }
 
 impl IrohTransport {
@@ -288,6 +289,7 @@ impl IrohTransport {
                     first_route: initial,
                     paths,
                     follower,
+                    sent: watch::Sender::new(0),
                 })
             }
             Err(e) => {
@@ -486,6 +488,11 @@ impl IrohPipe {
     #[must_use]
     pub fn route(&self) -> watch::Receiver<Option<Route>> {
         self.route.clone()
+    }
+
+    #[must_use]
+    pub fn sent(&self) -> watch::Receiver<u64> {
+        self.sent.subscribe()
     }
 
     #[must_use]

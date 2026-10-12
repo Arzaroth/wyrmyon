@@ -129,6 +129,9 @@ impl Offered {
                 Self {
                     store,
                     root,
+                    payload: std::sync::Arc::new(
+                        tags[..sources.len()].iter().map(TempTag::hash).collect(),
+                    ),
                     tags,
                     _dir: dir,
                 },

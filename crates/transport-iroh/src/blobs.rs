@@ -1,10 +1,14 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use futures_util::StreamExt;
 use iroh_blobs::api::blobs::{AddPathOptions, BlobStatus, ExportMode, ExportOptions, ImportMode};
 use iroh_blobs::api::remote::GetProgressItem;
 use iroh_blobs::api::{Store, TempTag};
-use iroh_blobs::provider::events::EventSender;
+use iroh_blobs::provider::events::{
+    EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
+};
 use iroh_blobs::store::fs::FsStore;
 use iroh_blobs::{BlobFormat, Hash};
 
@@ -13,6 +17,7 @@ use crate::{Error, IrohPipe};
 pub struct Offered {
     pub(crate) store: FsStore,
     pub(crate) root: Hash,
+    pub(crate) payload: Arc<HashSet<Hash>>,
     pub(crate) tags: Vec<TempTag>,
     pub(crate) _dir: tempfile::TempDir,
 }
@@ -54,6 +59,7 @@ impl Offered {
         Ok(Self {
             store,
             root: tag.hash(),
+            payload: Arc::new(HashSet::from([tag.hash()])),
             tags: vec![tag],
             _dir: dir,
         })
@@ -176,13 +182,24 @@ impl IrohPipe {
             .map_err(|e| Error::Stream(e.to_string()))?;
         let store: Store = (*offered.store).clone();
         let connection = self.connection.clone();
+        let mask = EventMask {
+            get: RequestMode::NotifyLog,
+            get_many: RequestMode::NotifyLog,
+            ..EventMask::DEFAULT
+        };
+        let (events, requests) = EventSender::channel(32, mask);
+        tokio::spawn(count_sent(
+            requests,
+            Arc::clone(&offered.payload),
+            self.sent.clone(),
+        ));
         self.server = Some(tokio::spawn(async move {
             while let Ok((send, recv)) = connection.accept_bi().await {
                 let pair = iroh_blobs::provider::StreamPair::new(
                     connection.stable_id() as u64,
                     recv,
                     send,
-                    EventSender::DEFAULT,
+                    events.clone(),
                 );
                 tokio::spawn(iroh_blobs::provider::handle_stream(pair, store.clone()));
             }
@@ -238,5 +255,39 @@ impl IrohPipe {
                 "the data does not match the {size} bytes offered"
             )))
         }
+    }
+}
+
+async fn count_sent(
+    mut requests: tokio::sync::mpsc::Receiver<ProviderMessage>,
+    payload: Arc<HashSet<Hash>>,
+    sent: tokio::sync::watch::Sender<u64>,
+) {
+    while let Some(request) = requests.recv().await {
+        let mut updates = match request {
+            ProviderMessage::GetRequestReceivedNotify(request) => request.rx,
+            ProviderMessage::GetManyRequestReceivedNotify(request) => request.rx,
+            _ => continue,
+        };
+        let (payload, sent) = (Arc::clone(&payload), sent.clone());
+        tokio::spawn(async move {
+            let (mut counting, mut reached, mut size) = (false, 0, 0);
+            while let Ok(Some(update)) = updates.recv().await {
+                let end = match update {
+                    RequestUpdate::Started(started) => {
+                        counting = payload.contains(&started.hash);
+                        (reached, size) = (0, started.size);
+                        continue;
+                    }
+                    RequestUpdate::Progress(progress) => progress.end_offset,
+                    RequestUpdate::Completed(_) => size,
+                    RequestUpdate::Aborted(_) => continue,
+                };
+                if counting && end > reached {
+                    sent.send_modify(|n| *n += end - reached);
+                    reached = end;
+                }
+            }
+        });
     }
 }
