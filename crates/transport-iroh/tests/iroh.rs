@@ -90,10 +90,10 @@ async fn the_receiver_turns_a_stranger_away_and_still_takes_the_sender() {
             .await
             .is_err()
     );
-    let upstream = within(sender.connect(&receiver_info, &key)).await;
-    let downstream = within(waiting).await.unwrap();
-    assert!(upstream.is_ok(), "{:?}", upstream.err());
-    assert!(downstream.is_ok(), "{:?}", downstream.err());
+    let upstream = within(sender.connect(&receiver_info, &key)).await.unwrap();
+    let downstream = within(waiting).await.unwrap().unwrap();
+    upstream.finish().await;
+    downstream.finish().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -307,10 +307,69 @@ async fn a_stranger_dialling_the_sender_is_turned_away() {
         async move { stranger.connect(&sender_info, &key).await }
     });
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let downstream = within(receiver.connect(&sender_info, &key)).await;
-    let upstream = within(waiting).await.unwrap();
-    assert!(upstream.is_ok(), "{:?}", upstream.err());
-    assert!(downstream.is_ok(), "{:?}", downstream.err());
+    let downstream = within(receiver.connect(&sender_info, &key)).await.unwrap();
+    let upstream = within(waiting).await.unwrap().unwrap();
     assert!(!lurking.is_finished());
     lurking.abort();
+    upstream.finish().await;
+    downstream.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_receiver_that_cannot_dial_still_takes_the_senders_dial() {
+    let key = Key::from_bytes([13; 32]);
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let (mut sender_info, receiver_info) = (sender.info().await, receiver.info().await);
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    sender_info.direct = vec![silent.local_addr().unwrap().to_string()];
+    let (upstream, downstream) = within(async {
+        tokio::join!(
+            sender.connect(&receiver_info, &key),
+            receiver.connect(&sender_info, &key)
+        )
+    })
+    .await;
+    let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
+    upstream
+        .send_last(b"as an older sender would")
+        .await
+        .unwrap();
+    assert_eq!(
+        within(downstream.receive_last()).await.unwrap(),
+        b"as an older sender would"
+    );
+    upstream.finish().await;
+    downstream.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_answering_ends_at_the_deadline_with_the_dial_error_if_any() {
+    let key = Key::from_bytes([14; 32]);
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let nobody = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let mut gone = nobody.info().await;
+    nobody.close().await;
+    gone.direct = vec![silent.local_addr().unwrap().to_string()];
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap()
+        .with_connect_timeout(Duration::from_secs(2));
+    let failed = within(sender.connect(&gone, &key)).await.err().unwrap();
+    assert!(failed.to_string().contains("timed out"), "{failed}");
+
+    let sender = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap()
+        .with_connect_timeout(Duration::from_secs(2));
+    let mut itself = sender.info().await;
+    itself.direct.truncate(1);
+    let failed = within(sender.connect(&itself, &key)).await.err().unwrap();
+    assert!(failed.to_string().contains("ourself"), "{failed}");
 }
