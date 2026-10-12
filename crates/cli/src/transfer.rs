@@ -3,6 +3,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::watch;
 use wyrmyon_transport_classic::RecordPipe;
 use wyrmyon_transport_iroh::{IrohPipe, Route, Traffic};
 
@@ -23,18 +24,7 @@ impl Pipe {
 
     pub fn follow_route(&self, bar: &ProgressBar) {
         let Self::Iroh(pipe) = self else { return };
-        let mut route = pipe.route();
-        let mut last = pipe.first_route();
-        let bar = bar.clone();
-        tokio::spawn(async move {
-            while route.changed().await.is_ok() {
-                let now = *route.borrow_and_update();
-                if let Some(said) = route_change(last, now) {
-                    bar.suspend(|| eprintln!("{said}"));
-                }
-                last = now.or(last);
-            }
-        });
+        announce_routes(pipe.route(), pipe.first_route(), bar.clone());
     }
 
     pub fn went(&self) -> Option<String> {
@@ -75,6 +65,22 @@ impl Pipe {
             Self::Iroh(pipe) => pipe.finish().await,
         }
     }
+}
+
+fn announce_routes(
+    mut route: watch::Receiver<Option<Route>>,
+    mut last: Option<Route>,
+    bar: ProgressBar,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while route.changed().await.is_ok() {
+            let now = *route.borrow_and_update();
+            if let Some(said) = route_change(last, now) {
+                bar.suspend(|| eprintln!("{said}"));
+            }
+            last = now.or(last);
+        }
+    })
 }
 
 fn route_change(before: Option<Route>, now: Option<Route>) -> Option<&'static str> {
