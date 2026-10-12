@@ -50,7 +50,12 @@ struct Global {
     #[arg(long, global = true)]
     hide_progress: bool,
     /// Draw progress bars and QR codes with ASCII characters only
-    #[arg(long, global = true, env = "WYRMYON_ASCII")]
+    #[arg(
+        long,
+        global = true,
+        env = "WYRMYON_ASCII",
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
     ascii: bool,
     /// Never use the iroh-v1 transport, even with another wyrmyon
     #[arg(long, global = true, conflicts_with = "force_iroh")]
@@ -202,12 +207,18 @@ fn bare(targets: &[String]) -> anyhow::Result<Command> {
     }
 }
 
-fn show_code(code: &wyrmyon_wormhole::Code, qr: bool, ascii: bool, other_side: &str) {
+fn show_code(code: &wyrmyon_wormhole::Code, qr: Option<bool>, other_side: &str) {
     eprintln!("Wormhole code is: {code}");
-    if qr {
-        eprint!("{}", qr::render(&code.to_string(), ascii));
+    if let Some(ascii) = qr {
+        show_qr(code, ascii);
     }
     eprintln!("On the other computer, please run:\n\n{other_side}\n");
+}
+
+fn show_qr(code: &wyrmyon_wormhole::Code, ascii: bool) {
+    use std::io::IsTerminal;
+    let coloured = !ascii && std::io::stderr().is_terminal();
+    eprint!("{}", qr::render(&code.to_string(), ascii, coloured));
 }
 
 fn show_welcome(welcome: &Welcome) {

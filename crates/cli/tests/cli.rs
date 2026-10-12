@@ -68,8 +68,18 @@ async fn the_hint_names_the_code_and_qr_draws_it() {
     assert!(hint.contains("##############"), "{hint}");
     assert!(hint.is_ascii(), "{hint}");
 
+    let mut drawn = wyrm(&server.url())
+        .args(["send", "--text", "unused", "--qr"])
+        .env("WYRMYON_ASCII", "0")
+        .spawn()
+        .unwrap();
+    let (_, hint) = read_hint(drawn.stderr.take().unwrap()).await;
+    assert!(hint.contains('█') && !hint.contains("##"), "{hint}");
+    assert!(!hint.contains('\x1b'), "{hint}");
+    drop(drawn);
+
     let mut receiver = wyrm(&server.url())
-        .args(["receive", "--new", "--qr"])
+        .args(["receive", "--new"])
         .spawn()
         .unwrap();
     let (allocated, hint) = read_hint(receiver.stderr.take().unwrap()).await;
@@ -77,7 +87,6 @@ async fn the_hint_names_the_code_and_qr_draws_it() {
         hint.contains(&format!("wyrm send --code {allocated} FILE")),
         "{hint}"
     );
-    assert!(hint.contains('█') && !hint.contains("##"), "{hint}");
     drop(receiver);
 
     let receiver = wyrm(&server.url())
@@ -360,7 +369,6 @@ fn an_update_that_cannot_reach_github_fails_and_says_so() {
 fn conflicting_code_flags_are_refused() {
     for args in [
         vec!["receive", "--new", "7-a-b"],
-        vec!["receive", "--qr", "7-a-b"],
         vec![
             "send",
             "--code",

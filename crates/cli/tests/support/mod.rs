@@ -14,6 +14,7 @@ pub fn wyrm(relay: &str) -> Command {
         .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
         .env("WYRMYON_IROH_RELAYS", "disabled")
         .env("WYRMYON_CACHE_DIR", cache_dir())
+        .env_remove("WYRMYON_ASCII")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

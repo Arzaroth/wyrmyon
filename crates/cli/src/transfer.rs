@@ -152,7 +152,7 @@ fn wyrm(done: u64, total: Option<u64>, length: usize, chomp: bool, ascii: bool) 
     let (body, open, shut, crumb) = if ascii {
         ('~', '<', '-', '.')
     } else {
-        ('∿', 'ᗧ', '●', '·')
+        ('≈', '►', '•', '·')
     };
     let last = length.saturating_sub(1);
     let head = match total {
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(wyrm(5, Some(10), 10, false, true), "~~~~~-. . ");
         assert_eq!(wyrm(10, Some(10), 10, true, true), "~~~~~~~~~<");
         assert_eq!(wyrm(20, Some(10), 10, true, true), "~~~~~~~~~<");
-        assert_eq!(wyrm(5, Some(10), 10, true, false), "∿∿∿∿∿ᗧ· · ");
+        assert_eq!(wyrm(5, Some(10), 10, true, false), "≈≈≈≈≈►· · ");
         assert_eq!(
             wyrm(u64::MAX, Some(u64::MAX), 30, true, false)
                 .chars()

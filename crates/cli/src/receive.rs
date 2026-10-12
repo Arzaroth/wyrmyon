@@ -27,9 +27,6 @@ pub struct ReceiveArgs {
     /// Number of words in the code: the one `--new` allocates, or the one the prompt completes
     #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
     code_length: u8,
-    /// With `--new`, also show the code as a QR code
-    #[arg(long, requires = "new")]
-    qr: bool,
     /// Accept a file or directory without asking
     #[arg(long)]
     accept_file: bool,
@@ -44,7 +41,6 @@ impl ReceiveArgs {
             code,
             new: false,
             code_length: CODE_LENGTH,
-            qr: false,
             accept_file: false,
             output_file: None,
         }
@@ -58,7 +54,7 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         let code = pending.code();
         let other_side =
             format!("  wyrm send --code {code} FILE\n\n(or: wormhole send --code {code} FILE)");
-        show_code(code, args.qr, global.ascii, &other_side);
+        show_code(code, None, &other_side);
         pending
     } else {
         let code: Code = match &args.code {
