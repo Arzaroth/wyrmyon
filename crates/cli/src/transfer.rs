@@ -24,13 +24,15 @@ impl Pipe {
     pub fn follow_route(&self, bar: &ProgressBar) {
         let Self::Iroh(pipe) = self else { return };
         let mut route = pipe.route();
-        route.mark_unchanged();
+        let mut last = pipe.first_route();
         let bar = bar.clone();
         tokio::spawn(async move {
             while route.changed().await.is_ok() {
-                if let Some(now) = *route.borrow_and_update() {
-                    bar.suspend(|| eprintln!("{}", route_change(now)));
+                let now = *route.borrow_and_update();
+                if let Some(said) = route_change(last, now) {
+                    bar.suspend(|| eprintln!("{said}"));
                 }
+                last = now.or(last);
             }
         });
     }
@@ -75,10 +77,11 @@ impl Pipe {
     }
 }
 
-fn route_change(route: Route) -> &'static str {
-    match route {
-        Route::Direct => "Now direct: hole-punching opened a path",
-        Route::Relay => "Back through the relay: the direct path closed",
+fn route_change(before: Option<Route>, now: Option<Route>) -> Option<&'static str> {
+    match (before?, now?) {
+        (Route::Relay, Route::Direct) => Some("Now direct: hole-punching opened a path"),
+        (Route::Direct, Route::Relay) => Some("Back through the relay: the direct path closed"),
+        _ => None,
     }
 }
 
@@ -88,10 +91,14 @@ fn went(traffic: Traffic) -> Option<String> {
         (0, 0) => None,
         (_, 0) => Some("Went direct".to_owned()),
         (0, _) => Some("Went through the relay".to_owned()),
-        _ => Some(format!(
-            "Went {}% direct, the rest through the relay",
-            u128::from(direct) * 100 / (u128::from(direct) + u128::from(relay))
-        )),
+        _ => {
+            let total = u128::from(direct) + u128::from(relay);
+            let share = (u128::from(direct) * 100 + total / 2) / total;
+            Some(format!(
+                "Went {}% direct, the rest through the relay",
+                share.clamp(1, 99)
+            ))
+        }
     }
 }
 
@@ -217,8 +224,8 @@ mod tests {
             went(u64::MAX, u64::MAX).as_deref(),
             Some("Went 50% direct, the rest through the relay")
         );
-        assert!(route_change(Route::Direct).starts_with("Now direct"));
-        assert!(route_change(Route::Relay).starts_with("Back through the relay"));
+        assert!(route_change(Some(Route::Relay), Some(Route::Direct)).is_some());
+        assert!(route_change(Some(Route::Direct), Some(Route::Relay)).is_some());
     }
 
     #[tokio::test]
