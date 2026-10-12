@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 use crate::{Error, Fetched, IrohPipe, Offered};
 
 pub const MAX_MANIFEST: u64 = 16 << 20;
+pub const MAX_FILES: u64 = 1 << 20;
+const MAX_DIRS: usize = 1 << 16;
+const MAX_PATH: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
@@ -69,26 +72,48 @@ impl Manifest {
                 "its sizes do not add up to the {numbytes} bytes offered"
             ));
         }
-        let files: BTreeSet<&str> = self.files.iter().map(|f| f.path.as_str()).collect();
-        if files.len() != self.files.len() {
-            return Err("it lists a path twice".into());
+        if self.dirs.len() > MAX_DIRS {
+            return Err(format!("it lists more than {MAX_DIRS} empty directories"));
         }
-        let paths = self.files.iter().map(|f| &f.path).chain(&self.dirs);
-        for path in paths {
-            if path.is_empty() || path.split('/').any(str::is_empty) {
-                return Err("it lists an empty path".into());
+        let mut tree = Tree::default();
+        let files = self.files.iter().map(|f| (&f.path, true));
+        for (path, file) in files.chain(self.dirs.iter().map(|d| (d, false))) {
+            tree.insert(path, file)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct Tree<'a> {
+    file: bool,
+    children: std::collections::HashMap<&'a str, Tree<'a>>,
+}
+
+impl<'a> Tree<'a> {
+    fn insert(&mut self, path: &'a str, file: bool) -> Result<(), String> {
+        if path.len() > MAX_PATH {
+            return Err(format!("a path is longer than {MAX_PATH} bytes"));
+        }
+        if path.contains('\\') {
+            return Err("a path holds a backslash".into());
+        }
+        let mut node = self;
+        for part in path.split('/') {
+            if matches!(part, "" | "." | "..") {
+                return Err("it lists an empty, `.` or `..` path segment".into());
             }
-            let mut ancestor = path.as_str();
-            while let Some((parent, _)) = ancestor.rsplit_once('/') {
-                if files.contains(parent) {
-                    return Err(format!("{parent} is both a file and a directory"));
-                }
-                ancestor = parent;
+            if node.file {
+                return Err(format!("{path} sits under a file"));
             }
+            node = node.children.entry(part).or_default();
         }
-        if self.dirs.iter().any(|d| files.contains(d.as_str())) {
-            return Err("a directory has the name of a file".into());
+        if node.file || (file && !node.children.is_empty()) {
+            return Err(format!(
+                "{path} is listed twice, or as both a file and a directory"
+            ));
         }
+        node.file = file;
         Ok(())
     }
 }
@@ -176,6 +201,9 @@ impl IrohPipe {
         numbytes: u64,
         numfiles: u64,
     ) -> Result<Collection, Error> {
+        if numfiles > MAX_FILES {
+            return Err(Error::Blob(format!("more than {MAX_FILES} files offered")));
+        }
         let fetched = self.open_fetch(cache).await?;
         let root_size = numfiles.saturating_add(1).saturating_mul(32);
         let request = GetRequest::builder()
@@ -330,13 +358,16 @@ impl Collection {
     }
 
     pub async fn export_into(self, dir: &Path) -> Result<(), Error> {
-        let exported = self.export_all(dir).await;
+        let exported = match self.fetched.begin_export().await {
+            Ok(()) => self.export_all(dir).await,
+            Err(e) => Err(e),
+        };
         match exported {
             Ok(()) => {
                 self.fetched.discard().await;
                 Ok(())
             }
-            Err(e) => Err(self.fetched.keep(e).await),
+            Err(e) => Err(self.fetched.abandon(e).await),
         }
     }
 

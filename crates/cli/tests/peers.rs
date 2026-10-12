@@ -797,7 +797,8 @@ async fn a_collection_naming_paths_outside_its_directory_leaves_nothing_behind()
     until(&mut sender, "answer").await;
     let mut pipe = iroh.connect(&theirs, sender.key()).await.unwrap();
     pipe.provide(&offered).await.unwrap();
-    assert!(fails(receiver).await.contains("cannot be written here"));
+    let said = fails(receiver).await;
+    assert!(said.contains("`..` path segment"), "{said}");
     assert!(!inside.join("d").exists());
     assert!(!inside.join("escaped").exists() && !dir.path().join("escaped").exists());
     pipe.abort().await;

@@ -137,7 +137,7 @@ async fn an_interrupted_transfer_resumes_from_what_is_cached() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_failed_export_keeps_the_verified_data() {
+async fn a_failed_export_discards_what_it_may_have_moved() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.bin");
     std::fs::write(&source, data(5_000)).unwrap();
@@ -151,7 +151,7 @@ async fn a_failed_export_keeps_the_verified_data() {
     let occupied = dir.path().join("occupied");
     std::fs::create_dir(&occupied).unwrap();
     assert!(fetched.export_to(&occupied).await.is_err());
-    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
     upstream.abort().await;
     downstream.abort().await;
     offered.close().await;

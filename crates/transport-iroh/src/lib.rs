@@ -16,7 +16,7 @@ use tokio::sync::watch;
 use wyrmyon_wormhole::Key;
 
 pub use blobs::{Fetched, Offered};
-pub use collection::{Collection, MAX_MANIFEST, Manifest, ManifestFile, Source};
+pub use collection::{Collection, MAX_FILES, MAX_MANIFEST, Manifest, ManifestFile, Source};
 pub use netcheck::{NetCheck, PortMapping, netcheck};
 
 pub const TRANSPORT: &str = "iroh-v1";

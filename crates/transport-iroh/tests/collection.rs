@@ -224,7 +224,7 @@ async fn a_sender_gone_before_the_list_arrives_keeps_the_cache_entry() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_failed_export_keeps_the_verified_collection() {
+async fn a_failed_export_discards_the_collection() {
     let dir = tempfile::tempdir().unwrap();
     let sources = sources(dir.path(), &[("a", data(5_000))]);
     let (offered, _) = Offered::import_collection(&sources, &[]).await.unwrap();
@@ -239,9 +239,9 @@ async fn a_failed_export_keeps_the_verified_collection() {
         .unwrap();
     let out = dir.path().join("out");
     std::fs::create_dir_all(out.join("a")).unwrap();
-    let kept = collection.export_into(&out).await.unwrap_err().to_string();
-    assert!(kept.contains("kept in"), "{kept}");
-    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 1);
+    let failed = collection.export_into(&out).await.unwrap_err().to_string();
+    assert!(failed.contains("discarded"), "{failed}");
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
     upstream.abort().await;
     downstream.abort().await;
     offered.close().await;

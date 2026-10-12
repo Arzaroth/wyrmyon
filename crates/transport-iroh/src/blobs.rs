@@ -73,6 +73,7 @@ impl Offered {
 impl Fetched {
     pub async fn export_to(self, target: &Path) -> Result<(), Error> {
         let exported = async {
+            self.begin_export().await?;
             if tokio::fs::symlink_metadata(target).await.is_ok() {
                 tokio::fs::remove_file(target).await?;
             }
@@ -102,20 +103,26 @@ impl Fetched {
                 self.discard().await;
                 Ok(())
             }
-            Err(e) => Err(self.keep(e).await),
+            Err(e) => Err(self.abandon(e).await),
         }
+    }
+
+    pub(crate) async fn begin_export(&self) -> std::io::Result<()> {
+        tokio::fs::write(exporting(&self.dir), b"").await
     }
 
     pub(crate) async fn discard(self) {
         let Self { store, dir, .. } = self;
         let _ = store.shutdown().await;
         drop(store);
-        for _ in 0..40 {
-            if tokio::fs::remove_dir_all(&dir).await.is_ok() || !dir.exists() {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
+        remove_cache(&dir).await;
+    }
+
+    pub(crate) async fn abandon(self, cause: impl std::fmt::Display) -> Error {
+        self.discard().await;
+        Error::Blob(format!(
+            "{cause}; the export may have moved part of the data, so what arrived is discarded"
+        ))
     }
 
     pub(crate) async fn keep(self, cause: impl std::fmt::Display) -> Error {
@@ -124,6 +131,20 @@ impl Fetched {
             "{cause}; what arrived is kept in {} for the next attempt (delete it to free the space)",
             self.dir.display()
         ))
+    }
+}
+
+fn exporting(dir: &Path) -> PathBuf {
+    dir.with_extension("exporting")
+}
+
+async fn remove_cache(dir: &Path) {
+    for _ in 0..40 {
+        if tokio::fs::remove_dir_all(dir).await.is_ok() || !dir.exists() {
+            let _ = tokio::fs::remove_file(exporting(dir)).await;
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
 
@@ -136,6 +157,12 @@ impl IrohPipe {
             .map_err(|e| Error::Stream(e.to_string()))?;
         let hash = Hash::from_bytes(hash);
         let dir = cache.join(hash.to_hex());
+        if tokio::fs::try_exists(exporting(&dir))
+            .await
+            .unwrap_or(false)
+        {
+            remove_cache(&dir).await;
+        }
         let store = FsStore::load(&dir)
             .await
             .map_err(|e| Error::Blob(e.to_string()))?;
