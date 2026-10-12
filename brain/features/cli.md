@@ -37,23 +37,31 @@ can be piped in.
 
 The side that allocates the code prints it with what the other side should
 run: `wyrm CODE` (or `wormhole receive CODE`) after `send`, and
-`wyrm send --code CODE FILE` after `receive --new`. `--qr` on either also
+`wyrm send --code CODE FILE` after `receive --new`. `wyrm send --qr` also
 draws `wormhole-transfer:CODE`, the URI the Python client puts in its QR code,
-for a phone app to scan. Like Python's, it is drawn in half blocks with the
-light modules inked and a one-module border, which reads right on a dark
-terminal; `--ascii` draws `##` instead. `qr::render` builds it from the
-`qrcode` crate's module grid.
+for a phone app to scan; with `--code` it draws the code given. Like
+Python's, it is drawn in half blocks with a one-module border and, on a
+terminal, in fixed colours (white on near-black), so it scans whatever the
+theme; `--ascii` draws `##` instead, which reads right on a dark terminal.
+`qr::render` builds it from the `qrcode` crate's module grid. There is no
+`--qr` on `receive --new`: the URI's default role tells a scanning app to
+receive, and the Python client has none there either. The URI carries no
+`rendezvous`, as Python's does not, so a phone meets on its default mailbox.
 
 ## Progress
 
 Both sides draw a bar while the data moves, on stderr and only in a
-terminal: a wyrm (`∿∿∿ᗧ· · ·`) eating its way to the end, its head chomping
-on a steady tick so a stalled transfer still looks alive. `--ascii` (or
-`WYRMYON_ASCII`) draws `~~~<. . .` instead, and `--hide-progress` draws
-nothing. Over classic transit the sender counts the records it writes; over
+terminal: a wyrm (`≈≈≈►· · ·`) eating its way to the end, its head chomping
+(`►`, `•`) on a steady tick so a stalled transfer still looks alive. Its
+characters are all in code page 437, so a Windows console font has them.
+`--ascii` (or `WYRMYON_ASCII`, any of `1`, `true`, `yes`, `on`) draws
+`~~~<. . .` instead, and `--hide-progress` draws nothing. A failed transfer
+clears its bar before it aborts. Over classic transit the sender counts the records it writes; over
 iroh the receiver pulls, so the sender follows `IrohPipe::sent()`, the bytes
 of the offered files the blob provider has sent, from its request events
-(the manifest and the hash list are not counted).
+(the manifest and the hash list are not counted). A blob is credited in
+full when the next one starts or the request completes, since the provider
+drops progress events when they come faster than they are read.
 
 ## Several paths
 

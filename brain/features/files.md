@@ -23,8 +23,8 @@ anything else whose size the sender cannot know are refused.
 
 `wyrm receive --new` (or `--allocate`, the Python spelling) allocates the code and waits; the sender then runs
 `wyrm send --code CODE FILE`, or `wormhole send --code CODE FILE` with the
-Python client. Only the side that allocates prints the code, with `--qr`
-for a QR code of it ([cli.md](cli.md#the-code-and-the-hint)).
+Python client. Only the side that allocates prints the code; `wyrm send
+--qr` adds a QR code of it ([cli.md](cli.md#the-code-and-the-hint)).
 
 ## Sender
 
@@ -52,8 +52,10 @@ for a QR code of it ([cli.md](cli.md#the-code-and-the-hint)).
    included, is answered with an `error`. `-o DIR` naming an existing
    directory puts the file inside it, as the Python client does.
 4. Asks `ok? (Y/n)` unless `--accept-file`: Enter alone accepts, end of
-   input refuses. Without a terminal to ask on, it refuses and tells the
-   sender, rather than leaving it waiting.
+   input refuses. On Unix, input typed before the prompt appeared is
+   dropped first (`tcflush`), so a newline left from a paste cannot accept
+   a file nobody saw; Windows has no such flush here. Without a terminal to
+   ask on, it refuses and tells the sender, rather than leaving it waiting.
 5. Creates `.<name>.<unique>.wyrm-part` next to the destination before
    acking, so a directory it cannot write to is refused up front. Writes
    records into it, stops at the offered size and fails if the sender sends
