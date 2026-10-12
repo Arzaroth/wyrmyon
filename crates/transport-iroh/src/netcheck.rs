@@ -117,3 +117,35 @@ async fn port_mapping() -> Option<PortMapping> {
         nat_pmp: probed.nat_pmp,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_relay_keeps_its_best_latency_once() {
+        let ms = Duration::from_millis;
+        let mut relays = vec![
+            ("https://a/".to_owned(), None),
+            ("https://b/".to_owned(), None),
+        ];
+        merge_latencies(
+            &mut relays,
+            [
+                ("https://a/".to_owned(), ms(30)),
+                ("https://a/".to_owned(), ms(20)),
+                ("https://a/".to_owned(), ms(25)),
+                ("https://c/".to_owned(), ms(9)),
+            ]
+            .into_iter(),
+        );
+        assert_eq!(
+            relays,
+            vec![
+                ("https://a/".to_owned(), Some(ms(20))),
+                ("https://b/".to_owned(), None),
+                ("https://c/".to_owned(), Some(ms(9))),
+            ]
+        );
+    }
+}

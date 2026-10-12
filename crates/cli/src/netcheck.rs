@@ -220,6 +220,16 @@ mod tests {
         let v6 = with(&|c| c.public_v6 = Some("[2001:db8::1]:41234".parse().unwrap()));
         assert!(v6.0.contains("public IPv6"));
         assert!(v6.1.contains("203.0.113.5:41234, [2001:db8::1]:41234"));
+        assert!(
+            with(&|c| c.report_finished = false)
+                .0
+                .starts_with("The network report did not finish")
+        );
+        let hard_v4 = with(&|c| {
+            c.varies_by_server = Some(true);
+            c.public_v6 = Some("[2001:db8::1]:41234".parse().unwrap());
+        });
+        assert!(hard_v4.0.starts_with("A hard NAT on IPv4"));
         let hard = with(&|c| c.varies_by_server = Some(true));
         assert!(hard.0.starts_with("A hard NAT: direct"));
         assert!(hard.1.contains("varies by server (a hard NAT)"));
