@@ -477,10 +477,12 @@ async fn in_a_terminal(
         };
         tokio::time::timeout(TIMEOUT, wait).await.unwrap();
         seen.clear();
-        stdin
-            .write_all(format!("{answer}\n").as_bytes())
-            .await
-            .unwrap();
+        let typed = if answer.ends_with('\x03') {
+            (*answer).to_owned()
+        } else {
+            format!("{answer}\n")
+        };
+        stdin.write_all(typed.as_bytes()).await.unwrap();
     }
     let mut rest = String::new();
     let _ = tokio::time::timeout(TIMEOUT, stdout.read_to_string(&mut rest)).await;
@@ -518,6 +520,35 @@ async fn in_a_terminal_the_receiver_asks_for_the_code_and_for_consent() {
         assert_eq!(ok, accepted);
         assert_eq!(dir.path().join("asked.txt").exists(), accepted);
     }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn ctrl_c_at_the_consent_prompt_ends_wyrm() {
+    let server = MailboxServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let pending = wyrmyon_wormhole::create(&config(&server, false), 2)
+        .await
+        .unwrap();
+    let code = pending.code().to_string();
+    let questions = [("wormhole code", code.as_str()), ("(y/N)", "\x03")];
+    let terminal = in_a_terminal(&server, dir.path(), "receive", &questions);
+    let peer = async {
+        let mut sender = pending.pair().await.unwrap();
+        let transit = Transit::new(Role::Sender, sender.transit_key()).await;
+        sender
+            .send_json(&json!({"transit": serde_json::to_value(transit.info()).unwrap()}))
+            .await
+            .unwrap();
+        sender
+            .send_json(&json!({"offer": {"file": {"filename": "asked.txt", "filesize": 3}}}))
+            .await
+            .unwrap();
+        (sender, transit)
+    };
+    let ((ok, _), _peer) = tokio::join!(terminal, peer);
+    assert!(!ok);
+    assert!(!dir.path().join("asked.txt").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
