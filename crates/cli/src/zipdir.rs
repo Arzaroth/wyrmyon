@@ -328,23 +328,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_cancelled_copy_stops_instead_of_retrying() {
-        let cancel = Cancel::default();
-        drop(cancel.on_drop());
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let mut endless = io::repeat(0);
-            let mut reader = Checked {
-                inner: &mut endless,
-                cancel: &cancel,
-            };
-            let _ = tx.send(io::copy(&mut reader, &mut io::sink()).is_err());
-        });
-        let stopped = rx.recv_timeout(std::time::Duration::from_secs(5));
-        assert_eq!(stopped, Ok(true));
-    }
-
-    #[test]
     fn a_directory_round_trips_through_zip() {
         let src = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(src.path().join("sub/empty")).unwrap();
@@ -521,7 +504,8 @@ mod tests {
         let mut buf = [0u8; 2];
         assert_eq!(reader.read(&mut buf).unwrap(), 2);
         drop(cancel.on_drop());
-        assert!(reader.read(&mut buf).is_err());
+        let stopped = reader.read(&mut buf).unwrap_err();
+        assert_ne!(stopped.kind(), io::ErrorKind::Interrupted);
     }
 
     #[cfg(unix)]

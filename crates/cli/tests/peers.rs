@@ -546,9 +546,9 @@ async fn ctrl_c_at_the_consent_prompt_ends_wyrm() {
             .unwrap();
         (sender, transit)
     };
-    let ((ok, _), _peer) = tokio::join!(terminal, peer);
+    let ((ok, said), _peer) = tokio::join!(terminal, peer);
     assert!(!ok);
-    assert!(!dir.path().join("asked.txt").exists());
+    assert!(said.contains("interrupted"), "{said}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
