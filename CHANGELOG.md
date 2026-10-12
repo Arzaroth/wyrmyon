@@ -4,8 +4,9 @@
 
 ### Fixed
 
-- Ctrl-C while `wyrm send` builds a zip file, or at the receiver's `ok?`
-  prompt, now ends `wyrm`. It used to print `error: interrupted` and hang.
+- Ctrl-C while `wyrm send` builds a zip file, while `wyrm receive` unpacks
+  one, or at the receiver's `ok?` prompt, now ends `wyrm`. It used to print
+  `error: interrupted` and hang.
 
 ### Added
 

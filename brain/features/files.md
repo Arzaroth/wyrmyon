@@ -58,8 +58,10 @@ Python client. Only the side that allocates prints the code.
    overwrite a file that appeared meanwhile (a checked rename where hard links
    are not supported). The partial file is removed on every exit, Ctrl-C
    included: `wyrmyon::main` turns Ctrl-C into an error, which unwinds the
-   transfer, then gives blocking work one second to end before exiting, so
-   a stdin read left behind at the consent prompt cannot hold the process.
+   transfer. The consent prompt reads its answer on a thread of its own,
+   not tokio's blocking pool, so a read left behind cannot hold the exit,
+   while the pool's cleanups (a half-extracted directory, a temporary zip)
+   still run to the end.
 6. Sends the ack record with the SHA-256 of what it wrote.
 
 ## Sources
