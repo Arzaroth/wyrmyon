@@ -256,6 +256,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_announcer_follows_the_route_until_the_pipe_goes() {
+        let (tx, rx) = watch::channel(Some(Route::Relay));
+        let announcer = announce_routes(rx, Some(Route::Relay), progress(0, true));
+        for now in [Some(Route::Direct), None, Some(Route::Relay)] {
+            tx.send(now).unwrap();
+            tokio::task::yield_now().await;
+        }
+        drop(tx);
+        announcer.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn a_source_that_does_not_match_its_offer_fails_the_send() {
         let (mut pipe, _other) = pair().await;
         let bar = progress(0, true);

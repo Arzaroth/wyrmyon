@@ -558,6 +558,7 @@ mod tests {
             (ours.clone(), lan.clone(), true),
             (ours, url("http://192.168.1.2/"), false),
             (Relays::Disabled, url("https://relay.example/"), false),
+            (Relays::Default, url("ftp://relay.example/"), false),
         ] {
             assert_eq!(relays.accepts_from_peer(&relay), kept, "{relays:?} {relay}");
         }
