@@ -23,13 +23,15 @@ Direct connections should open with most peers (public IPv6).
 
 | Line | Where it comes from |
 | --- | --- |
-| Local addresses | The addresses a fresh endpoint would announce in `IrohInfo` |
+| Local addresses | The first addresses the endpoint finds, within 5 s: the interfaces, and sometimes a public one already learnt; a transfer's `IrohInfo` waits longer and may list more |
 | UDP, Public address, NAT mapping, Captive portal | iroh's net report: QUIC address discovery (QAD) against the relays, which reports the address and port each relay sees; a mapping that differs between relays is a hard NAT |
-| Port mapping | A probe of the gateway for UPnP, PCP and NAT-PMP (the `portmapper` crate iroh uses itself) |
+| Port mapping | A probe of the gateway for UPnP, PCP and NAT-PMP (the `portmapper` crate iroh uses itself); it asks what the gateway supports and creates no mapping, and netcheck's endpoint has iroh's own port mapper off, so the check leaves nothing on the router |
 | Relays | The latency of each relay the report measured; iroh stops once its three fastest answer, so others say `not measured` |
 
-The last line is a verdict: no relay answering, no UDP answer, a public IPv6
-address, an easy NAT, a hard NAT with or without port mapping. A hard NAT
+The last line is a verdict: a report that did not finish within 10 s, no
+relay answering, no UDP answer, a hard IPv4 NAT beside a public IPv6
+address, a public IPv6 address, an easy NAT, a hard NAT with or without port
+mapping. A hard NAT
 still connects directly to a peer on an easy NAT or a public address; two
 hard NATs stay on the relay, since iroh does not spray ports the way
 Tailscale's birthday-paradox probing does. With `--iroh-relays disabled` only

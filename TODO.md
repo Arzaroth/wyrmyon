@@ -24,6 +24,10 @@ done.
       `SHA256SUMS`, or sign releases, as the install scripts check them.
 - [ ] `wyrm --update` would take a prerelease as the latest release; none is
       published yet.
+- [ ] A transfer's iroh endpoint asks the gateway for a UPnP/PCP/NAT-PMP
+      mapping with a two-hour lease, and `Endpoint::close` does not release
+      it, so every transfer leaves one on the router. Check whether iroh
+      can release it on close, or release it ourselves.
 - [ ] macOS keeps partial transfers in `~/.cache/wyrmyon/partial`; decide
       whether `~/Library/Caches` is worth the second convention.
 
