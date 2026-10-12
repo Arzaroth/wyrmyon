@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Ctrl-C while `wyrm send` builds a zip file, or at the receiver's `ok?`
+  prompt, now ends `wyrm`. It used to print `error: interrupted` and hang.
+
 ### Added
 
 - `wyrm --update` replaces a copy installed by `install.sh`, `install.ps1` or

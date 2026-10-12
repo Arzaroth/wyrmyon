@@ -53,7 +53,8 @@ The ack carries the SHA-256 of the zip file as received.
 Building and extracting run on blocking threads. Both check a cancel flag
 between files and between reads, set when the transfer is dropped (Ctrl-C
 included), so an interrupted transfer stops promptly and leaves no
-half-extracted directory.
+half-extracted directory. A read after the flag is set fails with a plain
+I/O error: `io::copy` retries an `Interrupted` one forever.
 
 ## Sources
 
