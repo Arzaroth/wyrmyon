@@ -507,7 +507,7 @@ async fn in_a_terminal_the_receiver_asks_for_the_code_and_for_consent() {
             .await
             .unwrap();
         let code = pending.code().to_string();
-        let questions = [("wormhole code", code.as_str()), ("(y/N)", answer)];
+        let questions = [("wormhole code", code.as_str()), ("(Y/n)", answer)];
         let terminal = in_a_terminal(&server, dir.path(), "receive", &questions);
         let peer = async {
             let mut sender = pending.pair().await.unwrap();
@@ -535,7 +535,7 @@ async fn ctrl_c_at_the_consent_prompt_ends_wyrm() {
         .await
         .unwrap();
     let code = pending.code().to_string();
-    let questions = [("wormhole code", code.as_str()), ("(y/N)", "\x03")];
+    let questions = [("wormhole code", code.as_str()), ("(Y/n)", "\x03")];
     let terminal = in_a_terminal(&server, dir.path(), "receive", &questions);
     let peer = async {
         let mut sender = pending.pair().await.unwrap();

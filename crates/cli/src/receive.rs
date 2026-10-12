@@ -296,7 +296,7 @@ async fn destination(
     }
     eprintln!("Receiving {describe} into: {}", dest.display());
     if !args.accept_file {
-        match confirm("ok? (y/N) ").await {
+        match confirm("ok? (Y/n) ").await {
             Ok(true) => {}
             Ok(false) => return refuse(wormhole, "transfer rejected").await,
             Err(e) => {
@@ -527,13 +527,24 @@ async fn confirm(question: &str) -> anyhow::Result<bool> {
     let (answered, answer) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
         let mut line = String::new();
-        let _ = answered.send(std::io::stdin().read_line(&mut line).map(|_| line));
+        let _ = answered.send(
+            std::io::stdin()
+                .read_line(&mut line)
+                .map(|read| (read, line)),
+        );
     });
-    let line = answer
+    let (read, line) = answer
         .await
         .context("reading the answer")?
         .context("reading the answer")?;
-    Ok(matches!(line.trim(), "y" | "Y" | "yes"))
+    Ok(read > 0 && consents(&line))
+}
+
+fn consents(answer: &str) -> bool {
+    matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    )
 }
 
 async fn prompt_code(words: usize) -> anyhow::Result<Code> {
@@ -599,6 +610,16 @@ mod tests {
         assert!(settle(exists, &partial, &dest).is_err());
         assert!(settle(unsupported(), &partial, &dir.path().join("no/such")).is_err());
         assert_eq!(std::fs::read(&dest).unwrap(), b"data");
+    }
+
+    #[test]
+    fn enter_alone_consents_and_anything_but_yes_refuses() {
+        for yes in ["\n", "y\n", "Y", " yes ", "YES\r\n"] {
+            assert!(consents(yes), "{yes:?}");
+        }
+        for no in ["n\n", "no", "N", "yep", "ok", "q"] {
+            assert!(!consents(no), "{no:?}");
+        }
     }
 
     #[test]
