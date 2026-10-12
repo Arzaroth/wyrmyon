@@ -31,7 +31,8 @@ wyrm send --code CODE FILE   # use a code the receiver allocated
 `wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,
 `--code-length`, `--text`); `wyrm --help` lists the global ones
 (`--relay-url`, `--transit-helper`, `--no-listen`, `--force-classic`,
-`--hide-progress`...).
+`--hide-progress`, `--ascii`...). `wyrm send --qr` also shows the code as a
+QR code for a phone to scan.
 
 | Sender | Receiver | Transport |
 | --- | --- | --- |

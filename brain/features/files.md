@@ -17,12 +17,14 @@ anything else whose size the sender cannot know are refused.
 | `--transit-helper tcp:HOST:PORT` | The transit relay to fall back on (default `transit.magic-wormhole.io:4001`); a Python-style `:priority=X` suffix is accepted and ignored |
 | `--no-listen` | No inbound connections: connect out, or through a relay |
 | `--hide-progress` | No progress bar (none is drawn when stderr is not a terminal either) |
+| `--ascii` | Progress bar and QR code in ASCII only ([cli.md](cli.md#progress)) |
 
 ## Receiver first
 
 `wyrm receive --new` (or `--allocate`, the Python spelling) allocates the code and waits; the sender then runs
 `wyrm send --code CODE FILE`, or `wormhole send --code CODE FILE` with the
-Python client. Only the side that allocates prints the code.
+Python client. Only the side that allocates prints the code, with `--qr`
+for a QR code of it ([cli.md](cli.md#the-code-and-the-hint)).
 
 ## Sender
 
@@ -49,8 +51,9 @@ Python client. Only the side that allocates prints the code.
 3. Refuses to overwrite: anything at the destination, a dangling symlink
    included, is answered with an `error`. `-o DIR` naming an existing
    directory puts the file inside it, as the Python client does.
-4. Asks `ok? (y/N)` unless `--accept-file`. Without a terminal to ask on, it
-   refuses and tells the sender, rather than leaving it waiting.
+4. Asks `ok? (Y/n)` unless `--accept-file`: Enter alone accepts, end of
+   input refuses. Without a terminal to ask on, it refuses and tells the
+   sender, rather than leaving it waiting.
 5. Creates `.<name>.<unique>.wyrm-part` next to the destination before
    acking, so a directory it cannot write to is refused up front. Writes
    records into it, stops at the offered size and fails if the sender sends

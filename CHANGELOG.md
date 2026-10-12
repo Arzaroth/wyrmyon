@@ -13,6 +13,12 @@
 
 ### Added
 
+- `--qr` on `wyrm send` (and `wyrm receive --new`) also shows the code as a
+  QR code of `wormhole-transfer:CODE`, as the Python client does. Off by
+  default.
+- The progress bar is a wyrm eating its way to the end, and the sender now
+  draws one between two wyrms too. `--ascii` (or `WYRMYON_ASCII`) draws it,
+  and the QR code, with ASCII characters only.
 - Between two wyrms, a directory or several paths travel as a collection:
   one verified blob per file, with no temporary zip on the sender and no
   extraction on the receiver. An interrupted collection resumes when the same
@@ -39,6 +45,11 @@
   from the relay to a direct path (or back), and the end of the transfer
   says how much went direct: `Went direct`, `Went through the relay`, or
   `Went 97% direct, the rest through the relay`.
+
+### Changed
+
+- The hint after the code names it: `wyrm CODE` (or `wormhole receive CODE`).
+- The receiver's `ok?` prompt accepts on Enter: `ok? (Y/n)`.
 
 ### Security
 

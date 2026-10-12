@@ -52,7 +52,7 @@ wyrmyon.
 | Files, relays, receiver-first codes | [features/files.md](features/files.md) |
 | Directories, and collections between two wyrms | [features/directories.md](features/directories.md) |
 | Verified, resumable transfers | [features/resume.md](features/resume.md) |
-| The command line: bare arguments, the code prompt, bundles | [features/cli.md](features/cli.md) |
+| The command line: bare arguments, the code prompt and hint, the QR code, the progress bar, bundles | [features/cli.md](features/cli.md) |
 | Updating itself | [features/update.md](features/update.md) |
 | Checking the network | [features/netcheck.md](features/netcheck.md) |
 

@@ -55,8 +55,9 @@ nothing.
 
 Classic transit with a legacy peer is unchanged: records, SHA-256, no resume.
 
-The sender's progress bar stays empty on this path: the receiver pulls the
-data, so the sender waits for the ack.
+The receiver pulls the data, so the sender's bar follows what the blob
+provider reports sending ([cli.md](cli.md#progress)); a resumed blob starts
+at the offset the receiver asked from.
 
 ## Sources
 

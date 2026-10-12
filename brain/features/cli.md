@@ -33,6 +33,28 @@ uses them (`wyrmyon_wormhole::code::completions`), for as many words as
 `--code-length`. Without a terminal it reads one line from stdin, so the code
 can be piped in.
 
+## The code and the hint
+
+The side that allocates the code prints it with what the other side should
+run: `wyrm CODE` (or `wormhole receive CODE`) after `send`, and
+`wyrm send --code CODE FILE` after `receive --new`. `--qr` on either also
+draws `wormhole-transfer:CODE`, the URI the Python client puts in its QR code,
+for a phone app to scan. Like Python's, it is drawn in half blocks with the
+light modules inked and a one-module border, which reads right on a dark
+terminal; `--ascii` draws `##` instead. `qr::render` builds it from the
+`qrcode` crate's module grid.
+
+## Progress
+
+Both sides draw a bar while the data moves, on stderr and only in a
+terminal: a wyrm (`∿∿∿ᗧ· · ·`) eating its way to the end, its head chomping
+on a steady tick so a stalled transfer still looks alive. `--ascii` (or
+`WYRMYON_ASCII`) draws `~~~<. . .` instead, and `--hide-progress` draws
+nothing. Over classic transit the sender counts the records it writes; over
+iroh the receiver pulls, so the sender follows `IrohPipe::sent()`, the bytes
+of the offered files the blob provider has sent, from its request events
+(the manifest and the hash list are not counted).
+
 ## Several paths
 
 `wyrm send a.txt photos/` (or bare `wyrm a.txt photos/`) offers the paths
@@ -43,7 +65,10 @@ refused before anything is sent.
 
 ## Sources
 
-- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`Cli`, `bare`)
+- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`Cli`, `bare`, `show_code`)
+- [crates/cli/src/qr.rs](../../crates/cli/src/qr.rs)
+- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs) (`progress`, `wyrm`, `follow_sent`)
+- [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs) (`count_sent`)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs) (`prompt_code`, `CodeCompleter`)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs) (`paths_payload`)
 - [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs) (`build_bundle`)
