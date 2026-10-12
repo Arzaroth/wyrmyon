@@ -2,15 +2,6 @@
 
 ## [Unreleased]
 
-### Fixed
-
-- Ctrl-C while `wyrm send` builds a zip file, while `wyrm receive` unpacks
-  one, or at the receiver's `ok?` prompt, now ends `wyrm`. It used to print
-  `error: interrupted` and hang.
-- Between two wyrms, a receive whose final export failed or was cut short
-  no longer leaves a cache entry that makes every retry fail: the entry is
-  deleted, or started afresh if the process was killed mid-export.
-
 ### Added
 
 - `wyrm send --qr` also shows the code as a QR code of
@@ -23,7 +14,6 @@
   extraction on the receiver. An interrupted collection resumes when the same
   files are sent again. Older wyrms and other magic-wormhole clients still get
   a zip, which is now built only once the receiver's client is known.
-
 - `wyrm --update` replaces a copy installed by `install.sh`, `install.ps1` or
   from a release archive with the latest release. A copy installed by the
   .deb, the .rpm, an Arch package, Homebrew, Nix or the MSI is refused, with
@@ -50,6 +40,19 @@
 - The hint after the code names it: `wyrm CODE` (or `wormhole receive CODE`).
 - The receiver's `ok?` prompt accepts on Enter: `ok? (Y/n)`. On Unix,
   anything typed before the prompt appeared is dropped first.
+- Wire: the encrypted version message now also advertises
+  `"offers": ["collection-v1"]`, and the collection offer goes only to a
+  peer that advertised it. wyrmyon 0.1.0 and other magic-wormhole clients
+  are unaffected: they get a zip, as before.
+
+### Fixed
+
+- Ctrl-C while `wyrm send` builds a zip file, while `wyrm receive` unpacks
+  one, or at the receiver's `ok?` prompt, now ends `wyrm`. It used to print
+  `error: interrupted` and hang.
+- Between two wyrms, a receive whose final export failed or was cut short
+  no longer leaves a cache entry that makes every retry fail: the entry is
+  deleted, or started afresh if the process was killed mid-export.
 
 ### Security
 

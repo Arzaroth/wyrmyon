@@ -9,11 +9,12 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: first release, 0.1.0.** Text, files,
+**Status: 0.2.0.** Text, files,
 directories and several paths at once work with any magic-wormhole client,
 directly or through the transit relay, and over iroh between two wyrms,
 verified chunk by chunk and resumable after an interruption, on Linux, macOS
-and Windows.
+and Windows. Between two wyrms, a directory travels file by file with no zip,
+either side dialling is enough, and the transfer says whether it went direct.
 
 ## Usage
 
@@ -26,12 +27,13 @@ wyrm                         # no arguments: prompt for a code (Tab completes), 
 wyrm 7-guitarist-revenge     # a code: receive
 wyrm receive --new           # receiver first: allocate a code and wait
 wyrm send --code CODE FILE   # use a code the receiver allocated
+wyrm netcheck                # how this network lets peers connect directly
 ```
 
 `wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,
 `--code-length`, `--text`); `wyrm --help` lists the global ones
 (`--relay-url`, `--transit-helper`, `--no-listen`, `--force-classic`,
-`--hide-progress`, `--ascii`...). `wyrm send --qr` also shows the code as a
+`--iroh-relays`, `--hide-progress`, `--ascii`...). `wyrm send --qr` also shows the code as a
 QR code for a phone to scan.
 
 | Sender | Receiver | Transport |
