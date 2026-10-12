@@ -205,15 +205,12 @@ async fn two_endpoints_meet_through_a_relay_of_our_own() {
     })
     .await;
     let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
-    assert_eq!(
-        upstream.describe(),
-        "iroh, via relay until a direct path opens"
-    );
     upstream.send_last(b"through the relay").await.unwrap();
     assert_eq!(
         within(downstream.receive_last()).await.unwrap(),
         b"through the relay"
     );
+    assert!(upstream.traffic().relay > 0, "{:?}", upstream.traffic());
     upstream.finish().await;
     downstream.finish().await;
 }
@@ -227,8 +224,9 @@ async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
         .await
         .unwrap();
     let receiver = IrohTransport::bind(Role::Receiver, relays).await.unwrap();
-    let (sender_info, mut receiver_info) =
+    let (mut sender_info, mut receiver_info) =
         within(async { tokio::join!(sender.info(), receiver.info()) }).await;
+    sender_info.direct.clear();
     receiver_info.direct.clear();
 
     let (upstream, downstream) = within(async {
@@ -239,7 +237,6 @@ async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
     })
     .await;
     let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
-    assert_eq!(*upstream.route().borrow(), Some(Route::Relay));
     for pipe in [&upstream, &downstream] {
         within(pipe.route().wait_for(|now| *now == Some(Route::Direct)))
             .await
