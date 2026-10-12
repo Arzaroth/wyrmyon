@@ -1,11 +1,12 @@
 mod blobs;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use iroh::endpoint::{Connection, PathEvent, PathStats, RecvStream, SendStream, presets};
+use iroh::endpoint::{Connection, PathEvent, PathId, PathStats, RecvStream, SendStream, presets};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -21,6 +22,7 @@ const ADDRESS_WAIT: Duration = Duration::from_secs(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_ACK: usize = 4096;
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
+const SNAPSHOT_EVERY: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -106,12 +108,26 @@ pub struct Traffic {
 }
 
 impl Traffic {
-    fn add(&mut self, route: Route, stats: &PathStats) {
-        let bytes = stats.udp_tx.bytes + stats.udp_rx.bytes;
+    fn add(&mut self, route: Route, bytes: u64) {
         match route {
             Route::Direct => self.direct += bytes,
             Route::Relay => self.relay += bytes,
         }
+    }
+}
+
+type PathBytes = Arc<Mutex<HashMap<PathId, (Route, u64)>>>;
+
+fn bytes(stats: &PathStats) -> u64 {
+    stats.udp_tx.bytes + stats.udp_rx.bytes
+}
+
+fn snapshot(connection: &Connection, paths: &mut HashMap<PathId, (Route, u64)>) {
+    for path in &connection.paths() {
+        paths.insert(
+            path.id(),
+            (Route::of(path.remote_addr()), bytes(&path.stats())),
+        );
     }
 }
 
@@ -188,7 +204,8 @@ pub struct IrohPipe {
     description: String,
     server: Option<tokio::task::JoinHandle<()>>,
     route: watch::Receiver<Option<Route>>,
-    closed_paths: Arc<Mutex<Traffic>>,
+    first_route: Option<Route>,
+    paths: PathBytes,
     follower: tokio::task::JoinHandle<()>,
 }
 
@@ -237,12 +254,12 @@ impl IrohTransport {
                 }
                 .to_owned();
                 let (route_tx, route) = watch::channel(initial);
-                let closed_paths = Arc::default();
+                let paths = PathBytes::default();
                 let follower = tokio::spawn(follow_paths(
                     events,
                     connection.clone(),
                     route_tx,
-                    Arc::clone(&closed_paths),
+                    Arc::clone(&paths),
                 ));
                 Ok(IrohPipe {
                     role: self.role,
@@ -253,7 +270,8 @@ impl IrohTransport {
                     description,
                     server: None,
                     route,
-                    closed_paths,
+                    first_route: initial,
+                    paths,
                     follower,
                 })
             }
@@ -353,19 +371,33 @@ async fn follow_paths(
     mut events: iroh::endpoint::PathEventStream,
     connection: Connection,
     route: watch::Sender<Option<Route>>,
-    closed_paths: Arc<Mutex<Traffic>>,
+    paths: PathBytes,
 ) {
-    while let Some(event) = events.next().await {
+    let mut tick = tokio::time::interval(SNAPSHOT_EVERY);
+    loop {
+        let event = tokio::select! {
+            event = events.next() => match event {
+                Some(event) => event,
+                None => return,
+            },
+            _ = tick.tick() => {
+                snapshot(&connection, &mut paths.lock().expect("the traffic lock is never poisoned"));
+                continue;
+            }
+        };
         match event {
             PathEvent::Selected { remote_addr, .. } => select(&route, Route::of(&remote_addr)),
             PathEvent::Closed {
+                id,
                 remote_addr,
                 last_stats,
                 ..
-            } => closed_paths
-                .lock()
-                .expect("the traffic lock is never poisoned")
-                .add(Route::of(&remote_addr), &last_stats),
+            } => {
+                paths
+                    .lock()
+                    .expect("the traffic lock is never poisoned")
+                    .insert(id, (Route::of(&remote_addr), bytes(&last_stats)));
+            }
             PathEvent::Lagged { .. } => {
                 if let Some(selected) = selected_route(&connection) {
                     select(&route, selected);
@@ -388,6 +420,15 @@ fn constant_time_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+impl Drop for IrohPipe {
+    fn drop(&mut self) {
+        self.follower.abort();
+        if let Some(server) = self.server.take() {
+            server.abort();
+        }
+    }
+}
+
 impl IrohPipe {
     #[must_use]
     pub fn describe(&self) -> &str {
@@ -401,14 +442,22 @@ impl IrohPipe {
 
     #[must_use]
     pub fn traffic(&self) -> Traffic {
-        let mut traffic = *self
-            .closed_paths
+        let mut paths = self
+            .paths
             .lock()
-            .expect("the traffic lock is never poisoned");
-        for path in &self.connection.paths() {
-            traffic.add(Route::of(path.remote_addr()), &path.stats());
+            .expect("the traffic lock is never poisoned")
+            .clone();
+        snapshot(&self.connection, &mut paths);
+        let mut traffic = Traffic::default();
+        for (route, bytes) in paths.into_values() {
+            traffic.add(route, bytes);
         }
         traffic
+    }
+
+    #[must_use]
+    pub fn first_route(&self) -> Option<Route> {
+        self.first_route
     }
 
     pub async fn send_last(&mut self, data: &[u8]) -> Result<(), Error> {
