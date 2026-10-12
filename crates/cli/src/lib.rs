@@ -158,7 +158,6 @@ pub fn main() -> ExitCode {
             _ = tokio::signal::ctrl_c() => Err(anyhow::anyhow!("interrupted")),
         }
     });
-    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
     exit_code(result)
 }
 

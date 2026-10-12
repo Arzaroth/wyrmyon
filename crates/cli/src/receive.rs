@@ -412,10 +412,14 @@ async fn confirm(question: &str) -> anyhow::Result<bool> {
         bail!("not asking for confirmation without a terminal: pass --accept-file");
     }
     eprint!("{question}");
-    let mut line = String::new();
-    BufReader::new(tokio::io::stdin())
-        .read_line(&mut line)
+    let (answered, answer) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let _ = answered.send(std::io::stdin().read_line(&mut line).map(|_| line));
+    });
+    let line = answer
         .await
+        .context("reading the answer")?
         .context("reading the answer")?;
     Ok(matches!(line.trim(), "y" | "Y" | "yes"))
 }
