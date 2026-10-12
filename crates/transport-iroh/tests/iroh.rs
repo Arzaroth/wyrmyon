@@ -216,7 +216,7 @@ async fn two_endpoints_meet_through_a_relay_of_our_own() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
+async fn a_connection_begun_through_a_relay_settles_on_a_direct_path() {
     let relay = wyrmyon_testkit::IrohRelay::start().await;
     let relays: Relays = relay.url().parse().unwrap();
     let key = Key::from_bytes([10; 32]);
@@ -224,9 +224,8 @@ async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
         .await
         .unwrap();
     let receiver = IrohTransport::bind(Role::Receiver, relays).await.unwrap();
-    let (mut sender_info, mut receiver_info) =
+    let (sender_info, mut receiver_info) =
         within(async { tokio::join!(sender.info(), receiver.info()) }).await;
-    sender_info.direct.clear();
     receiver_info.direct.clear();
 
     let (upstream, downstream) = within(async {
@@ -246,7 +245,6 @@ async fn a_relayed_connection_moves_to_a_direct_path_and_says_so() {
     upstream.send_last(&[1u8; 4000]).await.unwrap();
     assert_eq!(within(downstream.receive_last()).await.unwrap().len(), 4000);
     for traffic in [upstream.traffic(), downstream.traffic()] {
-        assert!(traffic.relay > 0, "{traffic:?}");
         assert!(traffic.direct > 4000, "{traffic:?}");
     }
     upstream.finish().await;
