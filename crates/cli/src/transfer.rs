@@ -224,8 +224,29 @@ mod tests {
             went(u64::MAX, u64::MAX).as_deref(),
             Some("Went 50% direct, the rest through the relay")
         );
-        assert!(route_change(Some(Route::Relay), Some(Route::Direct)).is_some());
-        assert!(route_change(Some(Route::Direct), Some(Route::Relay)).is_some());
+        let change = |before, now| route_change(before, now).unwrap_or_default();
+        assert!(change(Some(Route::Relay), Some(Route::Direct)).starts_with("Now direct"));
+        assert!(change(Some(Route::Direct), Some(Route::Relay)).starts_with("Back through"));
+        for (before, now) in [
+            (None, Some(Route::Direct)),
+            (None, Some(Route::Relay)),
+            (Some(Route::Relay), None),
+            (Some(Route::Direct), Some(Route::Direct)),
+        ] {
+            assert_eq!(route_change(before, now), None, "{before:?} {now:?}");
+        }
+        assert_eq!(
+            went(1, 1000).as_deref(),
+            Some("Went 1% direct, the rest through the relay")
+        );
+        assert_eq!(
+            went(999_999, 1).as_deref(),
+            Some("Went 99% direct, the rest through the relay")
+        );
+        assert_eq!(
+            went(2, 1).as_deref(),
+            Some("Went 67% direct, the rest through the relay")
+        );
     }
 
     #[tokio::test]

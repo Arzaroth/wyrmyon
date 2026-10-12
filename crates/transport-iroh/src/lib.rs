@@ -527,9 +527,52 @@ mod tests {
             panic!("two relay URLs");
         };
         assert_eq!(urls.len(), 2);
-        for bad in ["", "nowhere", "ftp://relay.example", "https://a, nope"] {
+        for bad in [
+            "",
+            " , ",
+            "nowhere",
+            "ftp://relay.example",
+            "https://a, nope",
+        ] {
             assert!(bad.parse::<Relays>().is_err(), "{bad}");
         }
+        assert_eq!(" Default ".parse(), Ok(Relays::Default));
+        assert_eq!("DISABLED".parse(), Ok(Relays::Disabled));
+        assert!(matches!(
+            "https://relay.example,".parse(),
+            Ok(Relays::Custom(urls)) if urls.len() == 1
+        ));
+    }
+
+    #[test]
+    fn peer_relays_are_kept_only_when_we_would_trust_them() {
+        let url = |u: &str| -> RelayUrl { u.parse().unwrap() };
+        let lan = url("http://192.168.1.1/");
+        let ours = Relays::Custom(vec![lan.clone()]);
+        for (relays, relay, kept) in [
+            (Relays::Default, url("https://relay.example/"), true),
+            (Relays::Default, url("http://127.0.0.1:3340/"), true),
+            (Relays::Default, url("http://[::1]:3340/"), true),
+            (Relays::Default, url("http://LocalHost:3340/"), true),
+            (Relays::Default, lan.clone(), false),
+            (ours.clone(), lan.clone(), true),
+            (ours, url("http://192.168.1.2/"), false),
+            (Relays::Disabled, url("https://relay.example/"), false),
+        ] {
+            assert_eq!(relays.accepts_from_peer(&relay), kept, "{relays:?} {relay}");
+        }
+        let info = IrohInfo {
+            id: SecretKey::generate().public().to_string(),
+            relays: vec![
+                "http://192.168.1.1/".into(),
+                "https://relay.example/".into(),
+            ],
+            direct: vec!["127.0.0.1:9".into()],
+        };
+        let addr = info.to_addr(&Relays::Default).unwrap();
+        assert_eq!(addr.relay_urls().count(), 1);
+        let addr = info.to_addr(&Relays::Disabled).unwrap();
+        assert_eq!(addr.relay_urls().count(), 0);
     }
 
     #[test]
