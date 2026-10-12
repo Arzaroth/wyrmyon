@@ -42,9 +42,16 @@ On the connection:
    of the pin is iroh's own; each side accepts only a connection whose remote
    node ID is the one the peer announced, closes any other and keeps waiting.
    An older wyrm sender only dials and never accepts; the receiver's own dial
-   then simply loses.
-2. The sender opens one bidirectional stream on the first connection it gets,
-   whichever side dialled it, and writes first; the receiver takes the first
+   then simply loses. An older receiver never dials, and the sender's dial
+   is the one that wins. At most 16 inbound handshakes run at once; past
+   that an incoming connection is refused, so strangers reaching the port
+   cannot pile up work. After 60 s without a bound stream, `connect` fails
+   with the dial's error if it had one, else the error of a stream that
+   failed on the peer's own connection, else `timed out`.
+2. The sender calls `open_bi` on every connection it gets, whichever side
+   dialled it, and keeps the first that resolves. A QUIC stream is announced
+   only by its first bytes, so the peer sees a stream on that one connection
+   alone, when the sender writes first; the receiver takes the first
    connection on which a stream arrives, so both settle on the same one, and
    every other connection is dropped. Each side writes a 32-byte tag,
    HKDF of `wormhole_key.derive("wyrmyon/iroh-v1/confirm")` with info

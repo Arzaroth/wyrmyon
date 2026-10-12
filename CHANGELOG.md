@@ -18,7 +18,9 @@
   from one `install.ps1` put in the same directory.
 - Between two wyrms, both sides dial each other, so with
   `--iroh-relays disabled` a transfer works when either side can reach the
-  other, not only when the sender can reach the receiver.
+  other, not only when the sender can reach the receiver. The cost: a
+  sender whose dial fails now waits up to a minute for the receiver's dial
+  before giving up, and then says why its own dial failed.
 - `--iroh-relays` takes relay URLs (`http` or `https`, separated by commas)
   besides `default` and `disabled`, for relays of your own.
 - Between two wyrms, a line says when hole-punching moves the connection
