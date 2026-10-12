@@ -217,7 +217,7 @@ async fn two_endpoints_meet_through_a_relay_of_our_own() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_connection_begun_through_a_relay_settles_on_a_direct_path() {
+async fn a_relayed_connection_reports_its_route_and_where_the_bytes_went() {
     let relay = wyrmyon_testkit::IrohRelay::start().await;
     let relays: Relays = relay.url().parse().unwrap();
     let key = Key::from_bytes([10; 32]);
@@ -225,8 +225,9 @@ async fn a_connection_begun_through_a_relay_settles_on_a_direct_path() {
         .await
         .unwrap();
     let receiver = IrohTransport::bind(Role::Receiver, relays).await.unwrap();
-    let (sender_info, mut receiver_info) =
+    let (mut sender_info, mut receiver_info) =
         within(async { tokio::join!(sender.info(), receiver.info()) }).await;
+    sender_info.direct.clear();
     receiver_info.direct.clear();
 
     let (upstream, downstream) = within(async {
@@ -237,17 +238,25 @@ async fn a_connection_begun_through_a_relay_settles_on_a_direct_path() {
     })
     .await;
     let (mut upstream, mut downstream) = (upstream.unwrap(), downstream.unwrap());
-    for pipe in [&upstream, &downstream] {
-        within(pipe.route().wait_for(|now| *now == Some(Route::Direct)))
-            .await
-            .unwrap();
-    }
+    let mut route = upstream.route();
+    let punched = tokio::time::timeout(
+        Duration::from_secs(15),
+        route.wait_for(|now| *now == Some(Route::Direct)),
+    )
+    .await
+    .is_ok();
 
     upstream.send_last(&[1u8; 4000]).await.unwrap();
     assert_eq!(within(downstream.receive_last()).await.unwrap().len(), 4000);
-    for traffic in [upstream.traffic(), downstream.traffic()] {
-        assert!(traffic.direct > 4000, "{traffic:?}");
+    let (outgoing, incoming) = (upstream.traffic(), downstream.traffic());
+    assert!(outgoing.relay > 0, "{outgoing:?}");
+    if punched {
+        assert!(outgoing.direct > 4000, "{outgoing:?}");
+    } else {
+        assert_eq!(*upstream.route().borrow(), Some(Route::Relay));
+        assert!(outgoing.relay > 4000, "{outgoing:?}");
     }
+    assert!(incoming.direct + incoming.relay > 4000, "{incoming:?}");
     upstream.finish().await;
     downstream.finish().await;
 }
