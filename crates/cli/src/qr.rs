@@ -69,4 +69,18 @@ mod tests {
             render("8-other", true, false)
         );
     }
+
+    #[test]
+    fn it_encodes_the_uri_the_python_client_does_and_colours_on_request() {
+        assert_eq!(
+            uri("7-guitarist-revenge"),
+            "wormhole-transfer:7-guitarist-revenge"
+        );
+        let plain = render("7-a-b", false, false);
+        let coloured = render("7-a-b", false, true);
+        assert_eq!(coloured.lines().count(), plain.lines().count());
+        for (c, p) in coloured.lines().zip(plain.lines()) {
+            assert_eq!(c, format!("{INK}{p}{RESET}"));
+        }
+    }
 }

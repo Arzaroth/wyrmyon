@@ -501,7 +501,7 @@ async fn in_a_terminal(
 #[tokio::test(flavor = "multi_thread")]
 async fn in_a_terminal_the_receiver_asks_for_the_code_and_for_consent() {
     let server = MailboxServer::start().await;
-    for (answer, accepted) in [("y", true), ("n", false)] {
+    for (answer, accepted) in [("y", true), ("n", false), ("", true), ("\x04", false)] {
         let dir = tempfile::tempdir().unwrap();
         let pending = wyrmyon_wormhole::create(&config(&server, false), 2)
             .await
