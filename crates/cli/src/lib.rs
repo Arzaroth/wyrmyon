@@ -1,5 +1,6 @@
 mod netcheck;
 mod protocol;
+mod qr;
 mod receive;
 mod send;
 mod transfer;
@@ -48,6 +49,9 @@ struct Global {
     /// Do not show progress bars
     #[arg(long, global = true)]
     hide_progress: bool,
+    /// Draw progress bars and QR codes with ASCII characters only
+    #[arg(long, global = true, env = "WYRMYON_ASCII")]
+    ascii: bool,
     /// Never use the iroh-v1 transport, even with another wyrmyon
     #[arg(long, global = true, conflicts_with = "force_iroh")]
     force_classic: bool,
@@ -196,6 +200,14 @@ fn bare(targets: &[String]) -> anyhow::Result<Command> {
             paths.iter().map(std::path::PathBuf::from).collect(),
         ))),
     }
+}
+
+fn show_code(code: &wyrmyon_wormhole::Code, qr: bool, ascii: bool, other_side: &str) {
+    eprintln!("Wormhole code is: {code}");
+    if qr {
+        eprint!("{}", qr::render(&code.to_string(), ascii));
+    }
+    eprintln!("On the other computer, please run:\n\n{other_side}\n");
 }
 
 fn show_welcome(welcome: &Welcome) {

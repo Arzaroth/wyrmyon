@@ -12,7 +12,9 @@ use crate::protocol::{
     self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
 };
 use crate::transfer::Pipe;
-use crate::{CODE_LENGTH, Global, cache_dir, mood_for, printable, show_welcome, transfer, zipdir};
+use crate::{
+    CODE_LENGTH, Global, cache_dir, mood_for, printable, show_code, show_welcome, transfer, zipdir,
+};
 
 #[derive(Args)]
 pub struct ReceiveArgs {
@@ -25,6 +27,9 @@ pub struct ReceiveArgs {
     /// Number of words in the code: the one `--new` allocates, or the one the prompt completes
     #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
     code_length: u8,
+    /// With `--new`, also show the code as a QR code
+    #[arg(long, requires = "new")]
+    qr: bool,
     /// Accept a file or directory without asking
     #[arg(long)]
     accept_file: bool,
@@ -39,6 +44,7 @@ impl ReceiveArgs {
             code,
             new: false,
             code_length: CODE_LENGTH,
+            qr: false,
             accept_file: false,
             output_file: None,
         }
@@ -49,12 +55,10 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
     let pending = if args.new {
         let pending =
             wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
-        eprintln!("Wormhole code is: {}", pending.code());
-        eprintln!(
-            "On the other computer, please run:\n\n  wyrm send --code {} FILE\n\n(or: wormhole send --code {} FILE)\n",
-            pending.code(),
-            pending.code()
-        );
+        let code = pending.code();
+        let other_side =
+            format!("  wyrm send --code {code} FILE\n\n(or: wormhole send --code {code} FILE)");
+        show_code(code, args.qr, global.ascii, &other_side);
         pending
     } else {
         let code: Code = match &args.code {

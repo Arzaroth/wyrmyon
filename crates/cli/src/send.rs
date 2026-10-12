@@ -11,7 +11,7 @@ use crate::protocol::{
     self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
 };
 use crate::transfer::Pipe;
-use crate::{CODE_LENGTH, Global, mood_for, show_welcome, transfer, zipdir};
+use crate::{CODE_LENGTH, Global, mood_for, show_code, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
 #[command(group = clap::ArgGroup::new("what").required(true).args(["text", "paths"]))]
@@ -27,6 +27,9 @@ pub struct SendArgs {
     /// Use this code instead of generating one, e.g. the one a receiver chose
     #[arg(long, conflicts_with = "code_length")]
     code: Option<String>,
+    /// Also show the code as a QR code, for a phone to scan
+    #[arg(long)]
+    qr: bool,
 }
 
 enum Payload {
@@ -42,6 +45,7 @@ impl SendArgs {
             paths,
             code_length: CODE_LENGTH,
             code: None,
+            qr: false,
         }
     }
 
@@ -51,6 +55,7 @@ impl SendArgs {
             paths: Vec::new(),
             code_length: CODE_LENGTH,
             code: None,
+            qr: false,
         }
     }
 }
@@ -68,10 +73,9 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     } else {
         let pending =
             wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
-        eprintln!("Wormhole code is: {}", pending.code());
-        eprintln!(
-            "On the other computer, please run:\n\n  wyrm receive\n\n(or: wormhole receive)\n"
-        );
+        let code = pending.code();
+        let other_side = format!("  wyrm {code}\n\n(or: wormhole receive {code})");
+        show_code(code, args.qr, global.ascii, &other_side);
         pending
     };
     show_welcome(pending.welcome());
