@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use iroh::endpoint::presets;
+use iroh::endpoint::{PortmapperConfig, presets};
 use iroh::{Endpoint, Watcher};
 
 use crate::{ADDRESS_WAIT, Error, Relays, relay_mode};
@@ -19,6 +19,7 @@ pub struct PortMapping {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NetCheck {
     pub relays_on: bool,
+    pub report_finished: bool,
     pub local: Vec<SocketAddr>,
     pub udp_v4: bool,
     pub udp_v6: bool,
@@ -34,6 +35,7 @@ pub async fn netcheck(relays: &Relays) -> Result<NetCheck, Error> {
     let mode = relay_mode(relays);
     let endpoint = Endpoint::builder(presets::Minimal)
         .relay_mode(mode.clone())
+        .portmapper_config(PortmapperConfig::Disabled)
         .bind()
         .await
         .map_err(|e| Error::Bind(e.to_string()))?;
@@ -60,6 +62,7 @@ pub async fn netcheck(relays: &Relays) -> Result<NetCheck, Error> {
 
     let mut check = NetCheck {
         relays_on,
+        report_finished: !relays_on || report.is_some(),
         local,
         port_mapping,
         relays: mode
@@ -77,18 +80,28 @@ pub async fn netcheck(relays: &Relays) -> Result<NetCheck, Error> {
         check.public_v6 = report.global_v6.map(SocketAddr::V6);
         check.varies_by_server = report.mapping_varies_by_dest();
         check.captive_portal = report.captive_portal;
-        for (_, url, latency) in report.relay_latency.iter() {
-            let url = url.to_string();
-            match check.relays.iter_mut().find(|(known, _)| *known == url) {
-                Some((_, best)) => *best = Some(best.map_or(latency, |b| b.min(latency))),
-                None => check.relays.push((url, Some(latency))),
-            }
-        }
+        let measured = report
+            .relay_latency
+            .iter()
+            .map(|(_, url, latency)| (url.to_string(), latency));
+        merge_latencies(&mut check.relays, measured);
     }
     check
         .relays
         .sort_by_key(|(url, latency)| (latency.is_none(), *latency, url.clone()));
     Ok(check)
+}
+
+fn merge_latencies(
+    relays: &mut Vec<(String, Option<Duration>)>,
+    measured: impl Iterator<Item = (String, Duration)>,
+) {
+    for (url, latency) in measured {
+        match relays.iter_mut().find(|(known, _)| *known == url) {
+            Some((_, best)) => *best = Some(best.map_or(latency, |b| b.min(latency))),
+            None => relays.push((url, Some(latency))),
+        }
+    }
 }
 
 async fn port_mapping() -> Option<PortMapping> {

@@ -78,16 +78,22 @@ fn verdict(check: &NetCheck) -> &'static str {
             "Without relays, a peer connects only if one side can reach the other: on the same network, or towards a public or port-mapped peer."
         };
     }
+    if !check.report_finished {
+        return "The network report did not finish within 10 s: the relays are slow to answer or unreachable; run it again to tell which.";
+    }
     if !check.relays.iter().any(|(_, latency)| latency.is_some()) {
         return "No relay answered: only peers that can reach each other directly will connect.";
     }
     if !check.udp_v4 && !check.udp_v6 {
         return "No UDP answer from the relays (UDP blocked, or relays without QUIC address discovery): transfers will likely go through a relay.";
     }
-    if check.public_v6.is_some() {
-        return "Direct connections should open with most peers (public IPv6).";
-    }
     match check.varies_by_server {
+        Some(true) if check.public_v6.is_some() => {
+            "A hard NAT on IPv4: direct connections open with IPv6 peers, and towards IPv4 peers on an easy NAT or a public address."
+        }
+        _ if check.public_v6.is_some() => {
+            "Direct connections should open with most peers (public IPv6)."
+        }
         Some(true) if mapped => {
             "A hard NAT, but port mapping is available: direct connections should still open."
         }
@@ -134,6 +140,7 @@ mod tests {
     fn online() -> NetCheck {
         NetCheck {
             relays_on: true,
+            report_finished: true,
             local: vec!["192.168.1.5:41234".parse().unwrap()],
             udp_v4: true,
             public_v4: Some("203.0.113.5:41234".parse().unwrap()),
