@@ -195,6 +195,7 @@ pub struct IrohTransport {
     role: Role,
     endpoint: Endpoint,
     relays: Relays,
+    connect_timeout: Duration,
 }
 
 pub struct IrohPipe {
@@ -228,7 +229,15 @@ impl IrohTransport {
             role,
             endpoint,
             relays,
+            connect_timeout: CONNECT_TIMEOUT,
         })
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
+        self
     }
 
     pub async fn info(&self) -> IrohInfo {
@@ -337,7 +346,7 @@ impl IrohTransport {
                 .map(|(send, recv)| (connection, send, recv))
                 .map_err(|e| Some(e.to_string()))
         };
-        let deadline = tokio::time::sleep(CONNECT_TIMEOUT);
+        let deadline = tokio::time::sleep(self.connect_timeout);
         let mut deadline = std::pin::pin!(deadline);
         let mut dialing = std::pin::pin!(self.endpoint.connect(addr.clone(), ALPN));
         let mut dial_failed = None;
