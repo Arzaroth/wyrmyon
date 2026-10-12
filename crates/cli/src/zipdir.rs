@@ -49,7 +49,7 @@ struct Checked<'a> {
 impl Read for Checked<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.cancel.0.load(Ordering::Relaxed) {
-            return Err(io::Error::new(io::ErrorKind::Interrupted, "interrupted"));
+            return Err(io::Error::other("interrupted"));
         }
         self.inner.read(buf)
     }
