@@ -39,19 +39,46 @@ impl std::str::FromStr for Relays {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "default" => Ok(Self::Default),
-            "disabled" => Ok(Self::Disabled),
-            urls => urls
-                .split(',')
-                .map(|url| match url.trim().parse::<RelayUrl>() {
-                    Ok(relay) if matches!(relay.scheme(), "http" | "https") => Ok(relay),
-                    _ => Err(format!(
-                        "`{url}` is not `default`, `disabled` or an http(s) relay URL"
-                    )),
-                })
-                .collect::<Result<_, _>>()
-                .map(Self::Custom),
+        let s = s.trim();
+        match s.to_ascii_lowercase().as_str() {
+            "default" => return Ok(Self::Default),
+            "disabled" => return Ok(Self::Disabled),
+            _ => {}
+        }
+        let urls: Vec<RelayUrl> = s
+            .split(',')
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(|url| match url.parse::<RelayUrl>() {
+                Ok(relay) if matches!(relay.scheme(), "http" | "https") => Ok(relay),
+                _ => Err(format!(
+                    "`{url}` is not `default`, `disabled` or an http(s) relay URL"
+                )),
+            })
+            .collect::<Result<_, _>>()?;
+        if urls.is_empty() {
+            return Err("give `default`, `disabled` or http(s) relay URLs".into());
+        }
+        Ok(Self::Custom(urls))
+    }
+}
+
+impl Relays {
+    fn accepts_from_peer(&self, relay: &RelayUrl) -> bool {
+        match self {
+            Self::Disabled => false,
+            Self::Custom(ours) if ours.contains(relay) => true,
+            _ => match relay.scheme() {
+                "https" => true,
+                "http" => relay.host_str().is_some_and(|host| {
+                    host.eq_ignore_ascii_case("localhost")
+                        || host
+                            .trim_matches(['[', ']'])
+                            .parse::<std::net::IpAddr>()
+                            .is_ok_and(|ip| ip.is_loopback())
+                }),
+                _ => false,
+            },
         }
     }
 }
@@ -114,7 +141,7 @@ pub struct IrohInfo {
 }
 
 impl IrohInfo {
-    fn to_addr(&self) -> Result<EndpointAddr, Error> {
+    fn to_addr(&self, ours: &Relays) -> Result<EndpointAddr, Error> {
         let id: EndpointId = self
             .id
             .parse()
@@ -123,6 +150,7 @@ impl IrohInfo {
             .relays
             .iter()
             .filter_map(|r| r.parse::<RelayUrl>().ok())
+            .filter(|r| ours.accepts_from_peer(r))
             .map(TransportAddr::Relay);
         let direct = self
             .direct
@@ -241,7 +269,7 @@ impl IrohTransport {
         theirs: &IrohInfo,
         wormhole_key: &Key,
     ) -> Result<(Connection, SendStream, RecvStream), Error> {
-        let addr = theirs.to_addr()?;
+        let addr = theirs.to_addr(&self.relays)?;
         let confirm = wormhole_key.derive(CONFIRM_LABEL);
         let ours = self.endpoint.id();
         let attempt = async {
