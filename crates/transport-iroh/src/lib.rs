@@ -24,6 +24,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_ACK: usize = 4096;
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
 const SNAPSHOT_EVERY: Duration = Duration::from_millis(250);
+const MAX_HANDSHAKES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -332,12 +333,15 @@ impl IrohTransport {
                 Role::Sender => connection.open_bi().await,
                 Role::Receiver => connection.accept_bi().await,
             };
-            streams.ok().map(|(send, recv)| (connection, send, recv))
+            streams
+                .map(|(send, recv)| (connection, send, recv))
+                .map_err(|e| Some(e.to_string()))
         };
         let deadline = tokio::time::sleep(CONNECT_TIMEOUT);
         let mut deadline = std::pin::pin!(deadline);
         let mut dialing = std::pin::pin!(self.endpoint.connect(addr.clone(), ALPN));
         let mut dial_failed = None;
+        let mut stream_failed = None;
         let mut waiting = FuturesUnordered::new();
         loop {
             tokio::select! {
@@ -352,28 +356,32 @@ impl IrohTransport {
                     let Some(incoming) = incoming else {
                         return Err(Error::Connect("the endpoint closed".into()));
                     };
+                    if waiting.len() >= MAX_HANDSHAKES {
+                        continue;
+                    }
                     let id = addr.id;
                     waiting.push(
                         async move {
-                            let connection = incoming.await.ok()?;
+                            let connection = incoming.await.map_err(|_| None)?;
                             if connection.remote_id() != id {
                                 connection.close(1u8.into(), b"not you");
-                                return None;
+                                return Err(None);
                             }
                             stream(connection).await
                         }
                         .boxed(),
                     );
                 }
-                Some(won) = waiting.next() => {
-                    if let Some(won) = won {
-                        return Ok(won);
-                    }
-                }
+                Some(settled) = waiting.next() => match settled {
+                    Ok(won) => return Ok(won),
+                    Err(Some(e)) => stream_failed = Some(e),
+                    Err(None) => {}
+                },
                 () = &mut deadline => {
                     return Err(Error::Connect(
                         dial_failed
                             .filter(|e| !e.is_empty())
+                            .or(stream_failed)
                             .unwrap_or_else(|| "timed out".into()),
                     ));
                 }
