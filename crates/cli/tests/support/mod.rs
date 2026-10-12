@@ -40,6 +40,33 @@ pub async fn read_code(stream: impl AsyncRead + Unpin + Send + 'static) -> Strin
         .expect("the sender exited without printing a code")
 }
 
+pub async fn read_hint(stream: impl AsyncRead + Unpin + Send + 'static) -> (String, String) {
+    let (found, hint) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut found = Some(found);
+        let mut seen = String::new();
+        let mut lines = BufReader::new(stream).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            seen.push_str(&line);
+            seen.push('\n');
+            if line.starts_with("(or:")
+                && let Some(found) = found.take()
+            {
+                let code = seen
+                    .split("code is: ")
+                    .nth(1)
+                    .and_then(|c| c.lines().next());
+                let code = code.unwrap_or_default().trim().to_owned();
+                let _ = found.send((code, std::mem::take(&mut seen)));
+            }
+        }
+    });
+    tokio::time::timeout(TIMEOUT, hint)
+        .await
+        .expect("no hint came")
+        .expect("exited before the hint")
+}
+
 pub async fn finish(child: Child) -> (bool, String, String) {
     let out = tokio::time::timeout(TIMEOUT, child.wait_with_output())
         .await

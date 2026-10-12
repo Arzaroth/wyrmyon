@@ -3,7 +3,7 @@ mod support;
 use std::process::Command;
 
 use serde_json::json;
-use support::{finish, read_code, wyrm};
+use support::{finish, read_code, read_hint, wyrm};
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transport_classic::{Role, Transit};
 use wyrmyon_wormhole::{Config, Mood};
@@ -50,6 +50,44 @@ async fn text_travels_between_two_wyrm_processes() {
     assert_eq!(stdout, "hello there\n");
     let (ok, _, _) = finish(sender).await;
     assert!(ok);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_hint_names_the_code_and_qr_draws_it() {
+    let server = MailboxServer::start().await;
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--text", "scan me", "--qr", "--ascii"])
+        .spawn()
+        .unwrap();
+    let (code, hint) = read_hint(sender.stderr.take().unwrap()).await;
+    assert!(hint.contains(&format!("\n  wyrm {code}\n")), "{hint}");
+    assert!(
+        hint.contains(&format!("(or: wormhole receive {code})")),
+        "{hint}"
+    );
+    assert!(hint.contains("##############"), "{hint}");
+    assert!(hint.is_ascii(), "{hint}");
+
+    let mut receiver = wyrm(&server.url())
+        .args(["receive", "--new", "--qr"])
+        .spawn()
+        .unwrap();
+    let (allocated, hint) = read_hint(receiver.stderr.take().unwrap()).await;
+    assert!(
+        hint.contains(&format!("wyrm send --code {allocated} FILE")),
+        "{hint}"
+    );
+    assert!(hint.contains('█') && !hint.contains("##"), "{hint}");
+    drop(receiver);
+
+    let receiver = wyrm(&server.url())
+        .args(["receive", &code])
+        .spawn()
+        .unwrap();
+    let (ok, stdout, stderr) = finish(receiver).await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "scan me\n");
+    assert!(finish(sender).await.0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -322,6 +360,7 @@ fn an_update_that_cannot_reach_github_fails_and_says_so() {
 fn conflicting_code_flags_are_refused() {
     for args in [
         vec!["receive", "--new", "7-a-b"],
+        vec!["receive", "--qr", "7-a-b"],
         vec![
             "send",
             "--code",
