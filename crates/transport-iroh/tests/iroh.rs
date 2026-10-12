@@ -78,7 +78,8 @@ async fn the_receiver_turns_a_stranger_away_and_still_takes_the_sender() {
         .unwrap();
     let stranger = IrohTransport::bind(Role::Sender, Relays::Disabled)
         .await
-        .unwrap();
+        .unwrap()
+        .with_connect_timeout(Duration::from_secs(5));
     let receiver = IrohTransport::bind(Role::Receiver, Relays::Disabled)
         .await
         .unwrap();
