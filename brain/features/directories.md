@@ -79,10 +79,13 @@ destination itself (failing if anything is there), and then:
 
 - fetches only the hash sequence and the manifest, at most
   `32 × (numfiles + 1)` bytes plus 16 MiB, and checks the manifest before any
-  file data: as many files as offered, sizes adding up to the offered bytes,
-  no path twice, no path both a file and a directory's parent, and every path
-  holdable here by the same rules as a zip entry (nothing absolute, no `..`,
-  nothing Windows cannot hold);
+  file data: as many files as offered (at most 2^20, refused before
+  accepting otherwise), sizes adding up to the offered bytes, at most 65536
+  empty directories, no path over 4096 bytes, no empty, `.` or `..` segment
+  and no backslash, no path twice, no path both a file and a directory's
+  parent (walked as a tree of components, so a hostile path costs linear
+  time), and every path holdable here by the same rules as a zip entry
+  (nothing absolute, nothing Windows cannot hold);
 - fetches the files, stopping the moment more bytes arrive than were offered,
   and checks every file is complete at its listed size;
 - exports each file into place (moved out of the store where it can, copied
@@ -91,7 +94,8 @@ destination itself (failing if anything is there), and then:
 
 A manifest or data that does not check out deletes the cache entry and the
 destination; an interrupted transfer keeps the cache entry for the next
-attempt ([resume.md](resume.md)). Symlinks are followed on the sender as for a
+attempt, and a failed export deletes it ([resume.md](resume.md)). Once every
+file is exported the directory is kept, even if the ack then fails. Symlinks are followed on the sender as for a
 zip, and never created on the receiver.
 
 ## Cancelling

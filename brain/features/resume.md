@@ -37,9 +37,12 @@ wyrm send big.iso        # a new code; the receiver fetches only what it lacks
   `%USERPROFILE%` stand in for the last two. Empty or relative values are
   ignored. A
   successful transfer, or one whose data turned out wrong, deletes its
-  `<hash>` directory. An interrupted one, or one whose export failed (a full
-  disk, say), keeps it for the next attempt and says so in the error, naming
-  the directory to delete if no retry is coming. Nothing evicts abandoned
+  `<hash>` directory. An interrupted one keeps it for the next attempt and
+  says so in the error, naming the directory to delete if no retry is
+  coming. Exporting moves data out of the store, so a `<hash>.exporting`
+  marker goes down first: an export that fails (a full disk, say) deletes
+  the entry, and an entry found with its marker, left by a process killed
+  mid-export, is started afresh rather than trusted. Nothing evicts abandoned
   entries: they stay until the same content arrives or the user removes them.
   One store per hash means resuming is just reopening it, and cleaning up is
   one directory.

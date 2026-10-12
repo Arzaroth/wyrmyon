@@ -7,6 +7,9 @@
 - Ctrl-C while `wyrm send` builds a zip file, while `wyrm receive` unpacks
   one, or at the receiver's `ok?` prompt, now ends `wyrm`. It used to print
   `error: interrupted` and hang.
+- Between two wyrms, a receive whose final export failed or was cut short
+  no longer leaves a cache entry that makes every retry fail: the entry is
+  deleted, or started afresh if the process was killed mid-export.
 
 ### Added
 
