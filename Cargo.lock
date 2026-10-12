@@ -5205,6 +5205,7 @@ dependencies = [
  "hex",
  "indicatif",
  "qrcode",
+ "rustix",
  "rustls",
  "rustyline",
  "selvedge",

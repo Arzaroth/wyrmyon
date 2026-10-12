@@ -385,6 +385,7 @@ async fn send_over(
     }
     .await;
     if let Err(e) = sent {
+        bar.finish_and_clear();
         pipe.abort().await;
         return Err(e);
     }

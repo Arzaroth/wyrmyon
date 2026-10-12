@@ -238,6 +238,7 @@ async fn receive_payload(
             })
         }
         Err(e) => {
+            bar.finish_and_clear();
             pipe.abort().await;
             Err(e)
         }
@@ -452,6 +453,7 @@ async fn receive_collection(
             Ok(())
         }
         Err(e) => {
+            bar.finish_and_clear();
             pipe.abort().await;
             Err(e)
         }
@@ -519,6 +521,7 @@ async fn confirm(question: &str) -> anyhow::Result<bool> {
     if !std::io::stdin().is_terminal() {
         bail!("not asking for confirmation without a terminal: pass --accept-file");
     }
+    drop_typed_ahead();
     eprint!("{question}");
     let (answered, answer) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
@@ -535,6 +538,14 @@ async fn confirm(question: &str) -> anyhow::Result<bool> {
         .context("reading the answer")?;
     Ok(read > 0 && consents(&line))
 }
+
+#[cfg(unix)]
+fn drop_typed_ahead() {
+    let _ = rustix::termios::tcflush(std::io::stdin(), rustix::termios::QueueSelector::IFlush);
+}
+
+#[cfg(not(unix))]
+fn drop_typed_ahead() {}
 
 fn consents(answer: &str) -> bool {
     matches!(

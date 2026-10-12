@@ -272,20 +272,24 @@ async fn count_sent(
         let (payload, sent) = (Arc::clone(&payload), sent.clone());
         tokio::spawn(async move {
             let (mut counting, mut reached, mut size) = (false, 0, 0);
+            let credit = |counting: bool, reached: &mut u64, end: u64| {
+                if counting && end > *reached {
+                    sent.send_modify(|n| *n += end - *reached);
+                    *reached = end;
+                }
+            };
             while let Ok(Some(update)) = updates.recv().await {
-                let end = match update {
+                match update {
                     RequestUpdate::Started(started) => {
+                        credit(counting, &mut reached, size);
                         counting = payload.contains(&started.hash);
                         (reached, size) = (0, started.size);
-                        continue;
                     }
-                    RequestUpdate::Progress(progress) => progress.end_offset,
-                    RequestUpdate::Completed(_) => size,
-                    RequestUpdate::Aborted(_) => continue,
-                };
-                if counting && end > reached {
-                    sent.send_modify(|n| *n += end - reached);
-                    reached = end;
+                    RequestUpdate::Progress(progress) => {
+                        credit(counting, &mut reached, progress.end_offset);
+                    }
+                    RequestUpdate::Completed(_) => credit(counting, &mut reached, size),
+                    RequestUpdate::Aborted(_) => counting = false,
                 }
             }
         });
