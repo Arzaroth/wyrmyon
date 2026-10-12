@@ -58,9 +58,22 @@ hole-punching over the relayed connection (every 5 s, and whenever either
 side's addresses change) and moves to a direct path by itself; a task on each
 pipe follows `Connection::path_events`, so the CLI prints `Now direct:
 hole-punching opened a path` (or `Back through the relay`) when the selected
-path changes, and, once the data is through, `Went direct`, `Went through the
-relay` or `Went N% direct` from the per-path byte counts (`transfer::went`).
-Each side selects its own path, so the two summaries can differ slightly.
+path changes from the one it started on, and, once the data is through, `Went
+direct`, `Went through the relay` or `Went N% direct` (rounded, and between 1
+and 99 when both routes carried bytes) from the per-path byte counts
+(`transfer::went`). The counts are every UDP byte of a path both ways,
+handshake and probes included. iroh keeps only eight path events, so the task
+also snapshots each open path's counters every 250 ms, keyed by path id, and
+a `Closed` event replaces the snapshot with the final figures: a lagging
+stream loses at most a quarter second of a path. Dropping a pipe without
+`finish` or `abort` stops the task and the blob server. Each side selects its
+own path, so the two summaries can differ slightly.
+
+The peer's `relays` are dialled only when wyrmyon would trust them itself
+(`Relays::accepts_from_peer`): never with `--iroh-relays disabled`, otherwise
+over https, over http on loopback, or when the URL is one of our own
+`--iroh-relays`. iroh dials any relay URL it is handed, so without this a
+peer could make us open a plain-HTTP connection to any host it named.
 
 The node ID pin proves the connection reaches the endpoint the peer announced
 through the encrypted mailbox; the binding proves that endpoint belongs to

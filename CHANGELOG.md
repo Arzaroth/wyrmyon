@@ -23,6 +23,13 @@
   says how much went direct: `Went direct`, `Went through the relay`, or
   `Went 97% direct, the rest through the relay`.
 
+### Security
+
+- A relay the other wyrm advertises is dialled only over https, over http
+  on loopback, or when it is one of your own `--iroh-relays`, and never with
+  `--iroh-relays disabled`. Before, any URL the peer named was dialled, plain
+  http included.
+
 ## [0.1.0] - 2026-10-10
 
 ### Added
