@@ -164,6 +164,15 @@ async fn send_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> 
     }
 }
 
+async fn require_iroh(wormhole: &mut Wormhole, global: &Global) -> anyhow::Result<bool> {
+    let use_iroh = global.use_iroh(wormhole);
+    if global.force_iroh && !use_iroh {
+        protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
+        bail!("the other side does not speak iroh-v1 (--force-iroh)");
+    }
+    Ok(use_iroh)
+}
+
 async fn send_tree(
     wormhole: &mut Wormhole,
     global: &Global,
@@ -173,6 +182,7 @@ async fn send_tree(
     if global.use_collection(wormhole) {
         return send_collection(wormhole, global, name, &entries).await;
     }
+    require_iroh(wormhole, global).await?;
     eprintln!("Building zipfile..");
     let cancel = zipdir::Cancel::default();
     let _cancel_on_drop = cancel.on_drop();
@@ -267,11 +277,7 @@ async fn send_data(
     path: &Path,
     size: u64,
 ) -> anyhow::Result<()> {
-    let use_iroh = global.use_iroh(wormhole);
-    if global.force_iroh && !use_iroh {
-        protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
-        bail!("the other side does not speak iroh-v1 (--force-iroh)");
-    }
+    let use_iroh = require_iroh(wormhole, global).await?;
     let offered = if use_iroh {
         eprintln!("Hashing..");
         match Offered::import(path).await {

@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 use clap::Args;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
-use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, Role as IrohRole};
+use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, MAX_FILES, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{
@@ -384,6 +384,10 @@ async fn receive_collection(
     let Some(Connection::Iroh(iroh, theirs)) = connection else {
         return refuse(wormhole, "the sender offered a collection without iroh").await;
     };
+    if offer.numfiles > MAX_FILES {
+        iroh.close().await;
+        return refuse(wormhole, "the sender offered too many files").await;
+    }
     let describe = format!(
         "directory ({} files, {} bytes)",
         offer.numfiles, offer.numbytes
@@ -433,6 +437,7 @@ async fn receive_collection(
     let mut pipe = Pipe::Iroh(pipe);
     let done = match received {
         Ok(()) => {
+            dir.keep();
             if let Some(went) = pipe.went() {
                 eprintln!("{went}");
             }
@@ -442,7 +447,6 @@ async fn receive_collection(
     };
     match done {
         Ok(()) => {
-            dir.keep();
             pipe.shutdown().await;
             eprintln!("Received files written to {}", dest.display());
             Ok(())
