@@ -218,8 +218,10 @@ fn show_code(code: &wyrmyon_wormhole::Code, qr: Option<bool>, other_side: &str) 
 
 fn show_qr(code: &wyrmyon_wormhole::Code, ascii: bool) {
     use std::io::IsTerminal;
-    let coloured = !ascii && std::io::stderr().is_terminal();
-    eprint!("{}", qr::render(&code.to_string(), ascii, coloured));
+    let look = qr::Look::choose(ascii, std::io::stderr().is_terminal(), |name| {
+        std::env::var(name).ok()
+    });
+    eprint!("{}", qr::render(&code.to_string(), look));
 }
 
 fn show_welcome(welcome: &Welcome) {
