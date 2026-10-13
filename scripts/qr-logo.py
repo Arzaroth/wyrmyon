@@ -1,13 +1,18 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pillow==12.3.0"]
+# ///
 # Builds the project logo and the wyrm drawn in the middle of `wyrm send --qr`
-# from the round emblem on a white background: assets/logo.png, the README's
-# logo; crates/cli/assets/qr-wyrm.png, the picture a terminal with the kitty
+# from the round emblem on a white background (assets/emblem.png unless
+# another PICTURE is given): assets/logo.png, the README's logo;
+# crates/cli/assets/qr-wyrm.png, the picture a terminal with the kitty
 # graphics protocol shows; and crates/cli/src/qr/logo.rs, the same emblem as
 # 256-colour pixels for the other terminals, 0 where the QR code's own
 # modules show through. The white outside the emblem's circle becomes
-# transparent. Needs Pillow.
+# transparent. uv fetches the pinned Pillow, so the output is reproducible.
 #
-#   scripts/qr-logo.py PICTURE
+#   scripts/qr-logo.py [PICTURE]
 import sys
 from pathlib import Path
 
@@ -62,7 +67,7 @@ def pixels(canvas):
 
 
 def main():
-    image = emblem(sys.argv[1])
+    image = emblem(sys.argv[1] if len(sys.argv) > 1 else ROOT / "assets/emblem.png")
     logo = image.copy()
     logo.thumbnail((256, 256), Image.LANCZOS)
     logo.save(ROOT / "assets/logo.png", optimize=True)
