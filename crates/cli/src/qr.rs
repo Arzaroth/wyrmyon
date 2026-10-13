@@ -8,17 +8,55 @@ pub fn uri(code: &str) -> String {
     format!("wormhole-transfer:{code}")
 }
 
-pub fn render(code: &str, ascii: bool, coloured: bool) -> String {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Module {
+    Dark,
+    Light,
+}
+
+impl Module {
+    fn lit(self) -> bool {
+        self != Module::Dark
+    }
+}
+
+struct Grid {
+    width: usize,
+    modules: Vec<Module>,
+}
+
+impl Grid {
+    fn at(&self, x: usize, y: usize) -> Module {
+        self.modules[y * self.width + x]
+    }
+}
+
+fn grid(code: &str) -> Grid {
     let qr = QrCode::new(uri(code)).expect("a code fits in a QR code");
-    let width = qr.width();
-    let colors = qr.to_colors();
-    let side = width + 2 * QUIET;
-    let light = |x: usize, y: usize| {
-        let inside = |v: usize| (QUIET..width + QUIET).contains(&v);
-        if !inside(x) || !inside(y) {
-            return y < side;
+    let modules = qr
+        .to_colors()
+        .into_iter()
+        .map(|c| match c {
+            Color::Light => Module::Light,
+            Color::Dark => Module::Dark,
+        })
+        .collect();
+    Grid {
+        width: qr.width(),
+        modules,
+    }
+}
+
+pub fn render(code: &str, ascii: bool, coloured: bool) -> String {
+    let grid = grid(code);
+    let side = grid.width + 2 * QUIET;
+    let at = |x: usize, y: usize| {
+        let inside = |v: usize| (QUIET..grid.width + QUIET).contains(&v);
+        match (inside(x) && inside(y), y < side) {
+            (true, _) => grid.at(x - QUIET, y - QUIET),
+            (false, true) => Module::Light,
+            (false, false) => Module::Dark,
         }
-        colors[(y - QUIET) * width + (x - QUIET)] == Color::Light
     };
     let mut out = String::new();
     let step = if ascii { 1 } else { 2 };
@@ -27,7 +65,7 @@ pub fn render(code: &str, ascii: bool, coloured: bool) -> String {
             out.push_str(INK);
         }
         for x in 0..side {
-            out.push_str(match (ascii, light(x, y), light(x, y + 1)) {
+            out.push_str(match (ascii, at(x, y).lit(), at(x, y + 1).lit()) {
                 (true, true, _) => "##",
                 (true, false, _) => "  ",
                 (false, true, true) => "█",
