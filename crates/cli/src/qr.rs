@@ -1,4 +1,4 @@
-use qrcode::{Color, QrCode};
+use qrcode::{Color, EcLevel, QrCode};
 
 const QUIET: usize = 1;
 const INK: &str = "\x1b[38;5;255m\x1b[48;5;232m";
@@ -32,7 +32,10 @@ impl Grid {
 }
 
 fn grid(code: &str) -> Grid {
-    let qr = QrCode::new(uri(code)).expect("a code fits in a QR code");
+    let data = uri(code);
+    let qr = QrCode::with_error_correction_level(&data, EcLevel::H)
+        .or_else(|_| QrCode::new(&data))
+        .expect("a code fits in a QR code");
     let modules = qr
         .to_colors()
         .into_iter()
