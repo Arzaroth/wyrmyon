@@ -133,7 +133,7 @@ struct SendArgs {
     #[arg(long, value_name = "CODE")]
     code: Option<String>,
     /// text message to send, instead of a file. Use '-' to read from stdin.
-    #[arg(long, value_name = "MESSAGE", conflicts_with = "what")]
+    #[arg(long, value_name = "MESSAGE")]
     text: Option<String>,
     /// Don't raise an error if a file can't be read; not supported
     #[arg(long)]
@@ -261,13 +261,15 @@ fn send_args(
     ask: &mut dyn FnMut() -> anyhow::Result<String>,
 ) -> anyhow::Result<send::SendArgs> {
     refuse(&[("--ignore-unsendable-files", args.ignore_unsendable_files)])?;
-    let text = match args.text {
-        None if args.what.is_empty() => Some(ask()?),
-        text => text,
+    let (text, literal_text, paths) = match args.text {
+        Some(text) => (Some(text), false, Vec::new()),
+        None if args.what.is_empty() => (Some(ask()?), true, Vec::new()),
+        None => (None, false, args.what),
     };
     Ok(send::SendArgs {
         text,
-        paths: args.what,
+        literal_text,
+        paths,
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         code: args.code,
         qr: args.qr && !args.no_qr,
@@ -286,12 +288,7 @@ fn receive_args(args: ReceiveArgs) -> receive::ReceiveArgs {
 }
 
 fn ask_text() -> anyhow::Result<String> {
-    use std::io::IsTerminal;
-    let stdin = std::io::stdin();
-    if !stdin.is_terminal() {
-        return Ok("-".into());
-    }
-    typed_text(&mut stdin.lock(), &mut std::io::stderr())
+    typed_text(&mut std::io::stdin().lock(), &mut std::io::stdout())
 }
 
 fn typed_text(input: &mut dyn BufRead, prompt: &mut dyn Write) -> anyhow::Result<String> {
@@ -465,7 +462,8 @@ mod tests {
             said.contains(APPID) && said.contains("example.com/other"),
             "{said}"
         );
-        assert!(parsed(&["send", "--text", "x", "a"]).is_err());
+        let args = sent(&["send", "--text", "x", "a"]);
+        assert!(args.text.as_deref() == Some("x") && args.paths.is_empty());
     }
 
     #[test]

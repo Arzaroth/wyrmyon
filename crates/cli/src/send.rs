@@ -30,6 +30,8 @@ pub struct SendArgs {
     /// Also show the code as a QR code, for a phone to scan
     #[arg(long)]
     pub(crate) qr: bool,
+    #[arg(skip)]
+    pub(crate) literal_text: bool,
 }
 
 enum Payload {
@@ -46,6 +48,7 @@ impl SendArgs {
             code_length: CODE_LENGTH,
             code: None,
             qr: false,
+            literal_text: false,
         }
     }
 
@@ -56,6 +59,7 @@ impl SendArgs {
             code_length: CODE_LENGTH,
             code: None,
             qr: false,
+            literal_text: false,
         }
     }
 }
@@ -63,7 +67,7 @@ impl SendArgs {
 pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
     let payload = match args.text {
-        Some(text) if text == "-" => Payload::Text(stdin_text().await?),
+        Some(text) if text == "-" && !args.literal_text => Payload::Text(stdin_text().await?),
         Some(text) => Payload::Text(text),
         None => paths_payload(args.paths).await?,
     };
