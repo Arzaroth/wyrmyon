@@ -51,11 +51,31 @@ receive, and the Python client has none there either. The URI carries no
 ## Progress
 
 Both sides draw a bar while the data moves, on stderr and only in a
-terminal: a wyrm (`≈≈≈►· · ·`) eating its way to the end, its head chomping
-(`►`, `•`) on a steady tick so a stalled transfer still looks alive. Its
-characters are all in code page 437, so a Windows console font has them.
-`--ascii` (or `WYRMYON_ASCII`, any of `1`, `true`, `yes`, `on`) draws
-`~~~<. . .` instead, and `--hide-progress` draws nothing. A failed transfer
+terminal: a wyrm (`wyrm.rs`) drawn in braille, so each character holds two
+by four dots. Its body is a wave that runs from the head back to the tail,
+so every part of it rises and falls, with an aurora gradient (violet to
+mint) and a highlight running along it; its head is a fixed dragon sprite
+eight dots wide, facing right, with a mane spike and a jaw that chomps.
+The motion carries the transfer's state:
+
+- **Speed.** The wave and the chomping go faster with the rate (smoothed
+  from the position, on a log scale from 64 KiB/s to 16 MiB/s).
+- **Stall.** After 1.2 s without a byte, or once done, it rests: the body
+  keeps most of its curve, drifts slowly and breathes, and the mouth stays
+  shut.
+- **Fire.** When the rate more than doubles past 1 MiB/s (at most once in
+  3 s, say when hole-punching goes direct) and once at the end, it breathes
+  fire for about a second: a flickering cone from the mouth over the bar
+  ahead, white to dark red.
+- **Wormhole.** With a classic peer (another magic-wormhole client), two
+  spinning vortices sit at 25% and 75% of the bar and the wyrm is hollow,
+  a dotted outline, between them. Between two wyrms there is none.
+
+It redraws every 50 ms. Colour is 24-bit when `COLORTERM` says so (or under
+Windows Terminal), 256 colours otherwise, and none under `NO_COLOR`,
+`TERM=dumb` or off a terminal. `--ascii` (or `WYRMYON_ASCII`, any of `1`,
+`true`, `yes`, `on`) draws it without colour in ASCII (`~-_'~@<*+:`,
+the vortices as `O`), and `--hide-progress` draws nothing. A failed transfer
 clears its bar before it aborts. Over classic transit the sender counts the records it writes; over
 iroh the receiver pulls, so the sender follows `IrohPipe::sent()`, the bytes
 of the offered files the blob provider has sent, from its request events
@@ -75,7 +95,8 @@ refused before anything is sent.
 
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`Cli`, `bare`, `show_code`)
 - [crates/cli/src/qr.rs](../../crates/cli/src/qr.rs)
-- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs) (`progress`, `wyrm`, `follow_sent`)
+- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs) (`progress`, `follow_sent`)
+- [crates/cli/src/wyrm.rs](../../crates/cli/src/wyrm.rs)
 - [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs) (`count_sent`)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs) (`prompt_code`, `CodeCompleter`)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs) (`paths_payload`)
