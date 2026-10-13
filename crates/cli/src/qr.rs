@@ -212,6 +212,70 @@ pub fn render(code: &str, ascii: bool, coloured: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wyrmyon_wormhole::code::{choose_words, completions};
+
+    const SCALE: usize = 4;
+    const MARGIN: usize = 4;
+
+    fn level(index: u8) -> u32 {
+        [0, 95, 135, 175, 215, 255][usize::from(index)]
+    }
+
+    fn on_screen(module: Module) -> u8 {
+        let rgb = match module.colour() {
+            DARK => [8, 8, 8],
+            LIGHT => [238, 238, 238],
+            cube => {
+                let i = cube - 16;
+                [level(i / 36), level(i / 6 % 6), level(i % 6)]
+            }
+        };
+        u8::try_from((299 * rgb[0] + 587 * rgb[1] + 114 * rgb[2]) / 1000).unwrap()
+    }
+
+    fn in_ink(module: Module) -> u8 {
+        if module.lit() { 255 } else { 0 }
+    }
+
+    fn scanned(grid: &Grid, shade: fn(Module) -> u8) -> Vec<String> {
+        let side = (grid.width + 2 * MARGIN) * SCALE;
+        let inside = |v: usize| (MARGIN..grid.width + MARGIN).contains(&v);
+        let mut image = rqrr::PreparedImage::prepare_from_greyscale(side, side, |x, y| {
+            let (x, y) = (x / SCALE, y / SCALE);
+            if inside(x) && inside(y) {
+                shade(grid.at(x - MARGIN, y - MARGIN))
+            } else {
+                255
+            }
+        });
+        image
+            .detect_grids()
+            .into_iter()
+            .map(|found| found.decode().expect("the QR code decodes").1)
+            .collect()
+    }
+
+    fn drake_cells(grid: &Grid) -> usize {
+        grid.modules
+            .iter()
+            .filter(|m| matches!(m, Module::Drake(_)))
+            .count()
+    }
+
+    fn assert_scans(code: &str) {
+        let grid = grid(code);
+        for shade in [on_screen, in_ink] {
+            assert_eq!(scanned(&grid, shade), [uri(code)], "{code}");
+        }
+    }
+
+    fn longest_word(prefix: &str, words: usize) -> String {
+        completions(prefix, words)
+            .into_iter()
+            .map(|c| c[prefix.len()..].to_owned())
+            .max_by_key(String::len)
+            .unwrap()
+    }
 
     #[test]
     fn the_code_becomes_a_square_drawn_in_light_modules() {
@@ -250,5 +314,120 @@ mod tests {
             .filter(|(c, p)| *c == format!("{INK}{p}{RESET}"))
             .count();
         assert!(unchanged > 0 && unchanged < plain.lines().count());
+    }
+
+    #[test]
+    fn codes_of_every_length_scan_through_the_drake() {
+        let (odd, even) = (longest_word("1-", 1), longest_word("1-a-", 2));
+        for words in 1..=8 {
+            let longest: Vec<&str> = (0..words)
+                .map(|i| {
+                    if i % 2 == 0 {
+                        odd.as_str()
+                    } else {
+                        even.as_str()
+                    }
+                })
+                .collect();
+            let mut codes = vec![format!("4095-{}", longest.join("-"))];
+            codes.extend((0..4).map(|n| format!("{}-{}", n * 37 + 1, choose_words(words))));
+            for code in codes {
+                assert!(drake_cells(&grid(&code)) > 0, "{code}");
+                assert_scans(&code);
+            }
+        }
+    }
+
+    #[test]
+    fn long_custom_codes_scan_and_the_longest_go_without_a_drake() {
+        for len in [120, 300] {
+            let code = format!("7-{}", "z".repeat(len));
+            assert!(drake_cells(&grid(&code)) > 0);
+            assert_scans(&code);
+        }
+        let code = format!("7-{}", "z".repeat(1300));
+        assert_eq!(drake_cells(&grid(&code)), 0);
+        assert_scans(&code);
+    }
+
+    #[test]
+    fn the_drake_spares_the_function_patterns_and_fits_the_budget() {
+        let mut sizes = Vec::new();
+        for len in [1, 8, 17, 30, 41, 50, 70, 90, 120, 160, 300, 1000, 1250] {
+            let data = uri(&"z".repeat(len));
+            let qr = QrCode::with_error_correction_level(&data, EcLevel::H).unwrap();
+            let width = qr.width();
+            let (left, top, drake) = drake_spot(&qr).unwrap();
+            let (w, h) = (drake[0].len() + 2, drake.len() + 2);
+            assert!(w * h * 100 <= width * width * DRAKE_BUDGET_PERCENT);
+            let grid = grid(&"z".repeat(len));
+            let colors = qr.to_colors();
+            for y in 0..width {
+                for x in 0..width {
+                    let cleared = (left..left + w).contains(&x) && (top..top + h).contains(&y);
+                    let original = match colors[y * width + x] {
+                        Color::Light => Module::Light,
+                        Color::Dark => Module::Dark,
+                    };
+                    if cleared {
+                        assert!(!reserved(&qr, x, y) && !qr.is_functional(x, y));
+                        assert_ne!(grid.at(x, y), Module::Light);
+                    } else {
+                        assert_eq!(grid.at(x, y), original);
+                    }
+                }
+            }
+            let (Version::Normal(version) | Version::Micro(version)) = qr.version();
+            sizes.push((version, drake[0].len()));
+        }
+        assert_eq!(
+            sizes,
+            [
+                (3, 7),
+                (4, 7),
+                (5, 11),
+                (6, 11),
+                (7, 11),
+                (8, 15),
+                (9, 15),
+                (10, 15),
+                (12, 15),
+                (14, 15),
+                (19, 15),
+                (36, 15),
+                (40, 15)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_drake_is_drawn_in_an_aurora_from_tail_to_head() {
+        let violet = 16 + 36 * cube(70) + 6 * cube(40) + cube(150);
+        let mint = 16 + 36 * cube(190) + 6 * cube(255) + cube(220);
+        assert_eq!((aurora(0, 15), aurora(14, 15)), (violet, mint));
+        assert_eq!(
+            aurora(7, 15),
+            16 + 36 * cube(60) + 6 * cube(165) + cube(220)
+        );
+
+        let code = "7-guitarist-revenge";
+        let grid = grid(code);
+        let colours: Vec<u8> = grid.modules.iter().map(|m| m.colour()).collect();
+        assert!(colours.contains(&violet) && colours.contains(&mint));
+
+        let half = render(code, false, true);
+        assert!(half.contains(&format!("\x1b[48;5;{mint}m▀{INK}")));
+        assert!(half.contains(&format!("\x1b[38;5;{DARK}m\x1b[48;5;{violet}m▀{INK}")));
+        let ascii = render(code, true, true);
+        assert!(ascii.contains(&format!("\x1b[38;5;{violet}m##{INK}")));
+
+        let plain = render(code, true, false);
+        let lit = plain.matches("##").count();
+        let light = (0..grid.width)
+            .flat_map(|y| (0..grid.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| grid.at(x, y).lit())
+            .count();
+        assert_eq!(lit, light + 4 * (grid.width + 1));
+        assert!(!plain.contains('\x1b') && !render(code, false, false).contains('\x1b'));
     }
 }
