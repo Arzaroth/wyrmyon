@@ -73,8 +73,17 @@ enum Sub {
     #[command(visible_alias = "tx")]
     Send(SendArgs),
     /// Receive a text message, file, or directory (from 'wormhole send')
-    #[command(visible_alias = "rx")]
+    #[command(visible_alias = "rx", aliases = ["recv", "recieve"])]
     Receive(ReceiveArgs),
+    /// Facilitate sending/receiving SSH public keys; not supported
+    #[command(disable_help_flag = true)]
+    Ssh(SshArgs),
+}
+
+#[derive(Args)]
+struct SshArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+    args: Vec<String>,
 }
 
 #[derive(Args)]
@@ -174,6 +183,9 @@ pub fn invoked_as(argv0: Option<&OsString>) -> bool {
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
     let cli = Cli::parse_from(args);
+    if let Some(e) = misused(&cli) {
+        e.exit();
+    }
     match translate(cli, &mut ask_text) {
         Ok((global, command)) => crate::run(&global, Ok(command)),
         Err(e) => crate::exit_code(Err(e)),
@@ -190,10 +202,42 @@ fn translate(
         bail!("wyrmyon only speaks the standard appid {APPID}, not {appid}");
     }
     refuse(&[("--dump-timing", cli.dump_timing.is_some())])?;
-    let common = match &cli.command {
-        Sub::Send(args) => &args.common,
-        Sub::Receive(args) => &args.common,
+    let ((no_listen, hide_progress), command) = match cli.command {
+        Sub::Send(args) => (checked(&args.common)?, Command::Send(send_args(args, ask)?)),
+        Sub::Receive(args) => (checked(&args.common)?, Command::Receive(receive_args(args))),
+        Sub::Ssh(_) => bail!("`wormhole ssh` is not supported by wyrmyon"),
     };
+    let global = Global {
+        relay_url: cli.relay_url,
+        transit_helper: cli.transit_helper,
+        no_listen,
+        hide_progress,
+        ascii: cli.wyrm.ascii,
+        force_classic: cli.wyrm.force_classic,
+        force_iroh: cli.wyrm.force_iroh,
+        iroh_relays: cli.wyrm.iroh_relays,
+    };
+    Ok((global, command))
+}
+
+fn misused(cli: &Cli) -> Option<clap::Error> {
+    let Sub::Receive(args) = &cli.command else {
+        return None;
+    };
+    if args.common.code_length.is_none() || args.allocate {
+        return None;
+    }
+    let mut cmd = <Cli as clap::CommandFactory>::command();
+    cmd.build();
+    cmd.find_subcommand_mut("receive").map(|receive| {
+        receive.error(
+            clap::error::ErrorKind::MissingRequiredArgument,
+            "Must use --allocate with --code-length",
+        )
+    })
+}
+
+fn checked(common: &Common) -> anyhow::Result<(bool, bool)> {
     refuse(&[
         ("-0", common.zeromode),
         ("--verify", common.verify),
@@ -202,21 +246,7 @@ fn translate(
         ("--tor-control-port", common.tor_control_port.is_some()),
         ("--debug-state", common.debug_state.is_some()),
     ])?;
-    let global = Global {
-        relay_url: cli.relay_url,
-        transit_helper: cli.transit_helper,
-        no_listen: common.no_listen,
-        hide_progress: common.hide_progress,
-        ascii: cli.wyrm.ascii,
-        force_classic: cli.wyrm.force_classic,
-        force_iroh: cli.wyrm.force_iroh,
-        iroh_relays: cli.wyrm.iroh_relays,
-    };
-    let command = match cli.command {
-        Sub::Send(args) => Command::Send(send_args(args, ask)?),
-        Sub::Receive(args) => Command::Receive(receive_args(args)?),
-    };
-    Ok((global, command))
+    Ok((common.no_listen, common.hide_progress))
 }
 
 fn refuse(flags: &[(&str, bool)]) -> anyhow::Result<()> {
@@ -244,18 +274,15 @@ fn send_args(
     })
 }
 
-fn receive_args(args: ReceiveArgs) -> anyhow::Result<receive::ReceiveArgs> {
-    if args.common.code_length.is_some() && !args.allocate {
-        bail!("Must use --allocate with --code-length");
-    }
-    Ok(receive::ReceiveArgs {
+fn receive_args(args: ReceiveArgs) -> receive::ReceiveArgs {
+    receive::ReceiveArgs {
         code: args.code,
         new: args.allocate,
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         accept_file: args.accept_file,
         output_file: args.output_file,
         only_text: args.only_text,
-    })
+    }
 }
 
 fn ask_text() -> anyhow::Result<String> {
@@ -395,7 +422,16 @@ mod tests {
         assert_eq!(args.code_length, 3);
         assert_eq!(args.output_file, Some(PathBuf::from("out")));
         assert!(received(&["receive", "--allocate", "--only-text"]).new);
-        assert!(refusal(&["receive", "-c", "3"]).contains("--allocate"));
+        let cli = Cli::try_parse_from([NAME, "receive", "-c", "3"]).unwrap();
+        let misuse = misused(&cli).unwrap();
+        assert_eq!(misuse.exit_code(), 2);
+        assert!(
+            misuse
+                .to_string()
+                .contains("Must use --allocate with --code-length")
+        );
+        let cli = Cli::try_parse_from([NAME, "receive", "-a", "-c", "3"]).unwrap();
+        assert!(misused(&cli).is_none());
         assert!(parsed(&["receive", "-a", "7-a-b"]).is_err());
         assert!(parsed(&["receive", "7-a-b", "8-c-d"]).is_err());
     }
