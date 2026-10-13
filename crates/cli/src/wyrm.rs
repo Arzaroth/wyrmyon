@@ -427,3 +427,235 @@ fn brighten(c: Rgb, k: f64) -> Rgb {
 fn dim(c: Rgb, k: f64) -> Rgb {
     (c.0 * k, c.1 * k, c.2 * k)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle, TermLike};
+
+    use super::*;
+
+    const TOTAL: u64 = 48 * 1_048_576;
+
+    #[derive(Debug, Clone, Default)]
+    struct Screen(Arc<Mutex<String>>);
+
+    impl TermLike for Screen {
+        fn width(&self) -> u16 {
+            80
+        }
+        fn move_cursor_up(&self, _: usize) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn move_cursor_down(&self, _: usize) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn move_cursor_right(&self, _: usize) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn move_cursor_left(&self, _: usize) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn write_line(&self, s: &str) -> std::io::Result<()> {
+            self.write_str(s)
+        }
+        fn write_str(&self, s: &str) -> std::io::Result<()> {
+            self.0.lock().unwrap().push_str(s);
+            Ok(())
+        }
+        fn clear_line(&self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn flush(&self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn look(ascii: bool, wormhole: bool) -> Look {
+        Look {
+            ascii,
+            paint: Paint::Plain,
+            wormhole,
+        }
+    }
+
+    fn run(wyrm: &mut Wyrm, from: f64, to: f64, rate: f64, pos: &mut u64) {
+        let mut t = from;
+        while t < to {
+            t += 0.05;
+            *pos = (*pos + (rate * 0.05) as u64).min(TOTAL);
+            wyrm.step(t, *pos, Some(TOTAL));
+        }
+    }
+
+    #[test]
+    fn every_frame_is_as_wide_as_the_bar() {
+        for (ascii, wormhole) in [(false, false), (false, true), (true, false), (true, true)] {
+            let mut wyrm = Wyrm::new(look(ascii, wormhole));
+            let mut pos = 0;
+            for (from, to, rate) in [
+                (0.0, 7.0, 1e6),
+                (7.0, 10.0, 9e6),
+                (10.0, 13.0, 0.0),
+                (13.0, 20.0, 6e6),
+            ] {
+                let mut t = from;
+                while t < to {
+                    run(&mut wyrm, t, t + 0.25, rate, &mut pos);
+                    t += 0.25;
+                    let frame = wyrm.draw();
+                    assert_eq!(frame.chars().count(), WIDTH, "{frame}");
+                    assert!(!ascii || frame.is_ascii(), "{frame}");
+                }
+            }
+            assert_eq!(pos, TOTAL);
+        }
+    }
+
+    #[test]
+    fn a_wormhole_puts_two_mouths_in_the_bar() {
+        let mouths = |frame: String| -> Vec<usize> {
+            frame
+                .chars()
+                .enumerate()
+                .filter(|(_, c)| VORTEX.contains(c) || *c == 'O')
+                .map(|(at, _)| at)
+                .collect()
+        };
+        for ascii in [false, true] {
+            let mut wyrm = Wyrm::new(look(ascii, true));
+            wyrm.step(0.0, 0, Some(TOTAL));
+            assert_eq!(mouths(wyrm.draw()), [WIDTH / 4, WIDTH * 3 / 4]);
+            let mut wyrm = Wyrm::new(look(ascii, false));
+            wyrm.step(0.0, 0, Some(TOTAL));
+            assert_eq!(mouths(wyrm.draw()), Vec::<usize>::new());
+        }
+    }
+
+    #[test]
+    fn the_wyrm_is_hollow_inside_the_wormhole() {
+        let mut wyrm = Wyrm::new(look(true, true));
+        let mut pos = 0;
+        run(&mut wyrm, 0.0, 6.0, 8e6, &mut pos);
+        let frame: Vec<char> = wyrm.draw().chars().collect();
+        assert!(
+            frame[WIDTH / 4 + 1..WIDTH * 3 / 4]
+                .iter()
+                .all(|c| *c == ':')
+        );
+        assert!(frame[..WIDTH / 4].iter().all(|c| SCALES.contains(c)));
+    }
+
+    #[test]
+    fn a_jump_in_speed_breathes_fire_once_and_the_end_again() {
+        let mut wyrm = Wyrm::new(look(false, false));
+        let mut pos = 0;
+        run(&mut wyrm, 0.0, 5.0, 300_000.0, &mut pos);
+        assert_eq!(wyrm.burst, None);
+        run(&mut wyrm, 5.0, 6.0, 9e6, &mut pos);
+        let jump = wyrm.burst.expect("the jump breathes fire");
+        assert!((5.0..6.0).contains(&jump));
+        let mut seen = wyrm.clone();
+        seen.now = jump + 0.5;
+        assert!(seen.breath() > 0.0 && seen.open());
+        assert!(
+            seen.draw()
+                .chars()
+                .skip(seen.head() as usize / 2 + 1)
+                .any(|c| c != ' ' && c != '·')
+        );
+        run(&mut wyrm, 6.0, 7.5, 20e6, &mut pos);
+        assert_eq!(wyrm.burst, Some(jump));
+        run(&mut wyrm, 7.5, 20.0, 9e6, &mut pos);
+        let end = wyrm.burst.expect("the end breathes fire");
+        assert!(end > 7.5 && wyrm.finished);
+        wyrm.now = end + BLAST + 0.1;
+        assert!(wyrm.breath().abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_stall_rests_the_wyrm_without_flattening_it() {
+        let mut wyrm = Wyrm::new(look(false, false));
+        let mut pos = 0;
+        run(&mut wyrm, 0.0, 3.0, 4e6, &mut pos);
+        let (phase, chomp) = (wyrm.phase, wyrm.chomp);
+        run(&mut wyrm, 3.0, 4.0, 4e6, &mut pos);
+        let moving = wyrm.phase - phase;
+        assert!(wyrm.chomp > chomp);
+        run(&mut wyrm, 4.0, 8.0, 0.0, &mut pos);
+        let (phase, chomp) = (wyrm.phase, wyrm.chomp);
+        run(&mut wyrm, 8.0, 9.0, 0.0, &mut pos);
+        assert!(wyrm.phase - phase < moving / 4.0);
+        assert!((wyrm.chomp - chomp).abs() < f64::EPSILON);
+        assert!((0.6..=1.0).contains(&wyrm.amp), "{}", wyrm.amp);
+    }
+
+    #[test]
+    fn a_bar_without_a_length_stays_at_the_start() {
+        let mut wyrm = Wyrm::new(look(false, false));
+        wyrm.step(0.0, 10, None);
+        wyrm.step(0.1, 20, Some(0));
+        assert!(wyrm.frac.abs() < f64::EPSILON);
+        assert_eq!(wyrm.draw().chars().count(), WIDTH);
+    }
+
+    #[test]
+    fn colour_follows_the_terminal() {
+        assert_eq!(Paint::choose(false, false, true), Paint::Plain);
+        assert_eq!(Paint::choose(true, true, true), Paint::Plain);
+        assert_eq!(Paint::choose(true, false, false), Paint::Ansi256);
+        assert_eq!(Paint::choose(true, false, true), Paint::TrueColor);
+        let ink = |paint: Paint, colour: Rgb, bold: bool| {
+            let mut out = String::new();
+            paint.ink(&mut out, colour, bold, 'x');
+            out
+        };
+        assert_eq!(ink(Paint::Plain, (1.0, 2.0, 3.0), true), "x");
+        assert_eq!(
+            ink(Paint::TrueColor, (1.0, 2.0, 300.0), false),
+            "\x1b[38;2;1;2;255mx\x1b[0m"
+        );
+        assert_eq!(
+            ink(Paint::Ansi256, (255.0, 255.0, 255.0), true),
+            "\x1b[1m\x1b[38;5;231mx\x1b[0m"
+        );
+        assert_eq!(
+            ink(Paint::Ansi256, (0.0, 0.0, 0.0), false),
+            "\x1b[38;5;16mx\x1b[0m"
+        );
+        let mut wyrm = Wyrm::new(Look {
+            ascii: false,
+            paint: Paint::TrueColor,
+            wormhole: true,
+        });
+        wyrm.step(0.0, TOTAL / 2, Some(TOTAL));
+        assert!(wyrm.draw().contains("\x1b[38;2;"));
+        wyrm.look.ascii = true;
+        assert!(!wyrm.draw().contains('\x1b'));
+        let _ = Paint::detect();
+    }
+
+    #[test]
+    fn indicatif_drives_the_wyrm() {
+        let screen = Screen::default();
+        let bar = ProgressBar::with_draw_target(
+            Some(100),
+            ProgressDrawTarget::term_like(Box::new(screen.clone())),
+        );
+        bar.set_style(
+            ProgressStyle::with_template("{wyrm}|")
+                .unwrap()
+                .with_key("wyrm", Wyrm::new(look(true, false))),
+        );
+        bar.set_position(50);
+        bar.tick();
+        let style = bar.style();
+        bar.set_style(style);
+        bar.reset();
+        bar.set_position(100);
+        let shown = screen.0.lock().unwrap().clone();
+        assert!(shown.contains('|') && shown.contains('@'), "{shown}");
+        bar.finish();
+    }
+}
