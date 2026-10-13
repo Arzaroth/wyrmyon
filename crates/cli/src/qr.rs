@@ -13,6 +13,7 @@ const LIGHT: u8 = 255;
 const LOGO_BUDGET_PERCENT: usize = 12;
 const SMALLEST: i16 = 6;
 const CHUNK: usize = 4096;
+const NEAR: usize = 64;
 
 pub fn uri(code: &str) -> String {
     format!("wormhole-transfer:{code}")
@@ -29,13 +30,18 @@ pub enum Look {
 impl Look {
     pub fn choose(ascii: bool, terminal: bool, env: impl Fn(&str) -> Option<String>) -> Self {
         let set = |name: &str| env(name).is_some_and(|v| !v.is_empty());
-        let kitty = env("TERM").is_some_and(|t| t.contains("kitty"))
-            || env("TERM_PROGRAM").is_some_and(|p| matches!(p.as_str(), "ghostty" | "WezTerm"))
-            || set("KITTY_WINDOW_ID");
+        let graphics = env("TERM").is_some_and(|t| {
+            ["kitty", "ghostty", "wezterm"]
+                .iter()
+                .any(|k| t.contains(k))
+        });
+        let nested = ["TMUX", "STY", "ZELLIJ", "NVIM", "INSIDE_EMACS"]
+            .iter()
+            .any(|name| set(name));
         match (ascii, terminal) {
             (true, _) => Self::Ascii,
             (false, false) => Self::Plain,
-            (false, true) if kitty && !set("TMUX") && !set("STY") => Self::Picture,
+            (false, true) if graphics && !nested => Self::Picture,
             (false, true) => Self::Coloured,
         }
     }
@@ -129,10 +135,22 @@ fn logo_spot(qr: &QrCode) -> Option<(usize, usize)> {
         .flat_map(|x| (0..=width - h).map(move |y| (x, y)))
         .filter(|&(_, y)| (y + QUIET).is_multiple_of(2))
         .collect();
-    spots.sort_by_key(|&(x, y)| x.abs_diff(cx).pow(2) + y.abs_diff(cy).pow(2));
-    spots
-        .into_iter()
-        .find(|&(x, y)| (y..y + h).all(|j| (x..x + w).all(|i| !reserved(qr, i, j))))
+    let distance = |&(x, y): &(usize, usize)| x.abs_diff(cx).pow(2) + y.abs_diff(cy).pow(2);
+    let covers_pattern = |&(x, y): &(usize, usize)| {
+        logo::PIXELS.iter().enumerate().any(|(j, row)| {
+            row.iter()
+                .enumerate()
+                .any(|(i, &pixel)| pixel != 0 && qr.is_functional(x + i, y + j))
+        })
+    };
+    spots.retain(|&(x, y)| (y..y + h).all(|j| (x..x + w).all(|i| !reserved(qr, i, j))));
+    spots.sort_by_key(|spot| {
+        (
+            distance(spot) > NEAR || covers_pattern(spot),
+            distance(spot),
+        )
+    });
+    spots.into_iter().next()
 }
 
 fn reserved(qr: &QrCode, x: usize, y: usize) -> bool {
@@ -163,9 +181,16 @@ fn picture() -> String {
 
 fn bright(pixel: u8) -> bool {
     let level = |i: u8| [0u32, 95, 135, 175, 215, 255][usize::from(i)];
-    let cube = pixel.saturating_sub(16);
-    let (r, g, b) = (level(cube / 36), level(cube / 6 % 6), level(cube % 6));
-    299 * r + 587 * g + 114 * b > 128_000
+    let luma = match pixel {
+        232.. => 1000 * (8 + 10 * u32::from(pixel - 232)),
+        16.. => {
+            let cube = pixel - 16;
+            let (r, g, b) = (level(cube / 36), level(cube / 6 % 6), level(cube % 6));
+            299 * r + 587 * g + 114 * b
+        }
+        _ => 0,
+    };
+    luma > 128_000
 }
 
 pub fn render(code: &str, look: Look) -> String {
@@ -189,9 +214,6 @@ pub fn render(code: &str, look: Look) -> String {
         }
         for x in 0..side {
             let (top, bottom) = (at(x, y), at(x, y + 1));
-            if look == Look::Picture && corner == Some((x, y)) {
-                out.push_str(&picture());
-            }
             let logo = matches!(top, Module::Logo(_)) || matches!(bottom, Module::Logo(_));
             if look == Look::Coloured && logo {
                 let _ = write!(
@@ -215,6 +237,10 @@ pub fn render(code: &str, look: Look) -> String {
             out.push_str(RESET);
         }
         out.push('\n');
+    }
+    if let (Look::Picture, Some((x, y))) = (look, corner) {
+        let up = side.div_ceil(2) - y / 2;
+        let _ = write!(out, "\x1b[{up}A\x1b[{}G{}\x1b[{up}B\r", x + 1, picture());
     }
     out
 }
@@ -240,10 +266,18 @@ mod tests {
     }
 
     fn scanned(grid: &Grid, shade: fn(&Grid, usize, usize) -> u8) -> Vec<String> {
-        let side = (grid.width + 2 * MARGIN) * SCALE;
+        scanned_at(grid, shade, SCALE).expect("the QR code decodes")
+    }
+
+    fn scanned_at(
+        grid: &Grid,
+        shade: fn(&Grid, usize, usize) -> u8,
+        scale: usize,
+    ) -> Option<Vec<String>> {
+        let side = (grid.width + 2 * MARGIN) * scale;
         let inside = |v: usize| (MARGIN..grid.width + MARGIN).contains(&v);
         let mut image = rqrr::PreparedImage::prepare_from_greyscale(side, side, |x, y| {
-            let (x, y) = (x / SCALE, y / SCALE);
+            let (x, y) = (x / scale, y / scale);
             if inside(x) && inside(y) {
                 shade(grid, x - MARGIN, y - MARGIN)
             } else {
@@ -253,7 +287,7 @@ mod tests {
         image
             .detect_grids()
             .into_iter()
-            .map(|found| found.decode().expect("the QR code decodes").1)
+            .map(|found| found.decode().ok().map(|(_, text)| text))
             .collect()
     }
 
@@ -270,6 +304,15 @@ mod tests {
             .map(|c| c[prefix.len()..].to_owned())
             .max_by_key(String::len)
             .unwrap()
+    }
+
+    fn env_of(pairs: Vec<(&'static str, &'static str)>) -> impl Fn(&str) -> Option<String> {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| (*value).to_owned())
+        }
     }
 
     fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
@@ -350,14 +393,18 @@ mod tests {
         assert_eq!(png, logo::PNG);
         assert!(png.starts_with(b"\x89PNG"));
 
-        let shown = render("7-guitarist-revenge", Look::Picture);
+        let code = "7-guitarist-revenge";
+        let shown = render(code, Look::Picture);
         assert_eq!(shown.matches("\x1b_Ga=T").count(), 1);
-        let coloured_cells = |text: &str| text.matches("\x1b[48;5;").count();
-        let coloured = render("7-guitarist-revenge", Look::Coloured);
-        assert!(coloured_cells(&shown) < coloured_cells(&coloured));
+        let coloured = render(code, Look::Coloured);
+        let (drawn, placed) = shown.split_at(shown.rfind('\n').unwrap() + 1);
+        assert_eq!(drawn.lines().count(), coloured.lines().count());
+        assert!(drawn.matches("\x1b[48;5;").count() < coloured.matches("\x1b[48;5;").count());
+        let (left, top) = grid(code).logo.unwrap();
+        let up = drawn.lines().count() - usize::midpoint(top, QUIET);
         assert_eq!(
-            shown.replace(&sent, "").lines().count(),
-            coloured.lines().count()
+            placed,
+            format!("\x1b[{up}A\x1b[{}G{sent}\x1b[{up}B\r", left + QUIET + 1)
         );
     }
 
@@ -371,21 +418,21 @@ mod tests {
             Look::choose(false, false, env(&[("TERM", "xterm-kitty")])),
             Look::Plain
         );
-        for kitty in [
-            &[("TERM", "xterm-kitty")][..],
-            &[("TERM_PROGRAM", "ghostty")],
-            &[("TERM_PROGRAM", "WezTerm")],
-            &[("KITTY_WINDOW_ID", "1")],
-        ] {
-            assert_eq!(Look::choose(false, true, env(kitty)), Look::Picture);
+        for graphics in ["xterm-kitty", "xterm-ghostty", "wezterm"] {
+            let found = env_of(vec![("TERM", graphics)]);
+            assert_eq!(Look::choose(false, true, found), Look::Picture);
+            for nested in ["TMUX", "STY", "ZELLIJ", "NVIM", "INSIDE_EMACS"] {
+                let found = env_of(vec![("TERM", graphics), (nested, "1")]);
+                assert_eq!(Look::choose(false, true, found), Look::Coloured);
+            }
         }
-        for other in [
-            &[("TERM", "xterm-256color")][..],
-            &[("TERM_PROGRAM", "ghostty"), ("TMUX", "/tmp/tmux")],
-            &[("TERM", "xterm-kitty"), ("STY", "1.pts")],
-            &[("KITTY_WINDOW_ID", "")],
+        for inherited in [
+            vec![("TERM", "xterm-256color"), ("TERM_PROGRAM", "ghostty")],
+            vec![("TERM", "xterm-256color"), ("TERM_PROGRAM", "WezTerm")],
+            vec![("TERM", "alacritty"), ("KITTY_WINDOW_ID", "1")],
+            vec![],
         ] {
-            assert_eq!(Look::choose(false, true, env(other)), Look::Coloured);
+            assert_eq!(Look::choose(false, true, env_of(inherited)), Look::Coloured);
         }
     }
 
@@ -462,5 +509,54 @@ mod tests {
             versions.push(version);
         }
         assert_eq!(versions, [6, 6, 6, 6, 7, 8, 9, 10, 12, 14, 19, 36, 40]);
+    }
+
+    #[test]
+    fn every_version_scans_with_each_badge_module_turned_against_the_code() {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut len = 1;
+        while len <= 1250 {
+            let code = "z".repeat(len);
+            let qr = encode(&uri(&code));
+            let colors = qr.to_colors();
+            let grid = grid(&code);
+            let turned = |against: bool| Grid {
+                width: grid.width,
+                logo: grid.logo,
+                modules: grid
+                    .modules
+                    .iter()
+                    .zip(&colors)
+                    .map(|(module, colour)| match (module, colour == &Color::Light) {
+                        (Module::Logo(_), light) if light != against => Module::Light,
+                        (Module::Logo(_), _) => Module::Dark,
+                        (module, _) => *module,
+                    })
+                    .collect(),
+            };
+            let (Version::Normal(version) | Version::Micro(version)) = qr.version();
+            len += len / 40 + 1;
+            if !seen.insert(version) {
+                continue;
+            }
+            let clean = turned(false);
+            let scale = [SCALE, 3, 5]
+                .into_iter()
+                .find(|&scale| scanned_at(&clean, in_ink, scale).is_some())
+                .expect("the clean code decodes at some scale");
+            let found = scanned_at(&turned(true), in_ink, scale);
+            assert_eq!(found, Some(vec![uri(&code)]), "{code} at {scale}");
+        }
+        assert_eq!(
+            seen.into_iter().collect::<Vec<_>>(),
+            (6..=40).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn brightness_covers_the_colour_cube_and_the_grey_ramp() {
+        assert!(!bright(0) && !bright(16) && !bright(232) && !bright(243));
+        assert!(bright(231) && bright(245) && bright(255));
+        assert!(!bright(17) && bright(159));
     }
 }
