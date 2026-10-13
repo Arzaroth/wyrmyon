@@ -562,10 +562,8 @@ fn drop_typed_ahead() {
 fn drop_typed_ahead() {}
 
 fn consents(answer: &str) -> bool {
-    matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "" | "y" | "yes"
-    )
+    let answer = answer.trim();
+    answer.is_empty() || answer.starts_with(['y', 'Y'])
 }
 
 async fn prompt_code(words: usize) -> anyhow::Result<Code> {
@@ -634,11 +632,11 @@ mod tests {
     }
 
     #[test]
-    fn enter_alone_consents_and_anything_but_yes_refuses() {
-        for yes in ["\n", "y\n", "Y", " yes ", "YES\r\n"] {
+    fn enter_alone_or_anything_starting_with_y_consents() {
+        for yes in ["\n", "y\n", "Y", " yes ", "YES\r\n", "yep", "yolo"] {
             assert!(consents(yes), "{yes:?}");
         }
-        for no in ["n\n", "no", "N", "yep", "ok", "q"] {
+        for no in ["n\n", "no", "N", "ok", "q", "sure, y"] {
             assert!(!consents(no), "{no:?}");
         }
     }

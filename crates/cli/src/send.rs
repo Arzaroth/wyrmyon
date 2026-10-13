@@ -11,7 +11,7 @@ use crate::protocol::{
     self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
 };
 use crate::transfer::Pipe;
-use crate::{CODE_LENGTH, Global, mood_for, show_code, show_qr, show_welcome, transfer, zipdir};
+use crate::{CODE_LENGTH, Global, mood_for, show_code, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
 #[command(group = clap::ArgGroup::new("what").required(true).args(["text", "paths"]))]
@@ -68,17 +68,14 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
         None => paths_payload(args.paths).await?,
     };
 
+    let qr = args.qr.then_some(global.ascii);
     let pending = if let Some(code) = code {
-        if args.qr {
-            show_qr(&code, global.ascii);
-        }
+        show_code(&code, qr, &other_side(&code));
         wyrmyon_wormhole::join(&global.config(), code).await?
     } else {
         let pending =
             wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
-        let code = pending.code();
-        let other_side = format!("  wyrm {code}\n\n(or: wormhole receive {code})");
-        show_code(code, args.qr.then_some(global.ascii), &other_side);
+        show_code(pending.code(), qr, &other_side(pending.code()));
         pending
     };
     show_welcome(pending.welcome());
@@ -94,6 +91,10 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     };
     wormhole.close(mood_for(&result)).await;
     result
+}
+
+fn other_side(code: &Code) -> String {
+    format!("  wyrm {code}\n\n(or: wormhole receive {code})")
 }
 
 async fn stdin_text() -> anyhow::Result<String> {
