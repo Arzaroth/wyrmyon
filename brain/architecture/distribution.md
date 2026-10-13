@@ -94,7 +94,9 @@ man pages and completions under `~/.local/share` and `~/.config/fish`;
 `file://` URL, which is how the workflow tests them. On Windows, a running
 `wyrm.exe` is renamed aside rather than overwritten, and the PATH entry is
 written to the registry as `REG_EXPAND_SZ` so the user's other `%VAR%`
-entries survive.
+entries survive. Both add a `wormhole` link to wyrmyon when no other
+`wormhole` is on PATH; the packages and the MSI never ship one
+([features/wormhole-shim.md](../features/wormhole-shim.md)).
 
 A copy installed this way, or unpacked from an archive, updates itself with
 `wyrm --update`, which reads the same assets: the archive for the machine's

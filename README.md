@@ -38,6 +38,12 @@ wyrm netcheck                # how this network lets peers connect directly
 `--iroh-relays`, `--hide-progress`, `--ascii`...). `wyrm send --qr` also shows the code as a
 QR code for a phone to scan.
 
+Run as `wormhole`, wyrmyon takes the Python client's command line
+(`wormhole send --text hi`, `wormhole rx CODE`, the QR code on by default),
+so scripts written for it keep working. `wyrm shim` links `wormhole` to
+wyrmyon when no other `wormhole` is on PATH, and `wyrm shim --remove` takes
+that link back.
+
 | Sender | Receiver | Transport |
 | --- | --- | --- |
 | `wormhole` (Python) | wyrmyon | classic transit |
@@ -65,7 +71,10 @@ powershell -c "irm https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scr
 The script checks the download against the release's `SHA256SUMS` and installs
 into `~/.local/bin`, with man pages and shell completions
 (`%LOCALAPPDATA%\Programs\wyrmyon` on Windows, binaries only). The Linux binaries are static, so they run on any
-distribution. PyPI, Homebrew and the AUR come later.
+distribution. PyPI, Homebrew and the AUR come later. When no `wormhole` is
+on PATH, the scripts also add one that runs wyrmyon (a symlink, a hard link on
+Windows); the packages and the MSI do not, to stay clear of the
+distributions' magic-wormhole, so run `wyrm shim` after them.
 
 A copy installed by the script or from a `.tar.gz` updates itself with
 `wyrm --update`. The packages and the MSI are upgraded the way they were

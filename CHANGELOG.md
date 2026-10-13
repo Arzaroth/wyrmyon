@@ -10,6 +10,19 @@
   encoded at the highest error correction level and at least 41 modules
   wide, so it scans just the same.
 - The project has a logo, the same emblem, at the top of the README.
+- Run as `wormhole`, wyrmyon takes the Python client's options:
+  `send`/`tx` and `receive`/`rx` with `--code`, `-c`, `--text`, `-o`,
+  `--accept-file`, `--allocate`, `--only-text`, `--hide-progress`,
+  `--no-listen`, `--relay-url`, `--transit-helper` and their `WORMHOLE_`
+  environment variables, and the QR code on by default (`--no-qr` turns it
+  off). `-0`, `--verify`, Tor, `--ignore-unsendable-files`, `--dump-timing`
+  and any appid but the standard one are refused by name.
+- `wyrm shim` links `wormhole` to wyrmyon, beside the binary or in
+  `~/.local/bin` (`--dir` picks), and refuses when another `wormhole` is on
+  PATH; `wyrm shim --remove` removes only a link to wyrmyon. On Windows it is
+  a hard link, which `wyrm --update` relinks to the new binary.
+- `install.sh` and `install.ps1` add that `wormhole` when none is on PATH.
+  The packages and the MSI do not ship one.
 
 ### Changed
 

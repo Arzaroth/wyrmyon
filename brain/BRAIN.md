@@ -41,6 +41,7 @@ wyrmyon.
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |
 | Why does `wyrm --update` refuse a .deb or MSI install? | [features/update.md](features/update.md) |
 | Why would a transfer go through a relay here? | [features/netcheck.md](features/netcheck.md) |
+| Which `wormhole` options work when wyrmyon answers to that name? | [features/wormhole-shim.md](features/wormhole-shim.md) |
 | How do tests avoid the public servers? | [architecture/testing.md](architecture/testing.md) |
 | Why `wyrmyon` and `wyrm`? | [decisions.md](decisions.md) |
 
@@ -55,5 +56,6 @@ wyrmyon.
 | The command line: bare arguments, the code prompt and hint, the QR code, the progress bar, bundles | [features/cli.md](features/cli.md) |
 | Updating itself | [features/update.md](features/update.md) |
 | Checking the network | [features/netcheck.md](features/netcheck.md) |
+| Answering to `wormhole`, and `wyrm shim` | [features/wormhole-shim.md](features/wormhole-shim.md) |
 
 What comes next is in [ROADMAP.md](../ROADMAP.md).

@@ -48,6 +48,9 @@ updated.
    working; on Unix `wyrm` stays a symlink to `wyrmyon`. Windows cannot delete
    the running image, so its old copy and the staging directory stay until the
    next update clears them. The lock file stays for good.
+4. When the version changed, a hard-linked `wormhole` shim beside the binary
+   or in `~/.local/bin` is linked again to the new `wyrmyon`
+   ([wormhole-shim.md](wormhole-shim.md)); a symlink needs nothing.
 
 selvedge records the outcome in an `update.json` that wyrmyon never reads, so
 it goes to a temporary directory: the update needs no HOME, and a `sudo` run
