@@ -76,9 +76,13 @@ impl Us {
     }
 }
 
+pub fn home() -> Option<PathBuf> {
+    crate::absolute(crate::cache_env().1)
+}
+
 pub fn run(args: ShimArgs) -> anyhow::Result<()> {
     let us = Us::current()?;
-    let home = crate::absolute(crate::cache_env().1);
+    let home = home();
     let said = if args.remove {
         let dirs = args
             .dir
@@ -94,6 +98,34 @@ pub fn run(args: ShimArgs) -> anyhow::Result<()> {
     };
     for line in said {
         println!("{line}");
+    }
+    Ok(())
+}
+
+pub fn hard_links(us: &Us, home: Option<&Path>) -> Vec<PathBuf> {
+    us.shim_dirs(home)
+        .into_iter()
+        .map(|dir| dir.join(FILE))
+        .filter(|link| {
+            link.symlink_metadata()
+                .is_ok_and(|m| !m.file_type().is_symlink())
+                && us.owns(link)
+        })
+        .collect()
+}
+
+pub fn relink(us: &Us, links: &[PathBuf]) -> anyhow::Result<()> {
+    for link in links {
+        let aside = link.with_extension("old");
+        let _ = std::fs::remove_file(&aside);
+        std::fs::rename(link, &aside)
+            .and_then(|()| {
+                std::fs::hard_link(&us.target, link).inspect_err(|_| {
+                    let _ = std::fs::rename(&aside, link);
+                })
+            })
+            .with_context(|| format!("refreshing {}", link.display()))?;
+        let _ = std::fs::remove_file(&aside);
     }
     Ok(())
 }

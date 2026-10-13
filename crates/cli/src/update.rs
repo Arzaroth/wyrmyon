@@ -63,7 +63,12 @@ pub(crate) fn run(hide_progress: bool) -> anyhow::Result<String> {
     }
     let unread = tempfile::tempdir()?;
     let _ = rustls::crypto::ring::default_provider().install_default();
+    let us = crate::shim::Us::current()?;
+    let shims = crate::shim::hard_links(&us, crate::shim::home().as_deref());
     let applied = selvedge::update::apply(&WYRMYON, &unread.path().join("update.json"))?;
+    if applied.version != WYRMYON.version {
+        crate::shim::relink(&us, &shims)?;
+    }
     Ok(outcome(WYRMYON.version, &applied.version, &WYRMYON.repo()))
 }
 
