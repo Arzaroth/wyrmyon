@@ -14,13 +14,17 @@
   `send`/`tx` and `receive`/`rx` with `--code`, `-c`, `--text`, `-o`,
   `--accept-file`, `--allocate`, `--only-text`, `--hide-progress`,
   `--no-listen`, `--relay-url`, `--transit-helper` and their `WORMHOLE_`
-  environment variables, and the QR code on by default (`--no-qr` turns it
-  off). `-0`, `--verify`, Tor, `--ignore-unsendable-files`, `--dump-timing`
-  and any appid but the standard one are refused by name.
+  environment variables (falling back on the `WYRMYON_` ones), and the QR
+  code on by default (`--no-qr` turns it off). `receive -o` replaces an
+  existing file, as Python's does, and
+  `recv`/`recieve` work. `-0`, `--verify`, Tor, `ssh`,
+  `--ignore-unsendable-files`, `--dump-timing` and any appid but the
+  standard one are refused by name.
 - `wyrm shim` links `wormhole` to wyrmyon, beside the binary or in
   `~/.local/bin` (`--dir` picks), and refuses when another `wormhole` is on
   PATH; `wyrm shim --remove` removes only a link to wyrmyon. On Windows it is
-  a hard link, which `wyrm --update` relinks to the new binary.
+  a hard link, which `wyrm --update` relinks to the new binary, or warns
+  when it cannot.
 - `install.sh` and `install.ps1` add that `wormhole` when none is on PATH.
   The packages and the MSI do not ship one.
 
@@ -33,6 +37,10 @@
   transit, as with another magic-wormhole client, it crosses a wormhole in
   the middle of the bar. `NO_COLOR` turns the colour off, `--ascii` still
   draws it in ASCII, and so does a Windows console outside Windows Terminal.
+- `wyrm send --code CODE` shows `Wormhole code is: CODE` and the command for
+  the other side, as `wyrm send` does with a code it allocates.
+- The accept prompt takes any answer starting with `y`, as the Python client
+  does, as well as Enter.
 
 ### Fixed
 

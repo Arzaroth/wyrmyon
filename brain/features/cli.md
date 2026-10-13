@@ -35,9 +35,11 @@ can be piped in.
 
 ## The code and the hint
 
-The side that allocates the code prints it with what the other side should
-run: `wyrm CODE` (or `wormhole receive CODE`) after `send`, and
-`wyrm send --code CODE FILE` after `receive --new`. `wyrm send --qr` also
+The sender prints the code with what the other side should run, whether it
+allocated the code or was given one with `--code`: `wyrm CODE` (or
+`wormhole receive CODE`). After `receive --new` the receiver prints
+`wyrm send --code CODE FILE`. Under the `wormhole` name the two forms swap
+places ([wormhole-shim.md](wormhole-shim.md)). `wyrm send --qr` also
 draws `wormhole-transfer:CODE`, the URI the Python client puts in its QR code,
 for a phone app to scan; with `--code` it draws the code given. Like
 Python's, it is drawn in half blocks with a one-module border and, on a

@@ -40,7 +40,9 @@ QR code for a phone to scan.
 
 Run as `wormhole`, wyrmyon takes the Python client's command line
 (`wormhole send --text hi`, `wormhole rx CODE`, the QR code on by default),
-so scripts written for it keep working. `wyrm shim` links `wormhole` to
+so the common sends and receives a script makes still work. A few options
+are refused by name instead (`--verify`, `-0`, Tor, `ssh`), and the output is
+wyrm's, not the Python client's word for word. `wyrm shim` links `wormhole` to
 wyrmyon when no other `wormhole` is on PATH, and `wyrm shim --remove` takes
 that link back.
 

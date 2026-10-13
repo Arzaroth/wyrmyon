@@ -23,8 +23,9 @@ anything else whose size the sender cannot know are refused.
 
 `wyrm receive --new` (or `--allocate`, the Python spelling) allocates the code and waits; the sender then runs
 `wyrm send --code CODE FILE`, or `wormhole send --code CODE FILE` with the
-Python client. Only the side that allocates prints the code; `wyrm send
---qr` adds a QR code of it ([cli.md](cli.md#the-code-and-the-hint)).
+Python client. `wyrm send --code` prints the code it was given and the hint
+too, as the Python client does; `wyrm send --qr` adds a QR code of it
+([cli.md](cli.md#the-code-and-the-hint)).
 
 ## Sender
 
@@ -50,9 +51,12 @@ Python client. Only the side that allocates prints the code; `wyrm send
    without a `transit` message, all before asking anything.
 3. Refuses to overwrite: anything at the destination, a dangling symlink
    included, is answered with an `error`. `-o DIR` naming an existing
-   directory puts the file inside it, as the Python client does.
-4. Asks `ok? (Y/n)` unless `--accept-file`: Enter alone accepts, end of
-   input refuses. On Unix, input typed before the prompt appeared is
+   directory puts the file inside it, as the Python client does. Only under
+   the `wormhole` name does `-o` replace an existing file
+   ([wormhole-shim.md](wormhole-shim.md)).
+4. Asks `ok? (Y/n)` unless `--accept-file`: Enter alone or any answer
+   starting with `y` accepts, as in the Python client, and end of input
+   refuses. On Unix, input typed before the prompt appeared is
    dropped first (`tcflush`), so a newline left from a paste cannot accept
    a file nobody saw; Windows has no such flush here. Without a terminal to
    ask on, it refuses and tells the sender, rather than leaving it waiting.
