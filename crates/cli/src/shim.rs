@@ -114,20 +114,37 @@ pub fn hard_links(us: &Us, home: Option<&Path>) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn relink(us: &Us, links: &[PathBuf]) -> anyhow::Result<()> {
-    for link in links {
-        let aside = link.with_extension("old");
-        let _ = std::fs::remove_file(&aside);
-        std::fs::rename(link, &aside)
-            .and_then(|()| {
-                std::fs::hard_link(&us.target, link).inspect_err(|_| {
-                    let _ = std::fs::rename(&aside, link);
-                })
-            })
-            .with_context(|| format!("refreshing {}", link.display()))?;
-        let _ = std::fs::remove_file(&aside);
+pub fn relink(us: &Us, links: &[PathBuf]) -> Vec<String> {
+    links
+        .iter()
+        .filter_map(|link| relink_one(&us.target, link).err())
+        .collect()
+}
+
+fn relink_one(target: &Path, link: &Path) -> Result<(), String> {
+    let dir = link.parent().unwrap_or_else(|| Path::new("."));
+    let aside = tempfile::Builder::new()
+        .prefix(".wormhole-")
+        .tempfile_in(dir)
+        .map(tempfile::NamedTempFile::into_temp_path)
+        .map_err(|e| format!("{} still runs the old wyrmyon: {e}", link.display()))?;
+    std::fs::rename(link, &aside)
+        .map_err(|e| format!("{} still runs the old wyrmyon: {e}", link.display()))?;
+    let Err(e) = std::fs::hard_link(target, link) else {
+        return Ok(());
+    };
+    if std::fs::rename(&aside, link).is_ok() {
+        return Err(format!(
+            "{} still runs the old wyrmyon: {e}",
+            link.display()
+        ));
     }
-    Ok(())
+    let kept = aside.keep().unwrap_or_default();
+    Err(format!(
+        "{} is missing after the update ({e}): the old one is at {}, and `wyrm shim` links a new one",
+        link.display(),
+        kept.display()
+    ))
 }
 
 fn default_dir(us: &Us, home: Option<&Path>) -> anyhow::Result<PathBuf> {
@@ -462,13 +479,13 @@ mod tests {
         std::fs::write(&staged, b"wyrmyon, updated").unwrap();
         std::fs::rename(&staged, &scene.us.target).unwrap();
         assert!(!scene.us.owns(&link));
-        relink(&scene.us, &links).unwrap();
+        assert_eq!(relink(&scene.us, &links), Vec::<String>::new());
         assert!(scene.us.owns(&link));
         assert_eq!(std::fs::read(&link).unwrap(), b"wyrmyon, updated");
-        assert!(!link.with_extension("old").exists());
+        assert_eq!(std::fs::read_dir(&local).unwrap().count(), 1);
 
         let missing = [scene.root.path().join("missing").join(FILE)];
-        assert!(relink(&scene.us, &missing).is_err());
+        assert!(relink(&scene.us, &missing)[0].contains("still runs the old wyrmyon"));
     }
 
     #[test]

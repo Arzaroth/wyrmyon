@@ -63,13 +63,25 @@ pub(crate) fn run(hide_progress: bool) -> anyhow::Result<String> {
     }
     let unread = tempfile::tempdir()?;
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let us = crate::shim::Us::current()?;
-    let shims = crate::shim::hard_links(&us, crate::shim::home().as_deref());
+    let us = crate::shim::Us::current().ok();
+    let shims = us.as_ref().map_or_else(Vec::new, |us| {
+        crate::shim::hard_links(us, crate::shim::home().as_deref())
+    });
     let applied = selvedge::update::apply(&WYRMYON, &unread.path().join("update.json"))?;
-    if applied.version != WYRMYON.version {
-        crate::shim::relink(&us, &shims)?;
-    }
-    Ok(outcome(WYRMYON.version, &applied.version, &WYRMYON.repo()))
+    let warnings = match &us {
+        Some(us) if applied.version != WYRMYON.version => crate::shim::relink(us, &shims),
+        _ => Vec::new(),
+    };
+    Ok(warned(
+        outcome(WYRMYON.version, &applied.version, &WYRMYON.repo()),
+        &warnings,
+    ))
+}
+
+fn warned(said: String, warnings: &[String]) -> String {
+    warnings
+        .iter()
+        .fold(said, |said, warning| format!("{said}\nwarning: {warning}"))
 }
 
 fn refuse_if_owned(owner: Option<Owner>) -> anyhow::Result<()> {
