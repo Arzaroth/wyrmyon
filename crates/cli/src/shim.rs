@@ -15,6 +15,7 @@ const PRIMARY: &str = if cfg!(windows) {
     "wyrmyon"
 };
 const SECONDARY: &str = if cfg!(windows) { "wyrm.exe" } else { "wyrm" };
+const OURS: [&str; 4] = ["wyrmyon", "wyrm", "wyrmyon.exe", "wyrm.exe"];
 
 #[derive(Args)]
 pub struct ShimArgs {
@@ -34,7 +35,22 @@ pub struct Us {
 impl Us {
     pub fn current() -> anyhow::Result<Self> {
         let exe = std::env::current_exe().context("finding this binary")?;
-        Ok(Self::at(exe))
+        Ok(Self::found(
+            exe,
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ))
+    }
+
+    fn found(exe: PathBuf, path: &OsStr) -> Self {
+        let shown = std::env::split_paths(path)
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .flat_map(|dir| [PRIMARY, SECONDARY].map(|name| dir.join(name)))
+            .find(|candidate| same_file::is_same_file(candidate, &exe).unwrap_or(false));
+        let mut us = Self::at(shown.unwrap_or_else(|| exe.clone()));
+        if !us.binaries.contains(&exe) {
+            us.binaries.push(exe);
+        }
+        us
     }
 
     fn at(exe: PathBuf) -> Self {
@@ -55,6 +71,7 @@ impl Us {
         self.binaries
             .iter()
             .any(|ours| same_file::is_same_file(path, ours).unwrap_or(false))
+            || dangling_ours(path)
     }
 
     fn dir(&self) -> PathBuf {
@@ -74,6 +91,14 @@ impl Us {
         }
         dirs
     }
+}
+
+fn dangling_ours(path: &Path) -> bool {
+    path.metadata().is_err()
+        && std::fs::read_link(path).is_ok_and(|to| {
+            to.file_name()
+                .is_some_and(|name| OURS.iter().any(|o| name == *o))
+        })
 }
 
 pub fn home() -> Option<PathBuf> {
@@ -175,6 +200,9 @@ fn create(us: &Us, dir: &Path, path: &OsStr) -> anyhow::Result<Vec<String>> {
     }
     let link = dir.join(FILE);
     let mut said = Vec::new();
+    if dangling_ours(&link) {
+        std::fs::remove_file(&link).with_context(|| format!("removing {}", link.display()))?;
+    }
     if link.symlink_metadata().is_ok() {
         if !us.owns(&link) {
             bail!("{} is already there and is not wyrmyon", link.display());
