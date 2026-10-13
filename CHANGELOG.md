@@ -7,9 +7,10 @@
 - The progress wyrm is drawn in braille and colour: its whole body wiggles,
   faster as the transfer speeds up, it rests when the transfer stalls,
   and it breathes fire when the speed jumps (say, when the connection goes
-  direct) and at the end. With another magic-wormhole client it crosses a
-  wormhole in the middle of the bar. `NO_COLOR` turns the colour off and
-  `--ascii` still draws it in ASCII.
+  direct, or a stalled transfer resumes) and at the end. Over classic
+  transit, as with another magic-wormhole client, it crosses a wormhole in
+  the middle of the bar. `NO_COLOR` turns the colour off, `--ascii` still
+  draws it in ASCII, and so does a Windows console outside Windows Terminal.
 
 ### Fixed
 

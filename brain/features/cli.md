@@ -63,17 +63,23 @@ The motion carries the transfer's state:
 - **Stall.** After 1.2 s without a byte, or once done, it rests: the body
   keeps most of its curve, drifts slowly and breathes, and the mouth stays
   shut.
-- **Fire.** When the rate more than doubles past 1 MiB/s (at most once in
-  3 s, say when hole-punching goes direct) and once at the end, it breathes
-  fire for about a second: a flickering cone from the mouth over the bar
-  ahead, white to dark red.
-- **Wormhole.** With a classic peer (another magic-wormhole client), two
-  spinning vortices sit at 25% and 75% of the bar and the wyrm is hollow,
-  a dotted outline, between them. Between two wyrms there is none.
+- **Fire.** When the rate more than doubles past 1 MiB/s once the wyrm has
+  been moving (at most once in 3 s; say when hole-punching goes direct, or
+  when a stalled transfer resumes; not at the start) and once at the end, it
+  breathes fire for about a second: a flickering cone from the mouth over
+  the bar ahead, white to dark red. A shown bar stays 0.8 s at the end
+  (`transfer::finale`) so the last fire is seen; a hidden bar, or one off a
+  terminal, goes at once.
+- **Wormhole.** Over classic transit (another magic-wormhole client, or a
+  wyrm told `--force-classic`), two spinning vortices (a braille spinner,
+  one cell wide whatever the locale) sit at 25% and 75% of the bar and the
+  wyrm is hollow, a dotted outline, between them. Over iroh there is none.
 
 It redraws every 50 ms. Colour is 24-bit when `COLORTERM` says so (or under
 Windows Terminal), 256 colours otherwise, and none under `NO_COLOR`,
-`TERM=dumb` or off a terminal. `--ascii` (or `WYRMYON_ASCII`, any of `1`,
+`TERM=dumb` or off a terminal. A Windows console outside Windows Terminal
+(no `WT_SESSION`) gets the ASCII wyrm without colour, as its fonts lack
+braille and it may not take colour codes. `--ascii` (or `WYRMYON_ASCII`, any of `1`,
 `true`, `yes`, `on`) draws it without colour in ASCII (`~-_'~@<*+:`,
 the vortices as `O`), and `--hide-progress` draws nothing. A failed transfer
 clears its bar before it aborts. Over classic transit the sender counts the records it writes; over
