@@ -358,7 +358,12 @@ async fn send_over(
         (Err(e), Prepared::Classic(_)) => return Err(e),
     };
     eprintln!("Sending ({})..", pipe.describe());
-    let bar = transfer::progress(size, global.hide_progress, global.ascii);
+    let bar = transfer::progress(
+        size,
+        global.hide_progress,
+        global.ascii,
+        pipe.through_wormhole(),
+    );
     pipe.follow_route(&bar);
     let sent = async {
         let digest = match &mut pipe {

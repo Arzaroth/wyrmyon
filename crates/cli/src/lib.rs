@@ -5,6 +5,7 @@ mod receive;
 mod send;
 mod transfer;
 mod update;
+mod wyrm;
 mod zipdir;
 
 use std::process::ExitCode;
