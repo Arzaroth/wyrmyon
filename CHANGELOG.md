@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- The `wyrm send --qr` QR code has a drake in the middle, in an aurora of
+  colours on a terminal. It is now encoded at the highest error correction
+  level, so it scans just the same.
+
 ### Changed
 
 - The progress wyrm is drawn in braille and colour: its whole body wiggles,

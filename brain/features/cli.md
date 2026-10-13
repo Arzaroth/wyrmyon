@@ -43,7 +43,20 @@ for a phone app to scan; with `--code` it draws the code given. Like
 Python's, it is drawn in half blocks with a one-module border and, on a
 terminal, in fixed colours (white on near-black), so it scans whatever the
 theme; `--ascii` draws `##` instead, which reads right on a dark terminal.
-`qr::render` builds it from the `qrcode` crate's module grid. There is no
+It is encoded at error correction level H (about 30% recoverable) and a
+pixel-art drake facing right sits in the middle, on a cleared rectangle with a
+one-module dark margin: 7x5 modules for versions 3 and 4, 11x7 for 5 to 7,
+15x9 from 8 up, the largest whose cleared rectangle stays within 9% of the
+modules. It never covers a finder, timing, format or version module, nor an
+alignment pattern: versions 7 to 13, 21 to 27 and 35 to 40 hold one at the
+centre, so there the drake moves to the nearest spot clear of it (4 to 8
+modules up or down). A code too long for level H (over 1255 characters)
+falls back to the `qrcode` default level
+with no drake. On a terminal the drake is drawn in an aurora (violet, blue,
+cyan, mint, tail to head) in 256-colour codes, and a character holding a
+drake module sets both halves' colours; without colour it is drawn as light
+modules. `qr::grid` builds the module grid, drake included, from the
+`qrcode` crate's; `qr::render` draws it. There is no
 `--qr` on `receive --new`: the URI's default role tells a scanning app to
 receive, and the Python client has none there either. The URI carries no
 `rendezvous`, as Python's does not, so a phone meets on its default mailbox.
