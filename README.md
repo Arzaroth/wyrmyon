@@ -51,7 +51,7 @@ on x86_64 and arm64:
 | --- | --- |
 | Debian, Ubuntu | `sudo apt install ./wyrmyon_X.Y.Z_amd64.deb` |
 | Fedora, RHEL, openSUSE | `sudo dnf install ./wyrmyon-X.Y.Z-1.x86_64.rpm` |
-| Arch | `sudo pacman -U wyrmyon-bin-X.Y.Z-1-x86_64.pkg.tar.zst`, or `makepkg -si` from the PKGBUILDs in `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` |
+| Arch | download it, then `sudo pacman -U ./wyrmyon-bin-X.Y.Z-1-x86_64.pkg.tar.zst` (not the URL: pacman then wants a `.sig`, and the packages are unsigned), or `makepkg -si` from the PKGBUILDs in `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` |
 | Windows | the `.msi` (unsigned: SmartScreen asks once), or the script below |
 | Any Linux, macOS | the script below, or a `.tar.gz` |
 

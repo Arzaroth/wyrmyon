@@ -42,7 +42,7 @@ everywhere except:
 | --- | --- | --- |
 | `wyrmyon-vX.Y.Z-<target>.tar.gz` (`.zip` on Windows) | every target | `scripts/package.sh` |
 | `wyrmyon_X.Y.Z_{amd64,arm64}.deb`, `wyrmyon-X.Y.Z-1.{x86_64,aarch64}.rpm` | Debian, Ubuntu, Fedora, RHEL, openSUSE... | nfpm, `packaging/nfpm.yaml` |
-| `wyrmyon-bin-X.Y.Z-1-{x86_64,aarch64}.pkg.tar.zst` | Arch (`pacman -U`) | makepkg, `packaging/arch/wyrmyon-bin` |
+| `wyrmyon-bin-X.Y.Z-1-{x86_64,aarch64}.pkg.tar.zst` | Arch (`pacman -U` on the downloaded file) | makepkg, `packaging/arch/wyrmyon-bin` |
 | `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` | the AUR, later | `scripts/arch.sh` |
 | `wyrmyon-vX.Y.Z-<target>.msi` | Windows x64 and arm64 | WiX 5, `packaging/windows/wyrmyon.wxs` |
 | `SHA256SUMS` | the install scripts, anyone checking | the workflow |
@@ -57,6 +57,10 @@ licence where each expects it (`/usr/share/doc/wyrmyon/copyright`,
 everywhere but Windows, where it is a second copy. The packages put the man
 pages and completions where each distribution looks for them (zsh's are in
 `vendor-completions` on Debian, `site-functions` elsewhere).
+
+No package is signed. `pacman -U` given a URL fetches `<url>.sig` and fails
+when it is missing, so the README has the Arch package downloaded first and
+installed from the file.
 
 The Arch side has two PKGBUILDs: `wyrmyon` builds from the release's source
 tarball (with `!lto`: makepkg's LTO flags turn ring's C objects into GCC

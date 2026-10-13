@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The README's Arch line installed the package from its URL, which fails:
+  pacman then looks for a `.sig` the release does not have. It now downloads
+  the package and installs the file.
+
 ## [0.2.0] - 2026-10-12
 
 ### Added
