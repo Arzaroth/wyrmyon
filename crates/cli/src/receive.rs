@@ -306,12 +306,25 @@ async fn destination(
         Some(path) => path.clone(),
         None => PathBuf::from(&name),
     };
-    if dest.symlink_metadata().is_ok() {
-        return refuse(
-            wormhole,
-            &format!("refusing to overwrite {}", dest.display()),
-        )
-        .await;
+    let existing = dest.symlink_metadata().ok();
+    let overwrite = args.as_wormhole && args.output_file.is_some();
+    match &existing {
+        Some(_) if !overwrite => {
+            return refuse(
+                wormhole,
+                &format!("refusing to overwrite {}", dest.display()),
+            )
+            .await;
+        }
+        Some(meta) if meta.is_dir() => {
+            return refuse(
+                wormhole,
+                &format!("not deleting the existing directory {}", dest.display()),
+            )
+            .await;
+        }
+        Some(_) => eprintln!("Overwriting {}", dest.display()),
+        None => {}
     }
     eprintln!("Receiving {describe} into: {}", dest.display());
     if !args.accept_file {
@@ -323,6 +336,12 @@ async fn destination(
                 return Err(e);
             }
         }
+    }
+    if existing.is_some()
+        && let Err(e) = std::fs::remove_file(&dest)
+    {
+        protocol::send_error(wormhole, "the receiver cannot write there").await?;
+        return Err(e).with_context(|| format!("removing {}", dest.display()));
     }
     Ok((dest, name))
 }
