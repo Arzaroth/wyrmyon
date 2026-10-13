@@ -326,6 +326,27 @@ async fn the_receiver_can_allocate_the_code() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sender_given_the_code_still_shows_it_and_the_hint() {
+    let server = MailboxServer::start().await;
+    let mut receiver = wyrm(&server.url())
+        .args(["receive", "--new"])
+        .spawn()
+        .unwrap();
+    let code = read_code(receiver.stderr.take().unwrap()).await;
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--code", &code, "--text", "chosen"])
+        .spawn()
+        .unwrap();
+    let (shown, hint) = read_hint(sender.stderr.take().unwrap()).await;
+    assert_eq!(shown, code);
+    assert!(hint.contains(&format!("\n  wyrm {code}\n")), "{hint}");
+    let (ok, stdout, stderr) = finish(receiver).await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "chosen\n");
+    assert!(finish(sender).await.0);
+}
+
 #[test]
 fn update_is_refused_beside_anything_to_send_or_receive() {
     for args in [

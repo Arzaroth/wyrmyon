@@ -34,10 +34,25 @@ fn wormhole_bin() -> &'static Path {
     .1
 }
 
+const SERVERS: [&str; 4] = [
+    "WORMHOLE_RELAY_URL",
+    "WORMHOLE_TRANSIT_HELPER",
+    "WYRMYON_RELAY_URL",
+    "WYRMYON_TRANSIT_HELPER",
+];
+
 fn wormhole(relay: &str) -> Command {
+    let mut cmd = unaddressed();
+    cmd.args(["--relay-url", relay, "--transit-helper", "tcp:127.0.0.1:9"]);
+    cmd
+}
+
+fn unaddressed() -> Command {
     let mut cmd = Command::new(wormhole_bin());
-    cmd.args(["--relay-url", relay, "--transit-helper", "tcp:127.0.0.1:9"])
-        .env("WYRMYON_IROH_RELAYS", "disabled")
+    for name in SERVERS {
+        cmd.env_remove(name);
+    }
+    cmd.env("WYRMYON_IROH_RELAYS", "disabled")
         .env("WYRMYON_CACHE_DIR", support::cache_dir())
         .env_remove("WYRMYON_ASCII")
         .env_remove("WORMHOLE_QR")
@@ -53,10 +68,11 @@ fn offline(args: &[&str]) -> (bool, String, String) {
     let out = std::process::Command::new(wormhole_bin())
         .args(args)
         .env("WORMHOLE_RELAY_URL", "ws://127.0.0.1:9/v1")
+        .env_remove("WORMHOLE_TRANSIT_HELPER")
         .output()
         .unwrap();
     (
-        out.status.success(),
+        out.status.code() == Some(0),
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     )
@@ -274,4 +290,174 @@ fn wyrm_shim_leaves_another_wormhole_alone() {
     assert!(!ok);
     assert!(stderr.contains("left in place"), "{stderr}");
     assert!(theirs.exists());
+}
+
+fn exit_of(args: &[&str], env: &[(&str, &str)]) -> (Option<i32>, String) {
+    let out = std::process::Command::new(wormhole_bin())
+        .args(args)
+        .env("WORMHOLE_RELAY_URL", "ws://127.0.0.1:9/v1")
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn usage_errors_exit_2_and_the_rest_1() {
+    let (code, stderr) = exit_of(&["rx", "-c", "3"], &[]);
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(
+        stderr.contains("Must use --allocate with --code-length"),
+        "{stderr}"
+    );
+    let (code, stderr) = exit_of(&["rx", "7-a-b"], &[("WORMHOLE_TRANSIT_HELPER", "bogus")]);
+    assert_eq!(code, Some(2), "{stderr}");
+    let (code, stderr) = exit_of(&["ssh", "invite", "-c", "3"], &[]);
+    assert_eq!(code, Some(1));
+    assert!(
+        stderr.contains("`wormhole ssh` is not supported by wyrmyon"),
+        "{stderr}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_environment_names_the_servers_and_accepts_the_file() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("notes.txt"), b"by env").unwrap();
+    let mut sender = unaddressed()
+        .args(["send", "--no-qr", "notes.txt"])
+        .env("WORMHOLE_RELAY_URL", server.url())
+        .env("WORMHOLE_TRANSIT_HELPER", "tcp:127.0.0.1:9")
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let (code, hint) = read_hint(sender.stderr.take().unwrap()).await;
+    assert!(
+        hint.contains(&format!("\n  wormhole receive {code}\n")),
+        "{hint}"
+    );
+    assert!(hint.contains(&format!("(or: wyrm {code})")), "{hint}");
+    let (ok, _, stderr) = finish(
+        unaddressed()
+            .args(["recv", &code])
+            .env("WYRMYON_RELAY_URL", server.url())
+            .env("WYRMYON_TRANSIT_HELPER", "tcp:127.0.0.1:9")
+            .env("WORMHOLE_ACCEPT_FILE", "1")
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_eq!(
+        std::fs::read(to.path().join("notes.txt")).unwrap(),
+        b"by env"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_typed_line_is_sent_as_it_is() {
+    let server = MailboxServer::start().await;
+    let mut sender = wormhole(&server.url())
+        .arg("send")
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = sender.stdin.take().unwrap();
+    stdin.write_all(b"-\nnot this\n").await.unwrap();
+    drop(stdin);
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, stdout, stderr) = finish(wyrm(&server.url()).arg(&code).spawn().unwrap()).await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "-\n");
+    let (ok, stdout, _) = finish(sender).await;
+    assert!(ok);
+    assert_eq!(stdout, "Text to send: ");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_receiver_first_hint_names_wormhole_first() {
+    let server = MailboxServer::start().await;
+    let mut receiver = wormhole(&server.url())
+        .args(["receive", "--allocate"])
+        .spawn()
+        .unwrap();
+    let (code, hint) = read_hint(receiver.stderr.take().unwrap()).await;
+    assert!(
+        hint.contains(&format!("\n  wormhole send --code {code} FILE\n")),
+        "{hint}"
+    );
+    assert!(
+        hint.contains(&format!("(or: wyrm send --code {code} FILE)")),
+        "{hint}"
+    );
+}
+
+async fn into(server: &MailboxServer, to: &Path, receiver: &mut Command) -> (bool, String) {
+    let from = tempfile::tempdir().unwrap();
+    std::fs::write(from.path().join("notes.txt"), b"new").unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "notes.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(receiver.arg(&code).current_dir(to).spawn().unwrap()).await;
+    finish(sender).await;
+    (ok, stderr)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn output_file_replaces_a_file_under_the_wormhole_name_only() {
+    let server = MailboxServer::start().await;
+    let to = tempfile::tempdir().unwrap();
+    let kept = to.path().join("kept.txt");
+    std::fs::write(&kept, b"old").unwrap();
+
+    let mut refused = wyrm(&server.url());
+    refused.args(["receive", "--accept-file", "-o", "kept.txt"]);
+    let (ok, stderr) = into(&server, to.path(), &mut refused).await;
+    assert!(!ok && stderr.contains("refusing to overwrite"), "{stderr}");
+    assert_eq!(std::fs::read(&kept).unwrap(), b"old");
+
+    let mut replaced = wormhole(&server.url());
+    replaced.args(["receive", "--accept-file", "-o", "kept.txt"]);
+    let (ok, stderr) = into(&server, to.path(), &mut replaced).await;
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains(&format!("Overwriting {}", Path::new("kept.txt").display())));
+    assert_eq!(std::fs::read(&kept).unwrap(), b"new");
+
+    std::fs::create_dir_all(to.path().join("box").join("notes.txt")).unwrap();
+    let mut boxed = wormhole(&server.url());
+    boxed.args(["receive", "--accept-file", "-o", "box"]);
+    let (ok, stderr) = into(&server, to.path(), &mut boxed).await;
+    assert!(
+        !ok && stderr.contains("not deleting the existing directory"),
+        "{stderr}"
+    );
+    assert!(to.path().join("box").join("notes.txt").is_dir());
+
+    let mut unnamed = wormhole(&server.url());
+    unnamed.args(["receive", "--accept-file"]);
+    let (ok, stderr) = into(&server, to.path().join("box").as_path(), &mut unnamed).await;
+    assert!(!ok && stderr.contains("refusing to overwrite"), "{stderr}");
+}
+
+#[test]
+fn wyrm_shim_beside_a_file_named_shim_refuses() {
+    let root = scratch();
+    std::fs::write(root.path().join("shim"), b"a file").unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args(["shim", "--dir", "elsewhere"])
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("`wyrm ./shim`"));
+    assert!(!root.path().join("elsewhere").exists());
 }

@@ -319,9 +319,25 @@ fn typed_text(input: &mut dyn BufRead, prompt: &mut dyn Write) -> anyhow::Result
 mod tests {
     use super::*;
 
+    fn no_env(cmd: clap::Command) -> clap::Command {
+        cmd.mut_args(|arg| arg.env(None)).mut_subcommands(no_env)
+    }
+
+    fn cli_of(args: &[&str]) -> Result<Cli, clap::Error> {
+        let matches = no_env(<Cli as clap::CommandFactory>::command())
+            .try_get_matches_from(std::iter::once(NAME).chain(args.iter().copied()))?;
+        <Cli as clap::FromArgMatches>::from_arg_matches(&matches)
+    }
+
+    fn parsed_with(
+        args: &[&str],
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> anyhow::Result<(Global, Command)> {
+        translate(cli_of(args)?, &mut || Ok("typed".into()), env)
+    }
+
     fn parsed(args: &[&str]) -> anyhow::Result<(Global, Command)> {
-        let cli = Cli::try_parse_from(std::iter::once(NAME).chain(args.iter().copied()))?;
-        translate(cli, &mut || Ok("typed".into()), &|_| None)
+        parsed_with(args, &|_| None)
     }
 
     fn sent(args: &[&str]) -> send::SendArgs {
@@ -429,7 +445,7 @@ mod tests {
         assert_eq!(args.code_length, 3);
         assert_eq!(args.output_file, Some(PathBuf::from("out")));
         assert!(received(&["receive", "--allocate", "--only-text"]).new);
-        let cli = Cli::try_parse_from([NAME, "receive", "-c", "3"]).unwrap();
+        let cli = cli_of(&["receive", "-c", "3"]).unwrap();
         let misuse = misused(&cli).unwrap();
         assert_eq!(misuse.exit_code(), 2);
         assert!(
@@ -437,7 +453,7 @@ mod tests {
                 .to_string()
                 .contains("Must use --allocate with --code-length")
         );
-        let cli = Cli::try_parse_from([NAME, "receive", "-a", "-c", "3"]).unwrap();
+        let cli = cli_of(&["receive", "-a", "-c", "3"]).unwrap();
         assert!(misused(&cli).is_none());
         assert!(parsed(&["receive", "-a", "7-a-b"]).is_err());
         assert!(parsed(&["receive", "7-a-b", "8-c-d"]).is_err());
@@ -488,8 +504,70 @@ mod tests {
 
     #[test]
     fn the_prompt_failing_fails_the_send() {
-        let cli = Cli::try_parse_from([NAME, "send"]).unwrap();
+        let cli = cli_of(&["send"]).unwrap();
         let err = translate(cli, &mut || anyhow::bail!("no terminal"), &|_| None).err();
         assert_eq!(err.unwrap().to_string(), "no terminal");
+    }
+
+    #[test]
+    fn the_parse_ignores_the_environment() {
+        let cli = cli_of(&["send", "a"]).unwrap();
+        assert!(cli.relay_url.is_none() && cli.transit_helper.is_none());
+        let Sub::Send(args) = cli.command else {
+            panic!("not a send")
+        };
+        assert!(args.qr);
+    }
+
+    #[test]
+    fn the_wyrmyon_servers_stand_in_for_the_wormhole_ones() {
+        let env = |name: &str| match name {
+            "WYRMYON_RELAY_URL" => Some("ws://127.0.0.1:3/v1".to_owned()),
+            "WYRMYON_TRANSIT_HELPER" => Some("tcp:127.0.0.1:4".to_owned()),
+            _ => None,
+        };
+        let (global, _) = parsed_with(&["rx"], &env).unwrap();
+        assert_eq!(global.relay_url, "ws://127.0.0.1:3/v1");
+        assert_eq!(global.transit_helper.port, 4);
+        let flags = [
+            "--relay-url",
+            "ws://127.0.0.1:5/v1",
+            "--transit-helper",
+            "tcp:h:6",
+            "rx",
+        ];
+        let (global, _) = parsed_with(&flags, &env).unwrap();
+        assert_eq!(global.relay_url, "ws://127.0.0.1:5/v1");
+        assert_eq!(global.transit_helper.port, 6);
+        let (global, _) = parsed(&["rx"]).unwrap();
+        assert_eq!(global.relay_url, PUBLIC_RELAY);
+        assert_eq!(global.transit_helper.hostname, "transit.magic-wormhole.io");
+        let bad = |name: &str| (name == "WYRMYON_TRANSIT_HELPER").then(|| "nowhere".to_owned());
+        let err = parsed_with(&["rx"], &bad).err().unwrap().to_string();
+        assert!(err.starts_with("WYRMYON_TRANSIT_HELPER: nowhere"), "{err}");
+    }
+
+    #[test]
+    fn python_spellings_of_receive_and_ssh_are_known() {
+        for name in ["receive", "rx", "recv", "recieve"] {
+            assert_eq!(received(&[name, "7-a-b"]).code.as_deref(), Some("7-a-b"));
+        }
+        for args in [
+            &["ssh"][..],
+            &["ssh", "invite", "-c", "3"],
+            &["ssh", "accept", "--help"],
+        ] {
+            assert_eq!(refusal(args), "`wormhole ssh` is not supported by wyrmyon");
+        }
+    }
+
+    #[test]
+    fn the_shim_marks_what_it_hands_to_wyrm() {
+        assert!(sent(&["send", "a"]).as_wormhole && received(&["rx"]).as_wormhole);
+        let typed = sent(&["send"]);
+        assert!(typed.literal_text && typed.paths.is_empty());
+        assert!(!sent(&["send", "--text", "-"]).literal_text);
+        let args = sent(&["send", "--text", "x", "a", "b"]);
+        assert!(!args.literal_text && args.paths.is_empty());
     }
 }
