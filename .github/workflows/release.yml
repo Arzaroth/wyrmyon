@@ -251,6 +251,7 @@ jobs:
           home=$(mktemp -d)
           HOME=$home WYRMYON_DOWNLOAD_BASE="file://$PWD/dist" sh scripts/install.sh
           "$home/.local/bin/wyrm" --version
+          command -v wormhole || "$home/.local/bin/wormhole" --version
 
   verify-macos:
     needs: checksums
@@ -273,6 +274,7 @@ jobs:
           home=$(mktemp -d)
           HOME=$home WYRMYON_DOWNLOAD_BASE="file://$PWD/dist" sh scripts/install.sh
           "$home/.local/bin/wyrm" --version
+          command -v wormhole || "$home/.local/bin/wormhole" --version
 
   verify-windows:
     needs: checksums
@@ -304,6 +306,7 @@ jobs:
           $env:WYRMYON_DOWNLOAD_BASE = (Resolve-Path dist).Path
           ./scripts/install.ps1
           & "$env:LOCALAPPDATA\Programs\wyrmyon\wyrm.exe" --version
+          if (-not (Get-Command wormhole -ErrorAction SilentlyContinue)) { & "$env:LOCALAPPDATA\Programs\wyrmyon\wormhole.exe" --version }
           Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\wyrmyon"
 
       - name: The MSI

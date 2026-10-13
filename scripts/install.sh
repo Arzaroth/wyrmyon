@@ -3,7 +3,7 @@
 #        ... | sh -s -- [--version vX.Y.Z] [--dir DIR]
 #
 # Installs wyrmyon and wyrm from a GitHub release into ~/.local/bin (or DIR),
-# with their man pages and bash, zsh and fish completions under ~/.local/share
+# and wormhole too when no other wormhole is on PATH, with their man pages and bash, zsh and fish completions under ~/.local/share
 # and ~/.config/fish. Linux and macOS, x86_64 and arm64.
 
 set -eu
@@ -102,6 +102,15 @@ for bin in wyrmyon wyrm; do
 done
 
 echo "Installed $("$bindir/wyrmyon" --version) into $bindir"
+shim="$bindir/wormhole"
+if command -v wormhole >/dev/null 2>&1; then
+  :
+elif [ -e "$shim" ] || [ -L "$shim" ]; then
+  [ "$(readlink "$shim")" = wyrmyon ] || echo "Left $shim alone: it is not wyrmyon."
+else
+  ln -s wyrmyon "$shim"
+  echo "Linked $shim to wyrmyon, as no wormhole was on your PATH (wyrm shim --remove takes it back)."
+fi
 case ":$PATH:" in
 *":$bindir:"*) ;;
 *) echo "Add $bindir to your PATH to run wyrm." ;;

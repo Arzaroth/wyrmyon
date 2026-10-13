@@ -2,7 +2,8 @@
 #
 # Installs wyrmyon.exe and wyrm.exe from a GitHub release into
 # %LOCALAPPDATA%\Programs\wyrmyon, the MSI's directory, and adds it to the
-# user PATH. WYRMYON_VERSION picks a release (default: the latest).
+# user PATH. A wormhole.exe hard link to wyrmyon.exe comes along when no other
+# wormhole is on PATH. WYRMYON_VERSION picks a release (default: the latest).
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -51,7 +52,12 @@ try {
     Expand-Archive "$tmp\$archive" -DestinationPath $tmp
     $src = Join-Path $tmp ([IO.Path]::GetFileNameWithoutExtension($archive))
     New-Item -ItemType Directory -Force $installDir | Out-Null
-    foreach ($exe in 'wyrmyon.exe', 'wyrm.exe') {
+    $primary = Join-Path $installDir 'wyrmyon.exe'
+    $shim = Join-Path $installDir 'wormhole.exe'
+    $shimOurs = (Test-Path $shim) -and (Test-Path $primary) -and ((Get-FileHash $shim).Hash -eq (Get-FileHash $primary).Hash)
+    $makeShim = $shimOurs -or (-not (Test-Path $shim) -and -not (Get-Command wormhole -ErrorAction SilentlyContinue))
+    $exes = @('wyrmyon.exe', 'wyrm.exe') + @(if ($shimOurs) { 'wormhole.exe' })
+    foreach ($exe in $exes) {
         $old = Join-Path $installDir $exe
         Remove-Item "$old.old" -Force -ErrorAction SilentlyContinue
         if (Test-Path $old) { Move-Item $old "$old.old" -Force }
@@ -59,7 +65,11 @@ try {
     foreach ($file in 'wyrmyon.exe', 'wyrm.exe', 'README.md', 'LICENSE') {
         Copy-Item (Join-Path $src $file) $installDir -Force
     }
-    foreach ($exe in 'wyrmyon.exe', 'wyrm.exe') {
+    if ($makeShim) {
+        New-Item -ItemType HardLink -Path $shim -Target $primary | Out-Null
+        if (-not $shimOurs) { Write-Host "Linked $shim to wyrmyon.exe, as no wormhole was on your PATH (wyrm shim --remove takes it back)." }
+    }
+    foreach ($exe in $exes) {
         Remove-Item (Join-Path $installDir "$exe.old") -Force -ErrorAction SilentlyContinue
     }
 } finally {
