@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" alt="wyrmyon" width="160"></p>
+
 # wyrmyon
 
 A magic-wormhole client that goes faster than light when it meets its own kind.

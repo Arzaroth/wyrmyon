@@ -4,9 +4,11 @@
 
 ### Added
 
-- The `wyrm send --qr` QR code has a drake in the middle, in an aurora of
-  colours on a terminal. It is now encoded at the highest error correction
-  level, so it scans just the same.
+- The `wyrm send --qr` QR code carries the wyrm emblem in its middle: the
+  picture itself in Ghostty, kitty and WezTerm, and colour pixels in other
+  terminals. It is now encoded at the highest error correction level and
+  at least 41 modules wide, so it scans just the same.
+- The project has a logo, the same emblem, at the top of the README.
 
 ### Changed
 

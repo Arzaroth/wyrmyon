@@ -43,20 +43,36 @@ for a phone app to scan; with `--code` it draws the code given. Like
 Python's, it is drawn in half blocks with a one-module border and, on a
 terminal, in fixed colours (white on near-black), so it scans whatever the
 theme; `--ascii` draws `##` instead, which reads right on a dark terminal.
-It is encoded at error correction level H (about 30% recoverable) and a
-pixel-art drake facing right sits in the middle, on a cleared rectangle with a
-one-module dark margin: 7x5 modules for versions 3 and 4, 11x7 for 5 to 7,
-15x9 from 8 up, the largest whose cleared rectangle stays within 9% of the
-modules. It never covers a finder, timing, format or version module, nor an
-alignment pattern: versions 7 to 13, 21 to 27 and 35 to 40 hold one at the
-centre, so there the drake moves to the nearest spot clear of it (4 to 8
-modules up or down). A code too long for level H (over 1255 characters)
-falls back to the `qrcode` default level
-with no drake. On a terminal the drake is drawn in an aurora (violet, blue,
-cyan, mint, tail to head) in 256-colour codes, and a character holding a
-drake module sets both halves' colours; without colour it is drawn as light
-modules. `qr::grid` builds the module grid, drake included, from the
-`qrcode` crate's; `qr::render` draws it. There is no
+It is encoded at error correction level H (about 30% recoverable), at
+version 6 (41 modules) or more, and the wyrm emblem (`assets/logo.png`) is
+laid over its middle: a 13 by 14 module patch, 13 characters by 7 lines,
+starting on an even row so it fills whole characters. Only the modules under
+the round badge are replaced; around it the code's own pattern runs on. The
+patch is 12% of a version 6 code at most, it never covers a finder, timing,
+format or version module, and it may cover an alignment pattern: from
+version 7 one sits near the middle and leaves no 13-module gap. It takes the
+spot nearest the centre. A code too long for level H (over 1255 characters)
+falls back to the `qrcode` default level with no emblem.
+
+How the emblem looks depends on the terminal (`qr::Look::choose`):
+
+- **Picture.** In Ghostty, kitty and WezTerm (`TERM` with `kitty`,
+  `TERM_PROGRAM` `ghostty` or `WezTerm`, or `KITTY_WINDOW_ID`), outside tmux
+  and screen, the PNG built into the binary
+  (`crates/cli/assets/qr-wyrm.png`, transparent around the badge) is placed
+  over the patch with the kitty graphics protocol, in base64 chunks of 4096
+  bytes, sized in cells and leaving the cursor where it was (`C=1`), with
+  replies turned off (`q=2`).
+- **Coloured.** On other terminals each covered module is drawn in the
+  emblem's 256-colour pixel.
+- **Plain** (not a terminal) and **`--ascii`.** A covered module is light or
+  dark by its pixel's brightness.
+
+`scripts/qr-logo.py PICTURE` (Pillow) builds the logo, the PNG and the
+pixels (`crates/cli/src/qr/logo.rs`) from the emblem on a white background,
+turning the white outside its circle transparent. `qr::grid` builds the
+module grid, emblem included, from the `qrcode` crate's; `qr::render` draws
+it. There is no
 `--qr` on `receive --new`: the URI's default role tells a scanning app to
 receive, and the Python client has none there either. The URI carries no
 `rendezvous`, as Python's does not, so a phone meets on its default mailbox.
@@ -114,6 +130,7 @@ refused before anything is sent.
 
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`Cli`, `bare`, `show_code`)
 - [crates/cli/src/qr.rs](../../crates/cli/src/qr.rs)
+- [crates/cli/src/qr/logo.rs](../../crates/cli/src/qr/logo.rs), [scripts/qr-logo.py](../../scripts/qr-logo.py)
 - [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs) (`progress`, `follow_sent`)
 - [crates/cli/src/wyrm.rs](../../crates/cli/src/wyrm.rs)
 - [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs) (`count_sent`)
