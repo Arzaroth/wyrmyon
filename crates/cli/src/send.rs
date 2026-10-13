@@ -385,6 +385,9 @@ async fn send_over(
             eprintln!("Waiting for the receiver to confirm..");
         }
         let acked = transfer::await_ack(&mut pipe, digest.as_ref()).await;
+        if acked.is_ok() {
+            transfer::finale(&bar).await;
+        }
         bar.finish_and_clear();
         acked
     }

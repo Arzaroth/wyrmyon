@@ -217,7 +217,7 @@ async fn receive_payload(
                 let fetched = iroh
                     .fetch(&cache_dir()?, size, &mut |n| bar.set_position(n))
                     .await?;
-                bar.finish_and_clear();
+                transfer::finale(&bar).await;
                 drop(file.into_std().await);
                 fetched.export_to(&partial.path).await?;
                 Ok(None)
@@ -435,7 +435,7 @@ async fn receive_collection(
             return Err(listed.refuse(&why).await.into());
         }
         let fetched = listed.fetch(&pipe, &mut |n| bar.set_position(n)).await?;
-        bar.finish_and_clear();
+        transfer::finale(&bar).await;
         fetched.export_into(&dest).await?;
         anyhow::Ok(())
     }

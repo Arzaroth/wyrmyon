@@ -22,7 +22,7 @@ const BLAST: f64 = 1.1;
 const OPEN: [&[u8; 8]; ROWS] = [b"#.####..", b"########", b"####....", b"..#####."];
 const SHUT: [&[u8; 8]; ROWS] = [b"#.####..", b"########", b"#######.", b"..#....."];
 const BITS: [[u32; 2]; ROWS] = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]];
-const VORTEX: [char; 4] = ['◐', '◓', '◑', '◒'];
+const VORTEX: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SCALES: [char; ROWS] = ['\'', '~', '-', '_'];
 
 type Rgb = (f64, f64, f64);
@@ -106,6 +106,8 @@ pub struct Wyrm {
     rate: f64,
     earlier: f64,
     earlier_at: f64,
+    warmed: bool,
+    resting: bool,
     idle: f64,
     pos: u64,
     seen: bool,
@@ -141,6 +143,8 @@ impl Wyrm {
             rate: 0.0,
             earlier: 0.0,
             earlier_at: 0.0,
+            warmed: false,
+            resting: false,
             idle: 0.0,
             pos: 0,
             seen: false,
@@ -167,12 +171,14 @@ impl Wyrm {
             self.burst = Some(now);
         }
         let quiet = self.burst.is_none_or(|at| now - at > 3.0);
-        if !finished && quiet && self.rate > MIB && self.rate > 2.2 * self.earlier.max(CRAWL) {
+        let jump = self.rate > MIB && self.rate > 2.2 * self.earlier.max(CRAWL);
+        if !finished && quiet && self.warmed && jump {
             self.burst = Some(now);
         }
         if now - self.earlier_at >= 0.5 {
             self.earlier = self.rate;
             self.earlier_at = now;
+            self.warmed |= self.rate >= CRAWL;
         }
         let pace = ((self.rate / CRAWL).max(1.0).log2() / 8.0).min(1.0);
         let resting = finished || self.idle > 1.2;
@@ -193,6 +199,7 @@ impl Wyrm {
         self.now = now;
         self.pos = pos;
         self.seen = true;
+        self.resting = resting;
         self.finished = finished;
     }
 
@@ -226,7 +233,7 @@ impl Wyrm {
     }
 
     fn open(&self) -> bool {
-        self.breath() > 0.0 || !(self.chomp as u64).is_multiple_of(3)
+        self.breath() > 0.0 || (!self.resting && !(self.chomp as u64).is_multiple_of(3))
     }
 
     fn tick(&self) -> u64 {
@@ -320,7 +327,7 @@ impl Wyrm {
                 let glyph = if self.look.ascii {
                     'O'
                 } else {
-                    VORTEX[((self.now * 8.0) as usize + col) % 4]
+                    VORTEX[((self.now * 12.0) as usize + col) % VORTEX.len()]
                 };
                 paint.ink(&mut out, colour, true, glyph);
             } else if !warmths.is_empty() && col > head {

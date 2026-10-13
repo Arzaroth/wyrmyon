@@ -10,6 +10,7 @@ use wyrmyon_transport_iroh::{IrohPipe, Route, Traffic};
 use crate::wyrm::{Look, Paint, Wyrm};
 
 const CHUNK: usize = 1 << 16;
+const FINALE: std::time::Duration = std::time::Duration::from_millis(800);
 
 pub enum Pipe {
     Classic(RecordPipe),
@@ -135,8 +136,9 @@ pub fn progress(size: u64, hidden: bool, ascii: bool, wormhole: bool) -> Progres
         return ProgressBar::hidden();
     }
     let bar = ProgressBar::new(size);
+    let console = cfg!(windows) && std::env::var_os("WT_SESSION").is_none();
     let look = Look {
-        ascii,
+        ascii: ascii || console,
         paint: Paint::detect(),
         wormhole,
     };
@@ -149,6 +151,13 @@ pub fn progress(size: u64, hidden: bool, ascii: bool, wormhole: bool) -> Progres
     );
     bar.enable_steady_tick(std::time::Duration::from_millis(50));
     bar
+}
+
+pub async fn finale(bar: &ProgressBar) {
+    if !bar.is_hidden() && !bar.is_finished() {
+        tokio::time::sleep(FINALE).await;
+    }
+    bar.finish_and_clear();
 }
 
 pub async fn send_stream(
@@ -177,7 +186,7 @@ pub async fn send_stream(
         bail!("the data shrank while it was being sent");
     }
     pipe.flush().await?;
-    bar.finish_and_clear();
+    finale(bar).await;
     Ok(hasher.finalize().into())
 }
 
@@ -200,7 +209,7 @@ pub async fn receive_stream(
         bar.inc(chunk.len() as u64);
     }
     sink.flush().await.context("writing the data")?;
-    bar.finish_and_clear();
+    finale(bar).await;
     Ok(hasher.finalize().into())
 }
 
