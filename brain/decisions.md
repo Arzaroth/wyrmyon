@@ -209,11 +209,14 @@ crypto library and no C build of aws-lc for musl and Windows arm64.
 The QR code carries the wyrm emblem in its middle, so it is encoded at level
 H, which recovers about 30% of the codewords, and at version 6 or more, so
 the emblem's 13 by 14 patch stays within 12% of the modules; only the badge
-itself replaces modules, fewer still. The patch may cover an alignment
-pattern: from version 7 the ones near the middle leave no 13-module gap, and
+itself replaces modules, fewer still. The badge stays off alignment
+patterns when a spot near the centre allows it, and covers one only on
+versions 7 to 13, whose patterns near the middle leave no gap wide enough:
 moving the emblem far off-centre looked worse than leaning on the error
-correction. A terminal that speaks the kitty graphics protocol gets the
+correction there. A terminal that speaks the kitty graphics protocol gets the
 picture itself, the others a pixel version, so the code never depends on
-graphics support. Unit tests decode the drawn grid with `rqrr` for every
-code length, with the badge read as dark and as its own light and dark
-pixels, rather than trusting the arithmetic.
+graphics support. Unit tests decode the drawn grid with `rqrr` for code
+lengths of every kind, with the badge read as dark and as its own light and
+dark pixels, and for every version 6 to 40 with each badge module turned
+against the code, the worst a camera could read, rather than trusting the
+arithmetic.

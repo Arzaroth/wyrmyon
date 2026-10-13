@@ -49,28 +49,35 @@ laid over its middle: a 13 by 14 module patch, 13 characters by 7 lines,
 starting on an even row so it fills whole characters. Only the modules under
 the round badge are replaced; around it the code's own pattern runs on. The
 patch is 12% of a version 6 code at most, it never covers a finder, timing,
-format or version module, and it may cover an alignment pattern: from
-version 7 one sits near the middle and leaves no 13-module gap. It takes the
-spot nearest the centre. A code too long for level H (over 1255 characters)
+format or version module, and it takes the spot nearest the centre where the
+badge covers no alignment pattern, within 8 modules of it. Versions 7 to 13
+have no such spot (their patterns near the middle leave gaps too narrow), so
+there the badge covers one. A code too long for level H (over 1255 characters)
 falls back to the `qrcode` default level with no emblem.
 
 How the emblem looks depends on the terminal (`qr::Look::choose`):
 
-- **Picture.** In Ghostty, kitty and WezTerm (`TERM` with `kitty`,
-  `TERM_PROGRAM` `ghostty` or `WezTerm`, or `KITTY_WINDOW_ID`), outside tmux
-  and screen, the PNG built into the binary
-  (`crates/cli/assets/qr-wyrm.png`, transparent around the badge) is placed
-  over the patch with the kitty graphics protocol, in base64 chunks of 4096
-  bytes, sized in cells and leaving the cursor where it was (`C=1`), with
-  replies turned off (`q=2`).
+- **Picture.** When `TERM` names kitty, Ghostty or WezTerm (`xterm-kitty`,
+  `xterm-ghostty`, `wezterm`; WezTerm's default `xterm-256color` does not
+  count) and wyrm is not nested in tmux, screen, zellij, Neovim or Emacs
+  (`TMUX`, `STY`, `ZELLIJ`, `NVIM`, `INSIDE_EMACS`), the PNG built into the
+  binary (`crates/cli/assets/qr-wyrm.png`, transparent around the badge) is
+  placed over the patch with the kitty graphics protocol, once the whole code
+  is drawn: the cursor goes back up to the patch, the image goes out in
+  base64 chunks of 4096 bytes, sized in cells, leaving the cursor where it
+  was (`C=1`) and with replies off (`q=2`), and the cursor comes back down.
+  Drawing it last matters to WezTerm, which keeps an image in the cells and
+  loses it to text written over them. `TERM_PROGRAM` and `KITTY_WINDOW_ID` are
+  not trusted: a terminal started from Ghostty or kitty inherits them.
 - **Coloured.** On other terminals each covered module is drawn in the
   emblem's 256-colour pixel.
 - **Plain** (not a terminal) and **`--ascii`.** A covered module is light or
   dark by its pixel's brightness.
 
-`scripts/qr-logo.py PICTURE` (Pillow) builds the logo, the PNG and the
-pixels (`crates/cli/src/qr/logo.rs`) from the emblem on a white background,
-turning the white outside its circle transparent. `qr::grid` builds the
+`scripts/qr-logo.py` (run by uv, Pillow pinned) builds the logo, the PNG and
+the pixels (`crates/cli/src/qr/logo.rs`) from `assets/emblem.png`, the
+emblem on a white background, turning the white outside its circle
+transparent; the same Pillow gives the same files. `qr::grid` builds the
 module grid, emblem included, from the `qrcode` crate's; `qr::render` draws
 it. There is no
 `--qr` on `receive --new`: the URI's default role tells a scanning app to
