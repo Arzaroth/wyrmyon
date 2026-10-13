@@ -35,6 +35,8 @@ pub struct ReceiveArgs {
     pub(crate) output_file: Option<PathBuf>,
     #[arg(skip)]
     pub(crate) only_text: bool,
+    #[arg(skip)]
+    pub(crate) as_wormhole: bool,
 }
 
 impl ReceiveArgs {
@@ -46,6 +48,7 @@ impl ReceiveArgs {
             accept_file: false,
             output_file: None,
             only_text: false,
+            as_wormhole: false,
         }
     }
 }
@@ -55,8 +58,13 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         let pending =
             wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
         let code = pending.code();
+        let (first, then) = if args.as_wormhole {
+            ("wormhole", "wyrm")
+        } else {
+            ("wyrm", "wormhole")
+        };
         let other_side =
-            format!("  wyrm send --code {code} FILE\n\n(or: wormhole send --code {code} FILE)");
+            format!("  {first} send --code {code} FILE\n\n(or: {then} send --code {code} FILE)");
         show_code(code, None, &other_side);
         pending
     } else {

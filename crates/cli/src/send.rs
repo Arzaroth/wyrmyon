@@ -32,6 +32,8 @@ pub struct SendArgs {
     pub(crate) qr: bool,
     #[arg(skip)]
     pub(crate) literal_text: bool,
+    #[arg(skip)]
+    pub(crate) as_wormhole: bool,
 }
 
 enum Payload {
@@ -49,6 +51,7 @@ impl SendArgs {
             code: None,
             qr: false,
             literal_text: false,
+            as_wormhole: false,
         }
     }
 
@@ -60,6 +63,7 @@ impl SendArgs {
             code: None,
             qr: false,
             literal_text: false,
+            as_wormhole: false,
         }
     }
 }
@@ -74,12 +78,16 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
 
     let qr = args.qr.then_some(global.ascii);
     let pending = if let Some(code) = code {
-        show_code(&code, qr, &other_side(&code));
+        show_code(&code, qr, &other_side(&code, args.as_wormhole));
         wyrmyon_wormhole::join(&global.config(), code).await?
     } else {
         let pending =
             wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
-        show_code(pending.code(), qr, &other_side(pending.code()));
+        show_code(
+            pending.code(),
+            qr,
+            &other_side(pending.code(), args.as_wormhole),
+        );
         pending
     };
     show_welcome(pending.welcome());
@@ -97,8 +105,12 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     result
 }
 
-fn other_side(code: &Code) -> String {
-    format!("  wyrm {code}\n\n(or: wormhole receive {code})")
+fn other_side(code: &Code, as_wormhole: bool) -> String {
+    if as_wormhole {
+        format!("  wormhole receive {code}\n\n(or: wyrm {code})")
+    } else {
+        format!("  wyrm {code}\n\n(or: wormhole receive {code})")
+    }
 }
 
 async fn stdin_text() -> anyhow::Result<String> {

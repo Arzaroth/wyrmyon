@@ -23,17 +23,12 @@ struct Cli {
     /// appid to use; only the standard one is accepted
     #[arg(long, value_name = "APPID")]
     appid: Option<String>,
-    /// rendezvous relay to use
-    #[arg(long, value_name = "URL", env = "WORMHOLE_RELAY_URL", default_value = PUBLIC_RELAY)]
-    relay_url: String,
-    /// transit relay to use
-    #[arg(
-        long,
-        value_name = "tcp:HOST:PORT",
-        env = "WORMHOLE_TRANSIT_HELPER",
-        default_value = PUBLIC_TRANSIT_HELPER
-    )]
-    transit_helper: DirectHint,
+    /// rendezvous relay to use, else `WYRMYON_RELAY_URL`, else the public one
+    #[arg(long, value_name = "URL", env = "WORMHOLE_RELAY_URL")]
+    relay_url: Option<String>,
+    /// transit relay to use, else `WYRMYON_TRANSIT_HELPER`, else the public one
+    #[arg(long, value_name = "tcp:HOST:PORT", env = "WORMHOLE_TRANSIT_HELPER")]
+    transit_helper: Option<DirectHint>,
     /// (debug) write timing data to file; not supported
     #[arg(long, value_name = "FILE.json")]
     dump_timing: Option<PathBuf>,
@@ -186,7 +181,7 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     if let Some(e) = misused(&cli) {
         e.exit();
     }
-    match translate(cli, &mut ask_text) {
+    match translate(cli, &mut ask_text, &|name| std::env::var(name).ok()) {
         Ok((global, command)) => crate::run(&global, Ok(command)),
         Err(e) => crate::exit_code(Err(e)),
     }
@@ -195,6 +190,7 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
 fn translate(
     cli: Cli,
     ask: &mut dyn FnMut() -> anyhow::Result<String>,
+    env: &dyn Fn(&str) -> Option<String>,
 ) -> anyhow::Result<(Global, Command)> {
     if let Some(appid) = &cli.appid
         && appid != APPID
@@ -207,9 +203,21 @@ fn translate(
         Sub::Receive(args) => (checked(&args.common)?, Command::Receive(receive_args(args))),
         Sub::Ssh(_) => bail!("`wormhole ssh` is not supported by wyrmyon"),
     };
+    let relay_url = cli
+        .relay_url
+        .or_else(|| env("WYRMYON_RELAY_URL"))
+        .unwrap_or_else(|| PUBLIC_RELAY.into());
+    let transit_helper = match cli.transit_helper {
+        Some(helper) => helper,
+        None => env("WYRMYON_TRANSIT_HELPER")
+            .as_deref()
+            .unwrap_or(PUBLIC_TRANSIT_HELPER)
+            .parse()
+            .map_err(|e| anyhow::anyhow!("WYRMYON_TRANSIT_HELPER: {e}"))?,
+    };
     let global = Global {
-        relay_url: cli.relay_url,
-        transit_helper: cli.transit_helper,
+        relay_url,
+        transit_helper,
         no_listen,
         hide_progress,
         ascii: cli.wyrm.ascii,
@@ -273,6 +281,7 @@ fn send_args(
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         code: args.code,
         qr: args.qr && !args.no_qr,
+        as_wormhole: true,
     })
 }
 
@@ -284,6 +293,7 @@ fn receive_args(args: ReceiveArgs) -> receive::ReceiveArgs {
         accept_file: args.accept_file,
         output_file: args.output_file,
         only_text: args.only_text,
+        as_wormhole: true,
     }
 }
 
@@ -311,7 +321,7 @@ mod tests {
 
     fn parsed(args: &[&str]) -> anyhow::Result<(Global, Command)> {
         let cli = Cli::try_parse_from(std::iter::once(NAME).chain(args.iter().copied()))?;
-        translate(cli, &mut || Ok("typed".into()))
+        translate(cli, &mut || Ok("typed".into()), &|_| None)
     }
 
     fn sent(args: &[&str]) -> send::SendArgs {
@@ -479,7 +489,7 @@ mod tests {
     #[test]
     fn the_prompt_failing_fails_the_send() {
         let cli = Cli::try_parse_from([NAME, "send"]).unwrap();
-        let err = translate(cli, &mut || anyhow::bail!("no terminal")).err();
+        let err = translate(cli, &mut || anyhow::bail!("no terminal"), &|_| None).err();
         assert_eq!(err.unwrap().to_string(), "no terminal");
     }
 }
