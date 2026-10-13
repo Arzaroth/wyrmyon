@@ -3,6 +3,7 @@ mod protocol;
 mod qr;
 mod receive;
 mod send;
+mod shim;
 mod transfer;
 mod update;
 mod wormhole_cli;
@@ -83,6 +84,8 @@ enum Command {
     Receive(receive::ReceiveArgs),
     /// Check how this network lets iroh connect: public address, NAT, port mapping, relays
     Netcheck,
+    /// Link `wormhole` to wyrmyon, so what calls the Python client runs this one
+    Shim(shim::ShimArgs),
 }
 
 impl Global {
@@ -178,6 +181,7 @@ fn run(global: &Global, command: anyhow::Result<Command>) -> ExitCode {
                 Ok(Command::Send(args)) => send::run(global, args).await,
                 Ok(Command::Receive(args)) => receive::run(global, args).await,
                 Ok(Command::Netcheck) => netcheck::run(global).await,
+                Ok(Command::Shim(args)) => shim::run(args),
                 Err(e) => Err(e),
             }
         };
