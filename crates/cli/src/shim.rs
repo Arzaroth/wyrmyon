@@ -259,3 +259,221 @@ fn make_link(target: &Path, link: &Path) -> std::io::Result<()> {
 fn make_link(target: &Path, link: &Path) -> std::io::Result<()> {
     std::fs::hard_link(target, link)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Scene {
+        root: tempfile::TempDir,
+        us: Us,
+    }
+
+    impl Scene {
+        fn new() -> Self {
+            let root = tempfile::tempdir().unwrap();
+            let bin = root.path().join("bin");
+            std::fs::create_dir(&bin).unwrap();
+            let exe = bin.join(PRIMARY);
+            std::fs::write(&exe, b"wyrmyon").unwrap();
+            executable(&exe);
+            Self {
+                us: Us::at(bin.join(SECONDARY)),
+                root,
+            }
+        }
+
+        fn dir(&self, name: &str) -> PathBuf {
+            let dir = self.root.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            dir
+        }
+
+        fn foreign(&self, dir: &str) -> PathBuf {
+            let path = self.dir(dir).join(FILE);
+            std::fs::write(&path, b"python").unwrap();
+            executable(&path);
+            path
+        }
+    }
+
+    #[cfg(unix)]
+    fn executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(not(unix))]
+    fn executable(_: &Path) {}
+
+    fn path_of(dirs: &[&Path]) -> OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    #[test]
+    fn the_link_beside_the_binary_runs_it() {
+        let scene = Scene::new();
+        let bin = scene.us.dir();
+        let path = path_of(&[&bin]);
+        let said = create(&scene.us, &bin, &path).unwrap();
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].starts_with("Linked "), "{said:?}");
+        let link = bin.join(FILE);
+        assert!(scene.us.owns(&link));
+        assert_eq!(std::fs::read(&link).unwrap(), b"wyrmyon");
+        #[cfg(unix)]
+        assert_eq!(std::fs::read_link(&link).unwrap(), Path::new(PRIMARY));
+
+        let again = create(&scene.us, &bin, &path).unwrap();
+        assert_eq!(again, [format!("{} already runs wyrmyon", link.display())]);
+        let unlisted = create(&scene.us, &bin, &OsString::new()).unwrap();
+        assert_eq!(
+            unlisted[0],
+            format!("{} already runs wyrmyon", link.display())
+        );
+        assert!(unlisted[1].starts_with("Add "), "{unlisted:?}");
+    }
+
+    #[test]
+    fn a_link_elsewhere_says_when_its_directory_is_not_on_path() {
+        let scene = Scene::new();
+        let elsewhere = scene.root.path().join("home").join(".local").join("bin");
+        let said = create(&scene.us, &elsewhere, &OsString::new()).unwrap();
+        assert_eq!(
+            said[1],
+            format!("Add {} to your PATH to run wormhole.", elsewhere.display())
+        );
+        assert!(scene.us.owns(&elsewhere.join(FILE)));
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::read_link(elsewhere.join(FILE)).unwrap(),
+            scene.us.target
+        );
+    }
+
+    #[test]
+    fn another_wormhole_is_never_replaced() {
+        let scene = Scene::new();
+        let python = scene.foreign("python");
+        let bin = scene.us.dir();
+        let err = create(&scene.us, &bin, &path_of(&[&python.with_file_name("")]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&python.display().to_string()), "{err}");
+        assert!(!bin.join(FILE).exists());
+
+        let here = scene.foreign("here");
+        let err = create(&scene.us, here.parent().unwrap(), &OsString::new())
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            format!("{} is already there and is not wyrmyon", here.display())
+        );
+        assert_eq!(std::fs::read(&here).unwrap(), b"python");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_a_runnable_wormhole_on_path_counts() {
+        use std::os::unix::fs::PermissionsExt;
+        let scene = Scene::new();
+        let stray = scene.foreign("stray");
+        std::fs::set_permissions(&stray, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let dangling = scene.dir("dangling").join(FILE);
+        std::os::unix::fs::symlink("nowhere", &dangling).unwrap();
+        let path = path_of(&[
+            Path::new(""),
+            stray.parent().unwrap(),
+            dangling.parent().unwrap(),
+        ]);
+        assert_eq!(find(&path), None);
+    }
+
+    #[test]
+    fn a_wormhole_on_path_that_runs_us_is_enough() {
+        let scene = Scene::new();
+        let bin = scene.us.dir();
+        create(&scene.us, &bin, &OsString::new()).unwrap();
+        let other = scene.dir("other");
+        let said = create(&scene.us, &other, &path_of(&[&bin])).unwrap();
+        assert_eq!(
+            said,
+            [format!("{} already runs wyrmyon", bin.join(FILE).display())]
+        );
+        assert!(!other.join(FILE).exists());
+    }
+
+    #[test]
+    fn remove_takes_back_only_what_runs_us() {
+        let scene = Scene::new();
+        let bin = scene.us.dir();
+        let home = scene.dir("home");
+        let dirs = scene.us.shim_dirs(Some(&home));
+        assert_eq!(dirs, [bin.clone(), home.join(".local").join("bin")]);
+        assert_eq!(
+            remove(&scene.us, &dirs).unwrap(),
+            ["No wormhole link to wyrmyon to remove"]
+        );
+        create(&scene.us, &dirs[1], &OsString::new()).unwrap();
+        let foreign = scene.foreign("python");
+        let all = [foreign.parent().unwrap().to_path_buf(), dirs[1].clone()];
+        assert_eq!(
+            remove(&scene.us, &all).unwrap(),
+            [format!("Removed {}", dirs[1].join(FILE).display())]
+        );
+        assert!(dirs[1].join(FILE).symlink_metadata().is_err());
+        let err = remove(&scene.us, &all).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            format!("{} is not wyrmyon: left in place", foreign.display())
+        );
+        assert!(foreign.exists());
+        assert_eq!(scene.us.shim_dirs(None), [bin]);
+    }
+
+    #[test]
+    fn the_link_goes_beside_the_binary_when_it_can() {
+        let scene = Scene::new();
+        let home = scene.dir("home");
+        assert_eq!(default_dir(&scene.us, Some(&home)).unwrap(), scene.us.dir());
+        let gone = Us::at(scene.root.path().join("gone").join(PRIMARY));
+        assert_eq!(
+            default_dir(&gone, Some(&home)).unwrap(),
+            home.join(".local").join("bin")
+        );
+        assert!(default_dir(&gone, None).is_err());
+        assert_eq!(gone.target, scene.root.path().join("gone").join(PRIMARY));
+    }
+
+    #[test]
+    fn an_update_relinks_a_hard_linked_shim() {
+        let scene = Scene::new();
+        let home = scene.dir("home");
+        let local = scene.dir("home/.local/bin");
+        let link = local.join(FILE);
+        std::fs::hard_link(&scene.us.target, &link).unwrap();
+        let elsewhere = scene.root.path().join("elsewhere");
+        create(&scene.us, &elsewhere, &OsString::new()).unwrap();
+        let links = hard_links(&scene.us, Some(&home));
+        assert_eq!(links, std::slice::from_ref(&link));
+
+        let staged = scene.us.dir().join("staged");
+        std::fs::write(&staged, b"wyrmyon, updated").unwrap();
+        std::fs::rename(&staged, &scene.us.target).unwrap();
+        assert!(!scene.us.owns(&link));
+        relink(&scene.us, &links).unwrap();
+        assert!(scene.us.owns(&link));
+        assert_eq!(std::fs::read(&link).unwrap(), b"wyrmyon, updated");
+        assert!(!link.with_extension("old").exists());
+
+        let missing = [scene.root.path().join("missing").join(FILE)];
+        assert!(relink(&scene.us, &missing).is_err());
+    }
+
+    #[test]
+    fn this_binary_knows_itself() {
+        let us = Us::current().unwrap();
+        assert!(us.owns(&std::env::current_exe().unwrap()));
+    }
+}

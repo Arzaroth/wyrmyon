@@ -280,3 +280,172 @@ fn typed_text(input: &mut dyn BufRead, prompt: &mut dyn Write) -> anyhow::Result
     }
     Ok(line.trim_end_matches(['\r', '\n']).to_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(args: &[&str]) -> anyhow::Result<(Global, Command)> {
+        let cli = Cli::try_parse_from(std::iter::once(NAME).chain(args.iter().copied()))?;
+        translate(cli, &mut || Ok("typed".into()))
+    }
+
+    fn sent(args: &[&str]) -> send::SendArgs {
+        match parsed(args).unwrap().1 {
+            Command::Send(args) => args,
+            _ => panic!("not a send"),
+        }
+    }
+
+    fn received(args: &[&str]) -> receive::ReceiveArgs {
+        match parsed(args).unwrap().1 {
+            Command::Receive(args) => args,
+            _ => panic!("not a receive"),
+        }
+    }
+
+    fn refusal(args: &[&str]) -> String {
+        match parsed(args) {
+            Ok(_) => panic!("{args:?} was accepted"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    #[test]
+    fn only_the_name_wormhole_switches_the_options() {
+        let os = |s: &str| Some(OsString::from(s));
+        for name in [
+            "wormhole",
+            "/usr/bin/wormhole",
+            "wormhole.exe",
+            "WORMHOLE.EXE",
+        ] {
+            assert!(invoked_as(os(name).as_ref()), "{name}");
+        }
+        for name in ["wyrm", "wyrmyon", "wormhole-x", "/opt/wormhole/wyrm"] {
+            assert!(!invoked_as(os(name).as_ref()), "{name}");
+        }
+        assert!(!invoked_as(None));
+    }
+
+    #[test]
+    fn send_maps_onto_wyrm_send_with_the_qr_on() {
+        let args = sent(&["send", "a.txt"]);
+        assert_eq!(args.paths, [PathBuf::from("a.txt")]);
+        assert_eq!(
+            (args.text, args.code, args.code_length, args.qr),
+            (None, None, CODE_LENGTH, true)
+        );
+        let args = sent(&[
+            "tx", "--no-qr", "-c", "4", "--code", "7-a-b", "--text", "hi",
+        ]);
+        assert_eq!(
+            (
+                args.text.as_deref(),
+                args.code.as_deref(),
+                args.code_length,
+                args.qr
+            ),
+            (Some("hi"), Some("7-a-b"), 4, false)
+        );
+        assert!(sent(&["send", "--no-qr", "--qr", "a"]).qr);
+        assert!(!sent(&["send", "--qr", "--no-qr", "a"]).qr);
+        assert_eq!(sent(&["send", "--text", "-"]).text.as_deref(), Some("-"));
+        assert_eq!(sent(&["send"]).text.as_deref(), Some("typed"));
+    }
+
+    #[test]
+    fn the_global_options_reach_wyrm() {
+        let (global, _) = parsed(&[
+            "--relay-url",
+            "ws://127.0.0.1:1/v1",
+            "--transit-helper",
+            "tcp:127.0.0.1:2",
+            "--appid",
+            APPID,
+            "send",
+            "--no-listen",
+            "--hide-progress",
+            "--force-classic",
+            "a",
+        ])
+        .unwrap();
+        assert_eq!(global.relay_url, "ws://127.0.0.1:1/v1");
+        assert_eq!(
+            (
+                global.transit_helper.hostname.as_str(),
+                global.transit_helper.port
+            ),
+            ("127.0.0.1", 2)
+        );
+        assert!(global.no_listen && global.hide_progress && global.force_classic);
+        assert!(!global.force_iroh);
+        let (global, _) = parsed(&["rx", "--no-listen", "--listen"]).unwrap();
+        assert!(!global.no_listen && !global.hide_progress);
+    }
+
+    #[test]
+    fn receive_maps_onto_wyrm_receive() {
+        let args = received(&["receive", "7-a-b"]);
+        assert_eq!(args.code.as_deref(), Some("7-a-b"));
+        assert!(!args.new && !args.accept_file && !args.only_text);
+        assert_eq!((args.code_length, args.output_file), (CODE_LENGTH, None));
+        let args = received(&["rx", "-a", "-c", "3", "-t", "--accept-file", "-o", "out"]);
+        assert!(args.new && args.accept_file && args.only_text && args.code.is_none());
+        assert_eq!(args.code_length, 3);
+        assert_eq!(args.output_file, Some(PathBuf::from("out")));
+        assert!(received(&["receive", "--allocate", "--only-text"]).new);
+        assert!(refusal(&["receive", "-c", "3"]).contains("--allocate"));
+        assert!(parsed(&["receive", "-a", "7-a-b"]).is_err());
+        assert!(parsed(&["receive", "7-a-b", "8-c-d"]).is_err());
+    }
+
+    #[test]
+    fn what_wyrmyon_cannot_do_is_refused_by_name() {
+        for (args, flag) in [
+            (&["send", "-0", "a"][..], "-0"),
+            (&["send", "-v", "a"], "--verify"),
+            (&["rx", "--verify"], "--verify"),
+            (&["rx", "--tor"], "--tor"),
+            (&["rx", "--launch-tor"], "--launch-tor"),
+            (&["rx", "--tor-control-port", "tcp:1"], "--tor-control-port"),
+            (&["rx", "--debug-state"], "--debug-state"),
+            (&["tx", "--debug-state", "B,N", "a"], "--debug-state"),
+            (
+                &["send", "--ignore-unsendable-files", "a"],
+                "--ignore-unsendable-files",
+            ),
+            (&["--dump-timing", "t.json", "rx"], "--dump-timing"),
+        ] {
+            let said = refusal(args);
+            assert_eq!(
+                said,
+                format!("{flag} is not supported by wyrmyon"),
+                "{args:?}"
+            );
+        }
+        let said = refusal(&["--appid", "example.com/other", "rx"]);
+        assert!(
+            said.contains(APPID) && said.contains("example.com/other"),
+            "{said}"
+        );
+        assert!(parsed(&["send", "--text", "x", "a"]).is_err());
+    }
+
+    #[test]
+    fn the_text_to_send_is_one_typed_line() {
+        let mut prompt = Vec::new();
+        let text = typed_text(&mut &b"hello there\r\nmore\n"[..], &mut prompt).unwrap();
+        assert_eq!(text, "hello there");
+        assert_eq!(prompt, b"Text to send: ");
+        let none = typed_text(&mut &b""[..], &mut Vec::new()).unwrap_err();
+        assert_eq!(none.to_string(), "no text to send");
+    }
+
+    #[test]
+    fn the_prompt_failing_fails_the_send() {
+        let cli = Cli::try_parse_from([NAME, "send"]).unwrap();
+        let err = translate(cli, &mut || anyhow::bail!("no terminal")).err();
+        assert_eq!(err.unwrap().to_string(), "no terminal");
+    }
+}
