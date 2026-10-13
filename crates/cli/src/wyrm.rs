@@ -665,4 +665,48 @@ mod tests {
         assert!(shown.contains('|') && shown.contains('@'), "{shown}");
         bar.finish();
     }
+
+    #[test]
+    fn a_fast_start_is_no_jump_but_a_resume_after_a_stall_is() {
+        let mut wyrm = Wyrm::new(look(false, false));
+        let mut pos = 0;
+        run(&mut wyrm, 0.0, 2.0, 20e6, &mut pos);
+        assert_eq!(wyrm.burst, None);
+        run(&mut wyrm, 2.0, 5.0, 0.0, &mut pos);
+        run(&mut wyrm, 5.0, 6.0, 8e6, &mut pos);
+        assert!(!wyrm.finished);
+        assert!(wyrm.burst.is_some_and(|at| (5.0..6.0).contains(&at)));
+    }
+
+    #[test]
+    fn the_resting_wyrm_keeps_its_mouth_shut() {
+        let mut wyrm = Wyrm::new(look(true, false));
+        let mut pos = 0;
+        run(&mut wyrm, 0.0, 2.0, 200_000.0, &mut pos);
+        run(&mut wyrm, 2.0, 5.0, 0.0, &mut pos);
+        for chomp in [0.0, 1.0, 2.0] {
+            wyrm.chomp = chomp;
+            assert!(!wyrm.open());
+            assert!(wyrm.draw().contains("@-"));
+        }
+    }
+
+    #[tokio::test]
+    async fn the_finale_lingers_only_on_a_bar_that_shows() {
+        let hidden = ProgressBar::hidden();
+        let started = std::time::Instant::now();
+        crate::transfer::finale(&hidden).await;
+        assert!(started.elapsed() < std::time::Duration::from_millis(400));
+        let shown = ProgressBar::with_draw_target(
+            Some(10),
+            ProgressDrawTarget::term_like(Box::new(Screen::default())),
+        );
+        let started = std::time::Instant::now();
+        crate::transfer::finale(&shown).await;
+        assert!(started.elapsed() >= std::time::Duration::from_millis(800));
+        assert!(shown.is_finished());
+        let started = std::time::Instant::now();
+        crate::transfer::finale(&shown).await;
+        assert!(started.elapsed() < std::time::Duration::from_millis(400));
+    }
 }
