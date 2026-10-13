@@ -106,6 +106,11 @@ pub fn home() -> Option<PathBuf> {
 }
 
 pub fn run(args: ShimArgs) -> anyhow::Result<()> {
+    if Path::new("shim").symlink_metadata().is_ok() {
+        bail!(
+            "shim is both a command and a file here: say `wyrm ./shim` to send it, or run `wyrm shim` from another directory"
+        );
+    }
     let us = Us::current()?;
     let home = home();
     let said = if args.remove {
