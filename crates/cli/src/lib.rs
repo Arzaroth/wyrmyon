@@ -157,13 +157,20 @@ pub fn main() -> ExitCode {
         }
         return exit_code(update::run(cli.global.hide_progress).map(|said| println!("{said}")));
     }
+    run(
+        &cli.global,
+        cli.command.map_or_else(|| bare(&cli.targets), Ok),
+    )
+}
+
+fn run(global: &Global, command: anyhow::Result<Command>) -> ExitCode {
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
     let result = runtime.block_on(async {
         let work = async {
-            match cli.command.map_or_else(|| bare(&cli.targets), Ok) {
-                Ok(Command::Send(args)) => send::run(&cli.global, args).await,
-                Ok(Command::Receive(args)) => receive::run(&cli.global, args).await,
-                Ok(Command::Netcheck) => netcheck::run(&cli.global).await,
+            match command {
+                Ok(Command::Send(args)) => send::run(global, args).await,
+                Ok(Command::Receive(args)) => receive::run(global, args).await,
+                Ok(Command::Netcheck) => netcheck::run(global).await,
                 Err(e) => Err(e),
             }
         };

@@ -18,18 +18,18 @@ use crate::{CODE_LENGTH, Global, mood_for, show_code, show_qr, show_welcome, tra
 pub struct SendArgs {
     /// Text to send; `-` reads it from stdin
     #[arg(long)]
-    text: Option<String>,
+    pub(crate) text: Option<String>,
     /// Files or directories to send; several travel as one bundle named `files`
-    paths: Vec<PathBuf>,
+    pub(crate) paths: Vec<PathBuf>,
     /// Number of words in the generated code
     #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
-    code_length: u8,
+    pub(crate) code_length: u8,
     /// Use this code instead of generating one, e.g. the one a receiver chose
     #[arg(long, conflicts_with = "code_length")]
-    code: Option<String>,
+    pub(crate) code: Option<String>,
     /// Also show the code as a QR code, for a phone to scan
     #[arg(long)]
-    qr: bool,
+    pub(crate) qr: bool,
 }
 
 enum Payload {

@@ -20,19 +20,19 @@ use crate::{
 pub struct ReceiveArgs {
     /// The code the sender gave you; asked for when left out
     #[arg(conflicts_with = "new")]
-    code: Option<String>,
+    pub(crate) code: Option<String>,
     /// Allocate a code here, for the sender to use with `send --code`
     #[arg(long, visible_alias = "allocate")]
-    new: bool,
+    pub(crate) new: bool,
     /// Number of words in the code: the one `--new` allocates, or the one the prompt completes
     #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
-    code_length: u8,
+    pub(crate) code_length: u8,
     /// Accept a file or directory without asking
     #[arg(long)]
-    accept_file: bool,
+    pub(crate) accept_file: bool,
     /// Where to write a received file or directory, instead of its name in the current directory
     #[arg(long, short = 'o')]
-    output_file: Option<PathBuf>,
+    pub(crate) output_file: Option<PathBuf>,
 }
 
 impl ReceiveArgs {
