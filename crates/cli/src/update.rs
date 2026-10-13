@@ -109,6 +109,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn relink_warnings_follow_the_outcome() {
+        assert_eq!(warned("updated".into(), &[]), "updated");
+        let said = warned("updated".into(), &["a".into(), "b".into()]);
+        assert_eq!(said, "updated\nwarning: a\nwarning: b");
+    }
+
+    #[test]
     fn a_package_managers_copy_is_left_to_the_package_manager() {
         let err = refuse_if_owned(Some(Owner::Distribution(Some("dpkg"))))
             .unwrap_err()

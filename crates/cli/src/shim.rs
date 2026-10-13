@@ -519,6 +519,55 @@ mod tests {
 
         let missing = [scene.root.path().join("missing").join(FILE)];
         assert!(relink(&scene.us, &missing)[0].contains("still runs the old wyrmyon"));
+        let gone = local.join(".gone");
+        assert!(relink(&scene.us, std::slice::from_ref(&gone))[0].contains("still runs"));
+
+        let lost = Us::at(scene.root.path().join("lost").join(PRIMARY));
+        let said = relink(&lost, std::slice::from_ref(&link));
+        assert!(
+            said[0].starts_with(&format!("{} still runs", link.display())),
+            "{said:?}"
+        );
+        assert_eq!(std::fs::read(&link).unwrap(), b"wyrmyon, updated");
+        assert_eq!(std::fs::read_dir(&local).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_wyrm_on_path_stands_for_the_resolved_binary() {
+        let scene = Scene::new();
+        let shown = scene.dir("shown");
+        std::os::unix::fs::symlink(&scene.us.target, shown.join(SECONDARY)).unwrap();
+        let path = path_of(&[Path::new(""), &scene.dir("empty"), &shown]);
+        let us = Us::found(scene.us.target.clone(), &path);
+        assert_eq!(us.target, shown.join(SECONDARY));
+        assert_eq!(us.dir(), shown);
+        assert!(us.owns(&scene.us.target));
+        let alone = Us::found(scene.us.target.clone(), &OsString::new());
+        assert_eq!(alone.target, scene.us.target);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_link_to_wyrmyon_is_ours_to_replace_or_remove() {
+        let scene = Scene::new();
+        let dir = scene.dir("old");
+        let link = dir.join(FILE);
+        std::os::unix::fs::symlink("/gone/wyrmyon", &link).unwrap();
+        assert!(scene.us.owns(&link));
+        let said = create(&scene.us, &dir, &OsString::new()).unwrap();
+        assert!(said[0].starts_with("Linked "), "{said:?}");
+        assert_eq!(std::fs::read(&link).unwrap(), b"wyrmyon");
+
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink("/gone/wyrm", &link).unwrap();
+        let removed = remove(&scene.us, std::slice::from_ref(&dir)).unwrap();
+        assert_eq!(removed, [format!("Removed {}", link.display())]);
+
+        std::os::unix::fs::symlink("/gone/python3", &link).unwrap();
+        assert!(!scene.us.owns(&link));
+        assert!(create(&scene.us, &dir, &OsString::new()).is_err());
+        assert!(remove(&scene.us, std::slice::from_ref(&dir)).is_err());
     }
 
     #[test]
