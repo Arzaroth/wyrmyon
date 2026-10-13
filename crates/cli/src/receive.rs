@@ -33,6 +33,8 @@ pub struct ReceiveArgs {
     /// Where to write a received file or directory, instead of its name in the current directory
     #[arg(long, short = 'o')]
     pub(crate) output_file: Option<PathBuf>,
+    #[arg(skip)]
+    pub(crate) only_text: bool,
 }
 
 impl ReceiveArgs {
@@ -43,6 +45,7 @@ impl ReceiveArgs {
             code_length: CODE_LENGTH,
             accept_file: false,
             output_file: None,
+            only_text: false,
         }
     }
 }
@@ -99,6 +102,12 @@ async fn receive_offer(
             }
         }
     };
+    if args.only_text && !matches!(offer, Offer::Message(_)) {
+        if let Some(connection) = connection {
+            connection.close().await;
+        }
+        return refuse(wormhole, "the receiver accepts text only (--only-text)").await;
+    }
     match offer {
         Offer::File(file) => receive_file(wormhole, file, connection, global, args).await,
         Offer::Directory(dir) => receive_directory(wormhole, dir, connection, global, args).await,

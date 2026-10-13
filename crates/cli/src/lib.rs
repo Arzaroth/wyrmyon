@@ -5,6 +5,7 @@ mod receive;
 mod send;
 mod transfer;
 mod update;
+mod wormhole_cli;
 mod wyrm;
 mod zipdir;
 
@@ -144,8 +145,14 @@ pub fn command() -> clap::Command {
 }
 
 pub fn main() -> ExitCode {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if wormhole_cli::invoked_as(args.first()) {
+        return wormhole_cli::main(args);
+    }
     let mut cmd = command();
-    let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&cmd.get_matches_mut())
+    let cli = cmd
+        .try_get_matches_from_mut(args)
+        .and_then(|m| <Cli as clap::FromArgMatches>::from_arg_matches(&m))
         .unwrap_or_else(|e| e.exit());
     if cli.update {
         if cli.command.is_some() {
