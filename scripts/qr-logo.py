@@ -110,4 +110,5 @@ def main():
     (ROOT / "crates/cli/src/qr/logo.rs").write_text(text)
 
 
-main()
+if __name__ == "__main__":
+    main()
