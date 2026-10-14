@@ -311,6 +311,11 @@ jobs:
         run: |
           docker run --rm -v "$PWD/dist:/d:ro" archlinux:latest sh -ec '
             sed -i "/^NoExtract/d" /etc/pacman.conf
+            if [ -f /d/wyrmyon-release-key.asc ]; then
+              pacman-key --init >/dev/null 2>&1
+              pacman-key --add /d/wyrmyon-release-key.asc >/dev/null
+              pacman-key --lsign-key ${{ env.SIGNING_KEY }} >/dev/null
+            fi
             pacman -U --noconfirm /d/wyrmyon-bin-*-${{ matrix.pkg }}.pkg.tar.zst >/dev/null
             wyrm --version; pacman -Qkk wyrmyon-bin'
 
