@@ -76,10 +76,12 @@ How the emblem looks depends on the terminal (`qr::Look::choose`):
 - **Plain** (not a terminal) and **`--ascii`.** A covered module is light or
   dark by its pixel's brightness.
 
-`scripts/qr-logo.py` (run by uv, Pillow pinned) builds the logo, the PNG and
-the pixels (`crates/cli/src/qr/logo.rs`) from `assets/emblem.png`, the
-emblem on a white background, turning the white outside its circle
-transparent; the same Pillow gives the same files. `qr::grid` builds the
+`scripts/qr-logo.py` (run by uv, Pillow pinned) builds the logo, the
+Windows icon, the PNG and the pixels (`crates/cli/src/qr/logo.rs`) from
+`assets/emblem.jpg`, the emblem on a white background: only the white
+connected to the picture's edges turns transparent, the white is taken out
+of the colours along that edge so nothing pale rims it on a dark terminal,
+and the same Pillow gives the same files. `qr::grid` builds the
 module grid, emblem included, from the `qrcode` crate's; `qr::render` draws
 it. There is no
 `--qr` on `receive --new`: the URI's default role tells a scanning app to

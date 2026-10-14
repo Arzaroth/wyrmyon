@@ -9,7 +9,8 @@
   tmux and the like), and colour pixels in other terminals. It is now
   encoded at the highest error correction level and at least 41 modules
   wide, so it scans just the same.
-- The project has a logo, the same emblem, at the top of the README.
+- The project has a logo, the same emblem, at the top of the README, and
+  it is the icon of `wyrmyon.exe`, `wyrm.exe` and the MSI on Windows.
 - Run as `wormhole`, wyrmyon takes the Python client's options:
   `send`/`tx` and `receive`/`rx` with `--code`, `-c`, `--text`, `-o`,
   `--accept-file`, `--allocate`, `--only-text`, `--hide-progress`,

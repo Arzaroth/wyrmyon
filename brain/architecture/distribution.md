@@ -82,6 +82,11 @@ cannot checksum the tarball it lives in; the release attaches rendered copies
 with real sums and their `.SRCINFO`, ready for the AUR, and the `-bin`
 packages built from them.
 
+On Windows the emblem is the binaries' icon: `crates/cli/build.rs` compiles
+`assets/wyrmyon.ico` (16 to 256 px, built by `scripts/qr-logo.py`) into
+`wyrmyon.exe` and `wyrm.exe` with `winresource` when the target is Windows,
+and the MSI shows it in Installed apps (`ARPPRODUCTICON`).
+
 The MSI is per-user and unsigned (SmartScreen warns): it installs into
 `%LOCALAPPDATA%\Programs\wyrmyon`, the directory `install.ps1` uses, and adds
 it to the user PATH, both undone on uninstall. It records its ProductCode
@@ -170,7 +175,7 @@ on crates.io and PyPI.
 - [packaging/nfpm.yaml](../../packaging/nfpm.yaml)
 - [packaging/arch/wyrmyon/PKGBUILD](../../packaging/arch/wyrmyon/PKGBUILD)
 - [packaging/arch/wyrmyon-bin/PKGBUILD](../../packaging/arch/wyrmyon-bin/PKGBUILD)
-- [packaging/windows/wyrmyon.wxs](../../packaging/windows/wyrmyon.wxs)
+- [packaging/windows/wyrmyon.wxs](../../packaging/windows/wyrmyon.wxs), [crates/cli/build.rs](../../crates/cli/build.rs)
 - [crates/xtask/src/main.rs](../../crates/xtask/src/main.rs)
 - [pyproject.toml](../../pyproject.toml)
 - [scripts/release.sh](../../scripts/release.sh)
