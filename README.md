@@ -2,7 +2,7 @@
 
 # wyrmyon
 
-A magic-wormhole client that goes faster than light when it meets its own kind.
+The magic-wormhole, with a wyrm in it.
 
 wyrmyon speaks the magic-wormhole protocol, so it sends to and receives from the
 Python `wormhole` CLI and every other client on the public network. When both
