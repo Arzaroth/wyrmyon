@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Per-user MSI, built by the release workflow with WiX 5:
-  `wix build -arch x64|arm64 -d Version=X.Y.Z -d StageDir=... wyrmyon.wxs`.
+  `wix build -arch x64|arm64 -d Version=X.Y.Z -d StageDir=... wyrmyon.wxs`,
+  from the repository root (the icon is assets/wyrmyon.ico).
   It installs into the directory scripts/install.ps1 uses, so the two never
   leave two copies on PATH.
 -->
@@ -25,6 +26,8 @@
 
     <MediaTemplate EmbedCab="yes" />
 
+    <Icon Id="wyrmyon.ico" SourceFile="assets/wyrmyon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="wyrmyon.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/Arzaroth/wyrmyon" />
     <Property Id="ARPNOREPAIR" Value="1" />
     <Property Id="ARPNOMODIFY" Value="1" />
