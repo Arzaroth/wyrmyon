@@ -17,10 +17,9 @@
   `--no-listen`, `--relay-url`, `--transit-helper` and their `WORMHOLE_`
   environment variables (falling back on the `WYRMYON_` ones), and the QR
   code on by default (`--no-qr` turns it off). `receive -o` replaces an
-  existing file, as Python's does, and
-  `recv`/`recieve` work. `-0`, `--verify`, Tor, `ssh`,
-  `--ignore-unsendable-files`, `--dump-timing` and any appid but the
-  standard one are refused by name.
+  existing file, as Python's does, and `recv`/`recieve` work. `-0`,
+  `--verify`, Tor, `ssh`, `--ignore-unsendable-files`, `--dump-timing` and
+  any appid but the standard one are refused by name.
 - `wyrm shim` links `wormhole` to wyrmyon, beside the binary or in
   `~/.local/bin` (`--dir` picks), and refuses when another `wormhole` is on
   PATH; `wyrm shim --remove` removes only a link to wyrmyon. On Windows it is

@@ -11,12 +11,14 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: 0.2.0.** Text, files,
+**Status: 0.3.0.** Text, files,
 directories and several paths at once work with any magic-wormhole client,
 directly or through the transit relay, and over iroh between two wyrms,
 verified chunk by chunk and resumable after an interruption, on Linux, macOS
 and Windows. Between two wyrms, a directory travels file by file with no zip,
 either side dialling is enough, and the transfer says whether it went direct.
+Run as `wormhole` (`wyrm shim` links it), wyrmyon takes the Python client's
+command line, and the packages are signed.
 
 ## Usage
 
