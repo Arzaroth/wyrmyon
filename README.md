@@ -60,14 +60,24 @@ on x86_64 and arm64:
 | System | Install |
 | --- | --- |
 | Debian, Ubuntu | `sudo apt install ./wyrmyon_X.Y.Z_amd64.deb` |
-| Fedora, RHEL, openSUSE | `sudo dnf install ./wyrmyon-X.Y.Z-1.x86_64.rpm` |
-| Arch | download it, then `sudo pacman -U ./wyrmyon-bin-X.Y.Z-1-x86_64.pkg.tar.zst` (not the URL: pacman then wants a `.sig`, and the packages are unsigned), or `makepkg -si` from the PKGBUILDs in `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` |
+| Fedora, RHEL, openSUSE | `sudo dnf install ./wyrmyon-X.Y.Z-1.x86_64.rpm` (signed; `sudo rpm --import` the key below to check it) |
+| Arch | `sudo pacman -U` the package's URL, once pacman trusts the key below, or `makepkg -si` from the PKGBUILDs in `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` |
 | Windows | the `.msi` (unsigned: SmartScreen asks once), or the script below |
 | Any Linux, macOS | the script below, or a `.tar.gz` |
 
 ```
 curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scripts/install.sh | sh
 powershell -c "irm https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scripts/install.ps1 | iex"
+```
+
+The RPMs, the Arch packages (a `.sig` beside each) and `SHA256SUMS` (in
+`SHA256SUMS.asc`) are signed with the release key
+[`packaging/wyrmyon.asc`](packaging/wyrmyon.asc), fingerprint
+`D399CF355EE4767B49F8C76E76B59B8342D88151`. For Arch, trust it once:
+
+```
+curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/packaging/wyrmyon.asc | sudo pacman-key --add -
+sudo pacman-key --lsign-key D399CF355EE4767B49F8C76E76B59B8342D88151
 ```
 
 The script checks the download against the release's `SHA256SUMS` and installs

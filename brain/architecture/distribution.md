@@ -58,9 +58,21 @@ everywhere but Windows, where it is a second copy. The packages put the man
 pages and completions where each distribution looks for them (zsh's are in
 `vendor-completions` on Debian, `site-functions` elsewhere).
 
-No package is signed. `pacman -U` given a URL fetches `<url>.sig` and fails
-when it is missing, so the README has the Arch package downloaded first and
-installed from the file.
+The release key (ed25519, fingerprint `D399CF355EE4767B49F8C76E76B59B8342D88151`, public half in
+`packaging/wyrmyon.asc` and attached to each release as
+`wyrmyon-release-key.asc`) signs what a package manager can check: the
+`checksums` job signs the RPMs in place (`rpmsign`), writes a binary
+`<pkg>.sig` beside each Arch package, then sums everything and signs
+`SHA256SUMS` into `SHA256SUMS.asc`. The private key and its passphrase are
+the `WYRMYON_GPG_KEY` and `WYRMYON_GPG_PASSPHRASE` secrets; the job checks
+the imported key against the fingerprint pinned in the workflow, fails a tag
+release without them, and leaves a pull request's artefacts unsigned when
+they are absent. `verify-linux` checks `SHA256SUMS.asc` with gpg, the RPM with
+`rpm -K` on Fedora and each `.sig` with `pacman-key --verify` on Arch. With
+the key trusted (`pacman-key --add`, `--lsign-key`), `pacman -U` takes the
+package's URL, since it fetches `<url>.sig` beside it. The .deb is not signed:
+apt does not check a local package's signature. The key itself is kept
+outside the repository, in the maintainer's `~/.config/wyrm`.
 
 The Arch side has two PKGBUILDs: `wyrmyon` builds from the release's source
 tarball (with `!lto`: makepkg's LTO flags turn ring's C objects into GCC

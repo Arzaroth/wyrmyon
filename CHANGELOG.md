@@ -44,9 +44,11 @@
 
 ### Fixed
 
-- The README's Arch line installed the package from its URL, which fails:
-  pacman then looks for a `.sig` the release does not have. It now downloads
-  the package and installs the file.
+- `pacman -U` given the Arch package's URL failed: pacman looks for a `.sig`
+  beside it, and the release had none. The Arch packages, the RPMs and
+  `SHA256SUMS` are now signed with the release key (`packaging/wyrmyon.asc`,
+  fingerprint `D399CF355EE4767B49F8C76E76B59B8342D88151`), and the README
+  shows how to trust it.
 
 ## [0.2.0] - 2026-10-12
 

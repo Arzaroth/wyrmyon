@@ -220,3 +220,13 @@ lengths of every kind, with the badge read as dark and as its own light and
 dark pixels, and for every version 6 to 40 with each badge module turned
 against the code, the worst a camera could read, rather than trusting the
 arithmetic.
+
+## One OpenPGP key signs the packages
+
+The RPMs, the Arch packages and `SHA256SUMS` are signed with one ed25519
+OpenPGP release key, since that is what rpm and pacman check. It ships in
+the repository rather than on a keyserver: users fetch it from
+`packaging/wyrmyon.asc` and compare the fingerprint the README prints. The
+.deb stays unsigned (apt ignores signatures on local files), and the MSI and
+any macOS package would need paid code-signing certificates, which the
+project does not have.
