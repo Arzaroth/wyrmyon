@@ -931,3 +931,79 @@ fn several_receivers_need_a_code_the_server_never_hands_out() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("7 digits"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_sender_holds_the_code_while_it_serves_a_receiver() {
+    let server = MailboxServer::start().await;
+    let config = Config {
+        relay_url: server.url(),
+        ..Config::default()
+    };
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--times", "2", "--text", "hi"])
+        .spawn()
+        .unwrap();
+    let code: wyrmyon_wormhole::Code = read_code(sender.stderr.take().unwrap())
+        .await
+        .parse()
+        .unwrap();
+    let mut first = wyrmyon_wormhole::join(&config, code.clone())
+        .await
+        .unwrap()
+        .pair()
+        .await
+        .unwrap();
+    let offer = first.receive_json().await.unwrap();
+    assert_eq!(offer["offer"]["message"], "hi");
+    let waiting = wyrmyon_wormhole::join(&config, code.clone()).await.unwrap();
+    let crowded = wyrmyon_wormhole::join(&config, code).await;
+    assert!(matches!(&crowded, Err(wyrmyon_wormhole::Error::Server(e)) if e == "crowded"));
+    first
+        .send_json(&json!({"answer": {"message_ack": "ok"}}))
+        .await
+        .unwrap();
+    first.close(Mood::Happy).await;
+    let mut second = waiting.pair().await.unwrap();
+    let offer = second.receive_json().await.unwrap();
+    assert_eq!(offer["offer"]["message"], "hi");
+    second
+        .send_json(&json!({"answer": {"message_ack": "ok"}}))
+        .await
+        .unwrap();
+    second.close(Mood::Happy).await;
+    assert!(finish(sender).await.0);
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_hashed_file_serves_two_iroh_receivers() {
+    let server = MailboxServer::start().await;
+    let from = tempfile::tempdir().unwrap();
+    std::fs::write(from.path().join("notes.txt"), vec![7u8; 200_000]).unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--times", "2", "notes.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    for _ in 0..2 {
+        let to = tempfile::tempdir().unwrap();
+        let (ok, _, stderr) = finish(
+            wyrm(&server.url())
+                .args(["receive", "--accept-file", &code])
+                .current_dir(to.path())
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(ok, "{stderr}");
+        assert!(stderr.contains("Receiving (iroh"), "{stderr}");
+        assert_eq!(
+            std::fs::read(to.path().join("notes.txt")).unwrap(),
+            vec![7u8; 200_000]
+        );
+    }
+    assert!(finish(sender).await.0);
+    let said = collected.await.unwrap();
+    assert_eq!(said.matches("Hashing..").count(), 1, "{said}");
+}
