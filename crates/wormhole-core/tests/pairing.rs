@@ -109,7 +109,7 @@ async fn the_welcome_message_reaches_the_caller() {
 }
 
 #[tokio::test]
-async fn a_third_side_on_the_nameplate_is_turned_away() {
+async fn a_third_side_is_turned_away_until_every_side_has_released() {
     let server = MailboxServer::start().await;
     let config = config(&server, json!({}));
     let first = within(wyrmyon_wormhole::create(&config, 2)).await.unwrap();
@@ -118,7 +118,10 @@ async fn a_third_side_on_the_nameplate_is_turned_away() {
         .unwrap();
     let third = within(wyrmyon_wormhole::join(&config, first.code().clone())).await;
     assert!(matches!(third, Err(Error::Server(e)) if e == "crowded"));
+    let code = first.code().clone();
     within(first.abandon()).await;
+    let fourth = within(wyrmyon_wormhole::join(&config, code)).await;
+    assert!(matches!(fourth, Err(Error::Server(e)) if e == "crowded"));
     within(second.abandon()).await;
     assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
 }

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -32,7 +32,7 @@ struct State {
 
 struct Nameplate {
     mailbox: String,
-    sides: BTreeSet<String>,
+    claims: BTreeMap<String, bool>,
 }
 
 #[derive(Default)]
@@ -78,7 +78,7 @@ impl MailboxServer {
         let mut claimed: Vec<String> = state
             .nameplates
             .iter()
-            .filter(|(_, n)| !n.sides.is_empty())
+            .filter(|(_, n)| n.claims.values().any(|&claimed| claimed))
             .map(|(id, _)| id.clone())
             .collect();
         claimed.sort();
@@ -107,13 +107,19 @@ fn claim(state: &mut State, nameplate: &str, side: &str) -> Result<String, &'sta
         *next_mailbox += 1;
         Nameplate {
             mailbox: format!("mb{next_mailbox}"),
-            sides: BTreeSet::new(),
+            claims: BTreeMap::new(),
         }
     });
-    if entry.sides.len() >= 2 && !entry.sides.contains(side) {
-        return Err("crowded");
+    match entry.claims.get(side) {
+        Some(false) => return Err("reclaimed"),
+        Some(true) => {}
+        None => {
+            entry.claims.insert(side.to_owned(), true);
+            if entry.claims.len() > 2 {
+                return Err("crowded");
+            }
+        }
     }
-    entry.sides.insert(side.to_owned());
     Ok(entry.mailbox.clone())
 }
 
@@ -163,8 +169,10 @@ fn respond(
         "release" => {
             let nameplate = field("nameplate");
             if let Some(entry) = state.nameplates.get_mut(&nameplate) {
-                entry.sides.remove(&session.side);
-                if entry.sides.is_empty() {
+                if let Some(claimed) = entry.claims.get_mut(&session.side) {
+                    *claimed = false;
+                }
+                if !entry.claims.values().any(|&claimed| claimed) {
                     state.nameplates.remove(&nameplate);
                 }
             }
