@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use clap::Args;
@@ -39,7 +40,25 @@ pub struct SendArgs {
 enum Payload {
     Text(String),
     File(PathBuf, FileOffer),
-    Tree(String, Vec<zipdir::Entry>),
+    Tree(String, Arc<Vec<zipdir::Entry>>),
+}
+
+#[derive(Default)]
+struct Staged {
+    zip: Option<zipdir::Built>,
+    blob: Option<Offered>,
+    collection: Option<(Offered, CollectionOffer)>,
+}
+
+impl Staged {
+    async fn close(self) {
+        if let Some(blob) = self.blob {
+            blob.close().await;
+        }
+        if let Some((offered, _)) = self.collection {
+            offered.close().await;
+        }
+    }
 }
 
 impl SendArgs {
@@ -93,16 +112,35 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     show_welcome(pending.welcome());
 
     let mut wormhole = pending.pair().await?;
-    let result = match payload {
-        Payload::Text(text) => send_text(&mut wormhole, text).await,
-        Payload::File(path, offer) => {
-            let size = offer.filesize;
-            send_data(&mut wormhole, global, Offer::File(offer), &path, size).await
-        }
-        Payload::Tree(name, entries) => send_tree(&mut wormhole, global, name, entries).await,
-    };
+    let mut staged = Staged::default();
+    let result = deliver(&mut wormhole, global, &payload, &mut staged).await;
+    staged.close().await;
     wormhole.close(mood_for(&result)).await;
     result
+}
+
+async fn deliver(
+    wormhole: &mut Wormhole,
+    global: &Global,
+    payload: &Payload,
+    staged: &mut Staged,
+) -> anyhow::Result<()> {
+    match payload {
+        Payload::Text(text) => send_text(wormhole, text.clone()).await,
+        Payload::File(path, offer) => {
+            let size = offer.filesize;
+            send_data(
+                wormhole,
+                global,
+                staged,
+                Offer::File(offer.clone()),
+                path,
+                size,
+            )
+            .await
+        }
+        Payload::Tree(name, entries) => send_tree(wormhole, global, staged, name, entries).await,
+    }
 }
 
 fn other_side(code: &Code, as_wormhole: bool) -> String {
@@ -132,7 +170,7 @@ async fn paths_payload(mut paths: Vec<PathBuf>) -> anyhow::Result<Payload> {
         return path_payload(paths.remove(0)).await;
     }
     let entries = listed(move |cancel| zipdir::list_bundle(&paths, cancel)).await?;
-    Ok(Payload::Tree("files".into(), entries))
+    Ok(Payload::Tree("files".into(), Arc::new(entries)))
 }
 
 async fn listed(
@@ -152,7 +190,7 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
     let name = display_name(&path)?;
     if meta.is_dir() {
         let entries = listed(move |cancel| zipdir::list(&path, cancel)).await?;
-        return Ok(Payload::Tree(name, entries));
+        return Ok(Payload::Tree(name, Arc::new(entries)));
     }
     if !meta.is_file() {
         bail!("{} is not a regular file", path.display());
@@ -200,44 +238,51 @@ async fn require_iroh(wormhole: &mut Wormhole, global: &Global) -> anyhow::Resul
 async fn send_tree(
     wormhole: &mut Wormhole,
     global: &Global,
-    name: String,
-    entries: Vec<zipdir::Entry>,
+    staged: &mut Staged,
+    name: &str,
+    entries: &Arc<Vec<zipdir::Entry>>,
 ) -> anyhow::Result<()> {
     if global.use_collection(wormhole) {
-        return send_collection(wormhole, global, name, &entries).await;
+        return send_collection(wormhole, global, staged, name, entries).await;
     }
     require_iroh(wormhole, global).await?;
-    eprintln!("Building zipfile..");
-    let cancel = zipdir::Cancel::default();
-    let _cancel_on_drop = cancel.on_drop();
-    let zipped = tokio::task::spawn_blocking(move || zipdir::zip(&entries, &cancel))
-        .await
-        .context("building the zip file")
-        .and_then(|built| built);
-    let built = match zipped {
-        Ok(built) => built,
-        Err(e) => {
-            protocol::send_error(wormhole, "the sender could not read its data").await?;
-            return Err(e);
+    if staged.zip.is_none() {
+        eprintln!("Building zipfile..");
+        let cancel = zipdir::Cancel::default();
+        let _cancel_on_drop = cancel.on_drop();
+        let entries = Arc::clone(entries);
+        let zipped = tokio::task::spawn_blocking(move || zipdir::zip(&entries, &cancel))
+            .await
+            .context("building the zip file")
+            .and_then(|built| built);
+        match zipped {
+            Ok(built) => staged.zip = Some(built),
+            Err(e) => {
+                protocol::send_error(wormhole, "the sender could not read its data").await?;
+                return Err(e);
+            }
         }
-    };
+    }
+    let built = staged.zip.as_ref().expect("the zip file was just built");
     eprintln!(
         "Sending directory ({} bytes compressed) named '{name}'",
         built.zipsize
     );
     let offer = DirectoryOffer {
         mode: "zipfile/deflated".into(),
-        dirname: name,
+        dirname: name.to_owned(),
         zipsize: built.zipsize,
         numbytes: built.numbytes,
         numfiles: built.numfiles,
     };
     let size = offer.zipsize;
+    let path = built.file.path().to_owned();
     send_data(
         wormhole,
         global,
+        staged,
         Offer::Directory(offer),
-        built.file.path(),
+        &path,
         size,
     )
     .await
@@ -246,79 +291,80 @@ async fn send_tree(
 async fn send_collection(
     wormhole: &mut Wormhole,
     global: &Global,
-    name: String,
+    staged: &mut Staged,
+    name: &str,
     entries: &[zipdir::Entry],
 ) -> anyhow::Result<()> {
-    let (mut sources, mut dirs) = (Vec::new(), Vec::new());
-    for entry in entries {
-        match entry {
-            zipdir::Entry::File {
-                source, name, mode, ..
-            } => sources.push(Source {
-                path: source.clone(),
-                name: name.clone(),
-                mode: *mode,
-            }),
-            zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
-            zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
+    if staged.collection.is_none() {
+        let (mut sources, mut dirs) = (Vec::new(), Vec::new());
+        for entry in entries {
+            match entry {
+                zipdir::Entry::File {
+                    source, name, mode, ..
+                } => sources.push(Source {
+                    path: source.clone(),
+                    name: name.clone(),
+                    mode: *mode,
+                }),
+                zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
+                zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
+            }
         }
+        eprintln!("Hashing..");
+        let (offered, manifest) = match Offered::import_collection(&sources, &dirs).await {
+            Ok(imported) => imported,
+            Err(e) => {
+                protocol::send_error(wormhole, "the sender could not read its data").await?;
+                return Err(e.into());
+            }
+        };
+        let offer = CollectionOffer {
+            name: name.to_owned(),
+            numbytes: manifest.numbytes(),
+            numfiles: manifest.files.len() as u64,
+        };
+        staged.collection = Some((offered, offer));
     }
-    eprintln!("Hashing..");
-    let (offered, manifest) = match Offered::import_collection(&sources, &dirs).await {
-        Ok(imported) => imported,
-        Err(e) => {
-            protocol::send_error(wormhole, "the sender could not read its data").await?;
-            return Err(e.into());
-        }
-    };
-    let offer = CollectionOffer {
-        name,
-        numbytes: manifest.numbytes(),
-        numfiles: manifest.files.len() as u64,
-    };
+    let (offered, offer) = staged
+        .collection
+        .as_ref()
+        .expect("the collection was just imported");
     eprintln!(
         "Sending directory ({} files, {} bytes) named '{}'",
         offer.numfiles, offer.numbytes, offer.name
     );
-    let size = offer.numbytes;
-    let result = send_over(
+    send_over(
         wormhole,
         global,
-        Offer::Collection(offer),
+        Offer::Collection(offer.clone()),
         None,
-        size,
-        Some(&offered),
+        offer.numbytes,
+        Some(offered),
     )
-    .await;
-    offered.close().await;
-    result
+    .await
 }
 
 async fn send_data(
     wormhole: &mut Wormhole,
     global: &Global,
+    staged: &mut Staged,
     offer: Offer,
     path: &Path,
     size: u64,
 ) -> anyhow::Result<()> {
     let use_iroh = require_iroh(wormhole, global).await?;
-    let offered = if use_iroh {
+    if use_iroh && staged.blob.is_none() {
         eprintln!("Hashing..");
         match Offered::import(path).await {
-            Ok(offered) => Some(offered),
+            Ok(offered) => staged.blob = Some(offered),
             Err(e) => {
                 protocol::send_error(wormhole, "the sender could not read its data").await?;
                 return Err(e.into());
             }
         }
-    } else {
-        None
-    };
-    let result = send_over(wormhole, global, offer, Some(path), size, offered.as_ref()).await;
-    if let Some(offered) = offered {
-        offered.close().await;
     }
-    result
+    let offered = if use_iroh { staged.blob.as_ref() } else { None };
+    send_over(wormhole, global, offer, Some(path), size, offered).await
 }
 
 async fn send_over(
