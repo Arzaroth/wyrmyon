@@ -16,6 +16,7 @@ pub struct Quirks {
     pub flood_on_claim: usize,
     pub hang_up_after_welcome: bool,
     pub chatty: bool,
+    pub slow_release: bool,
 }
 
 pub struct MailboxServer {
@@ -260,6 +261,9 @@ async fn serve(stream: TcpStream, state: Arc<Mutex<State>>, quirks: Arc<Quirks>)
             continue;
         };
         let _ = tx.send(json!({"type": "ack", "id": msg["id"]}).to_string());
+        if quirks.slow_release && msg["type"] == "release" {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
         let reply = respond(&state, &quirks, &mut session, &tx, &msg);
         let reply = reply
             .unwrap_or_else(|error| Some(json!({"type": "error", "error": error, "orig": msg})));

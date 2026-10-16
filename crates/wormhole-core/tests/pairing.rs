@@ -160,6 +160,29 @@ async fn a_paired_code_is_free_again_and_pairs_anew() {
 }
 
 #[tokio::test]
+async fn pairing_returns_only_once_the_server_has_released_the_nameplate() {
+    let server = MailboxServer::start_with(Quirks {
+        slow_release: true,
+        ..Quirks::default()
+    })
+    .await;
+    let config = config(&server, json!({}));
+    let sender = within(wyrmyon_wormhole::create(&config, 2)).await.unwrap();
+    let receiver = tokio::spawn({
+        let (config, code) = (config.clone(), sender.code().clone());
+        async move {
+            within(async { wyrmyon_wormhole::join(&config, code).await?.pair().await })
+                .await
+                .unwrap()
+        }
+    });
+    let sender = within(sender.pair()).await.unwrap();
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
+    within(sender.close(Mood::Happy)).await;
+    within(receiver.await.unwrap().close(Mood::Happy)).await;
+}
+
+#[tokio::test]
 async fn a_malformed_pake_message_fails_cleanly() {
     let server = MailboxServer::start().await;
     let pending = within(wyrmyon_wormhole::create(&config(&server, json!({})), 2))
