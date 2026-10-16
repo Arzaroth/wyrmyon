@@ -140,6 +140,29 @@ async fn text_from_wyrm_to_python() {
     assert!(finish(sender).await.0);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Python wormhole CLI and uvx"]
+async fn one_wyrm_code_serves_python_receivers_back_to_back() {
+    let mailbox = PythonMailbox::start().await;
+    let mut sender = wyrm(&mailbox.url)
+        .args(["send", "--times", "3", "--text", "for everyone"])
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    for _ in 0..3 {
+        let (ok, stdout, stderr) = finish(
+            python(&mailbox.url)
+                .args(["receive", "--hide-progress", &code])
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(ok, "{stderr}");
+        assert!(stdout.contains("for everyone"), "{stdout}");
+    }
+    assert!(finish(sender).await.0);
+}
+
 fn blob(len: usize) -> Vec<u8> {
     let mut state = 0x2545_f491_4f6c_dd1d_u64;
     (0..len)
