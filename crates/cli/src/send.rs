@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
@@ -12,7 +12,7 @@ use crate::protocol::{
     self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
 };
 use crate::transfer::Pipe;
-use crate::{CODE_LENGTH, Global, mood_for, show_code, show_welcome, transfer, zipdir};
+use crate::{CODE_LENGTH, Global, mood_for, printable, show_code, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
 #[command(group = clap::ArgGroup::new("what").required(true).args(["text", "paths"]))]
@@ -31,6 +31,9 @@ pub struct SendArgs {
     /// Also show the code as a QR code, for a phone to scan
     #[arg(long)]
     pub(crate) qr: bool,
+    /// Serve this many receivers with the same code, one after another
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) times: u32,
     #[arg(skip)]
     pub(crate) literal_text: bool,
     #[arg(skip)]
@@ -69,6 +72,7 @@ impl SendArgs {
             code_length: CODE_LENGTH,
             code: None,
             qr: false,
+            times: 1,
             literal_text: false,
             as_wormhole: false,
         }
@@ -81,6 +85,7 @@ impl SendArgs {
             code_length: CODE_LENGTH,
             code: None,
             qr: false,
+            times: 1,
             literal_text: false,
             as_wormhole: false,
         }
@@ -96,12 +101,14 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     };
 
     let qr = args.qr.then_some(global.ascii);
-    let pending = if let Some(code) = code {
+    let times = args.times;
+    let config = global.config();
+    let given = code.or_else(|| (times > 1).then(|| Code::reusable(usize::from(args.code_length))));
+    let mut pending = if let Some(code) = given {
         show_code(&code, qr, &other_side(&code, args.as_wormhole));
-        wyrmyon_wormhole::join(&global.config(), code).await?
+        wyrmyon_wormhole::join(&config, code).await?
     } else {
-        let pending =
-            wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
+        let pending = wyrmyon_wormhole::create(&config, usize::from(args.code_length)).await?;
         show_code(
             pending.code(),
             qr,
@@ -110,13 +117,51 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
         pending
     };
     show_welcome(pending.welcome());
+    if times > 1 {
+        eprintln!("This code serves {times} receivers, one after another. A wrong code ends it.");
+    }
 
-    let mut wormhole = pending.pair().await?;
+    let code = pending.code().clone();
     let mut staged = Staged::default();
-    let result = deliver(&mut wormhole, global, &payload, &mut staged).await;
+    let (mut round, mut failed) = (1, 0);
+    let outcome = loop {
+        let mut wormhole = match pending.pair().await {
+            Ok(wormhole) => wormhole,
+            Err(e) if times > 1 => {
+                break Err(anyhow!(e).context(format!("receiver {round} of {times}")));
+            }
+            Err(e) => break Err(e.into()),
+        };
+        let result = deliver(&mut wormhole, global, &payload, &mut staged).await;
+        wormhole.close(mood_for(&result)).await;
+        if times == 1 {
+            break result;
+        }
+        match result {
+            Ok(()) => eprintln!("Receiver {round} of {times}: done"),
+            Err(e) => {
+                failed += 1;
+                eprintln!(
+                    "Receiver {round} of {times}: {}",
+                    printable(&format!("{e:#}"))
+                );
+            }
+        }
+        if round == times {
+            break match failed {
+                0 => Ok(()),
+                _ => Err(anyhow!("{failed} of {times} transfers failed")),
+            };
+        }
+        round += 1;
+        pending = match wyrmyon_wormhole::join(&config, code.clone()).await {
+            Ok(pending) => pending,
+            Err(e) => break Err(anyhow!(e).context(format!("receiver {round} of {times}"))),
+        };
+        eprintln!("Waiting for receiver {round} of {times}..");
+    };
     staged.close().await;
-    wormhole.close(mood_for(&result)).await;
-    result
+    outcome
 }
 
 async fn deliver(

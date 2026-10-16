@@ -281,6 +281,7 @@ fn send_args(
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         code: args.code,
         qr: args.qr && !args.no_qr,
+        times: 1,
         as_wormhole: true,
     })
 }
