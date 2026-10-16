@@ -25,6 +25,14 @@ impl Code {
         &self.0
     }
 
+    /// A code on a nameplate past the server's allocator, which hands out
+    /// 1 to 999999, so the nameplate is never given to someone else between uses.
+    #[must_use]
+    pub fn reusable(words: usize) -> Self {
+        let nameplate = rand::random_range(1_000_000..10_000_000u32).to_string();
+        Self::with_nameplate(&nameplate, &choose_words(words))
+    }
+
     #[must_use]
     pub(crate) fn with_nameplate(nameplate: &str, words: &str) -> Self {
         Self(format!("{nameplate}-{words}"))
@@ -141,6 +149,15 @@ mod tests {
         assert!(WORDS.iter().any(|&(_, odd)| odd == parts[0]));
         assert!(WORDS.iter().any(|&(even, _)| even == parts[1]));
         assert!(WORDS.iter().any(|&(_, odd)| odd == parts[2]));
+    }
+
+    #[test]
+    fn reusable_codes_sit_past_the_allocated_nameplates() {
+        let code = Code::reusable(3);
+        let nameplate: u32 = code.nameplate().parse().unwrap();
+        assert!((1_000_000..10_000_000).contains(&nameplate));
+        assert_eq!(code.as_str().split('-').count(), 4);
+        assert!(looks_like_code(code.as_str()));
     }
 
     #[test]
