@@ -239,7 +239,10 @@ reuse only if it were long, but ending the run at the first failed pairing
 keeps the attacker to one guess, as with any code, so the usual word count
 stays. The nameplate is a random 7-digit number because the server hands out
 1 to 999999 and would give a freed small nameplate to a stranger between two
-receivers, whose receiver would then meet ours and fail both. Receivers take
-turns because the server counts a released side on a nameplate until every
-side has released; serving them at once is in the roadmap. The cost of
+receivers, whose receiver would then meet ours and fail both; for the same
+reason a `--code` on a shorter nameplate is refused. Receivers take turns
+because the server counts a released side on a nameplate until every side
+has released, and the sender joins again as soon as a turn has paired so
+that it always holds the nameplate: two receivers on a free nameplate would
+pair with each other. Serving them at once is in the roadmap. The cost of
 reuse: anyone who sees the code can take a turn until the N are used up.

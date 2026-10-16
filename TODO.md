@@ -10,6 +10,17 @@ done.
       mailbox reorder deliveries.
 - [ ] Mailbox reconnection after a dropped connection, as the Python client
       does.
+- [ ] Ctrl-C drops the send without releasing the nameplate or closing the
+      mailbox. A `wyrm send --times` run spends most of its life waiting
+      with a claimed nameplate, so a late receiver pairs with the dead
+      sender and hangs. Release and close on Ctrl-C.
+- [ ] A `--times` turn whose peer pairs and then goes silent stalls the
+      run until Ctrl-C. Decide on a deadline that does not cut off a
+      receiver still deciding whether to accept.
+- [ ] A `--times` turn joins the code again right after pairing, which is
+      `crowded` if the receiver releases only later; the Python client and
+      wyrm release first, other clients are unchecked. Retry briefly on
+      `crowded` if one does not.
 - [ ] A directory from Linux holding names that differ only by case
       (`Makefile`, `makefile`) or Unicode normalization is refused whole on
       macOS and Windows (`create_new` fails on the second one); say which
