@@ -103,6 +103,11 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     let qr = args.qr.then_some(global.ascii);
     let times = args.times;
     let config = global.config();
+    if times > 1 && code.as_ref().is_some_and(|code| !code.is_reusable()) {
+        bail!(
+            "--times needs a code on a nameplate of 7 digits or more, which the server never hands out; leave out --code to get one"
+        );
+    }
     let given = code.or_else(|| (times > 1).then(|| Code::reusable(usize::from(args.code_length))));
     let mut pending = if let Some(code) = given {
         show_code(&code, qr, &other_side(&code, args.as_wormhole));
@@ -132,6 +137,11 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
             }
             Err(e) => break Err(e.into()),
         };
+        let next = if round < times {
+            Some(wyrmyon_wormhole::join(&config, code.clone()).await)
+        } else {
+            None
+        };
         let result = deliver(&mut wormhole, global, &payload, &mut staged).await;
         wormhole.close(mood_for(&result)).await;
         if times == 1 {
@@ -147,16 +157,12 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
                 );
             }
         }
-        if round == times {
-            break match failed {
-                0 => Ok(()),
-                _ => Err(anyhow!("{failed} of {times} transfers failed")),
-            };
-        }
         round += 1;
-        pending = match wyrmyon_wormhole::join(&config, code.clone()).await {
-            Ok(pending) => pending,
-            Err(e) => break Err(anyhow!(e).context(format!("receiver {round} of {times}"))),
+        pending = match next {
+            None if failed == 0 => break Ok(()),
+            None => break Err(anyhow!("{failed} of {times} transfers failed")),
+            Some(Ok(pending)) => pending,
+            Some(Err(e)) => break Err(anyhow!(e).context(format!("receiver {round} of {times}"))),
         };
         eprintln!("Waiting for receiver {round} of {times}..");
     };
@@ -208,6 +214,19 @@ async fn stdin_text() -> anyhow::Result<String> {
 enum Prepared {
     Iroh(IrohTransport),
     Classic(Transit),
+}
+
+impl Prepared {
+    async fn after(self, sent: anyhow::Result<()>) -> anyhow::Result<Self> {
+        match (sent, self) {
+            (Ok(()), prepared) => Ok(prepared),
+            (Err(e), Self::Iroh(iroh)) => {
+                iroh.close().await;
+                Err(e)
+            }
+            (Err(e), Self::Classic(_)) => Err(e),
+        }
+    }
 }
 
 async fn paths_payload(mut paths: Vec<PathBuf>) -> anyhow::Result<Payload> {
@@ -422,14 +441,17 @@ async fn send_over(
 ) -> anyhow::Result<()> {
     let prepared = if offered.is_some() {
         let iroh = global.iroh_or_tell(wormhole, IrohRole::Sender).await?;
-        protocol::send(wormhole, &AppMessage::Iroh(iroh.info().await)).await?;
-        Prepared::Iroh(iroh)
+        let info = AppMessage::Iroh(iroh.info().await);
+        Prepared::Iroh(iroh).after(protocol::send(wormhole, &info).await)
     } else {
         let transit = global.transit(Role::Sender, wormhole.transit_key()).await;
-        protocol::send(wormhole, &AppMessage::Transit(transit.info())).await?;
-        Prepared::Classic(transit)
-    };
-    protocol::send(wormhole, &AppMessage::Offer(offer)).await?;
+        let info = AppMessage::Transit(transit.info());
+        Prepared::Classic(transit).after(protocol::send(wormhole, &info).await)
+    }
+    .await?;
+    let prepared = prepared
+        .after(protocol::send(wormhole, &AppMessage::Offer(offer)).await)
+        .await?;
 
     let answered = async {
         let (mut their_iroh, mut their_transit) = (None, TransitInfo::default());

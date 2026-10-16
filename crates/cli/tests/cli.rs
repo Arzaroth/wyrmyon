@@ -876,6 +876,7 @@ async fn a_failed_transfer_uses_up_its_turn_and_a_wrong_code_ends_the_run() {
     let said = collected.await.unwrap();
     assert!(!ok, "{said}");
     assert!(said.contains("Receiver 1 of 2: "), "{said}");
+    assert!(said.contains("transfer rejected"), "{said}");
     assert!(said.contains("Receiver 2 of 2: done"), "{said}");
     assert!(said.contains("1 of 2 transfers failed"), "{said}");
 
@@ -885,17 +886,17 @@ async fn a_failed_transfer_uses_up_its_turn_and_a_wrong_code_ends_the_run() {
             "--times",
             "2",
             "--code",
-            "7-guitarist-revenge",
+            "1234567-guitarist-revenge",
             "--text",
             "hi",
         ])
         .spawn()
         .unwrap();
     let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
-    assert_eq!(code, "7-guitarist-revenge");
+    assert_eq!(code, "1234567-guitarist-revenge");
     let (ok, _, stderr) = finish(
         wyrm(&server.url())
-            .args(["receive", "7-wrong-guess"])
+            .args(["receive", "1234567-wrong-guess"])
             .spawn()
             .unwrap(),
     )
@@ -910,4 +911,23 @@ async fn a_failed_transfer_uses_up_its_turn_and_a_wrong_code_ends_the_run() {
     );
     assert!(!said.contains("Waiting for receiver 2"), "{said}");
     assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
+}
+
+#[test]
+fn several_receivers_need_a_code_the_server_never_hands_out() {
+    let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args([
+            "send",
+            "--times",
+            "2",
+            "--code",
+            "7-guitarist-revenge",
+            "--text",
+            "x",
+        ])
+        .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("7 digits"));
 }
