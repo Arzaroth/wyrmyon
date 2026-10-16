@@ -21,6 +21,9 @@ done.
       `crowded` if the receiver releases only later; the Python client and
       wyrm release first, other clients are unchecked. Retry briefly on
       `crowded` if one does not.
+- [ ] `tests/peers.rs` once hung for hours in a full `cargo test`, waiting
+      on a `wyrm` child that had already exited (left defunct); it passes
+      alone in seconds. Find the test and put a timeout on its wait.
 - [ ] A directory from Linux holding names that differ only by case
       (`Makefile`, `makefile`) or Unicode normalization is refused whole on
       macOS and Windows (`create_new` fails on the second one); say which
