@@ -3,7 +3,7 @@ mod support;
 use std::process::Command;
 
 use serde_json::json;
-use support::{finish, read_code, read_hint, wyrm};
+use support::{finish, read_code, read_code_keeping, read_hint, wyrm};
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transport_classic::{Role, Transit};
 use wyrmyon_wormhole::{Config, Mood};
@@ -460,24 +460,7 @@ async fn transfer_with(
         .current_dir(from.path())
         .spawn()
         .unwrap();
-    let stderr = sender.stderr.take().unwrap();
-    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
-    let collected = tokio::spawn(async move {
-        use tokio::io::AsyncBufReadExt;
-        let mut lines = tokio::io::BufReader::new(stderr).lines();
-        let (mut all, mut code_tx) = (String::new(), Some(code_tx));
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(code) = line.split("code is: ").nth(1)
-                && let Some(tx) = code_tx.take()
-            {
-                let _ = tx.send(code.trim().to_owned());
-            }
-            all.push_str(&line);
-            all.push('\n');
-        }
-        all
-    });
-    let code = code_rx.await.unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
     let (receive_ok, _, receiver_log) = finish(
         wyrm(&server.url())
             .args(receive_flags)
@@ -812,4 +795,119 @@ async fn netcheck_reports_this_network() {
     assert!(ok, "{out}");
     assert!(out.contains("Relays          disabled"), "{out}");
     assert!(out.contains("Without relays"), "{out}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_code_serves_several_receivers_in_turn() {
+    let server = MailboxServer::start().await;
+    let from = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(from.path().join("t/sub")).unwrap();
+    std::fs::write(from.path().join("t/sub/x"), vec![5u8; 100_000]).unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--times", "3", "t"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    let nameplate: u32 = code.split('-').next().unwrap().parse().unwrap();
+    assert!(nameplate >= 1_000_000, "{code}");
+    for flags in [&[][..], &["--force-classic"], &["--force-classic"]] {
+        let to = tempfile::tempdir().unwrap();
+        let (ok, _, stderr) = finish(
+            wyrm(&server.url())
+                .args(flags)
+                .args(["receive", "--accept-file", &code])
+                .current_dir(to.path())
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(ok, "{stderr}");
+        assert_eq!(
+            std::fs::read(to.path().join("t/sub/x")).unwrap(),
+            vec![5u8; 100_000]
+        );
+    }
+    let (ok, _, _) = finish(sender).await;
+    let said = collected.await.unwrap();
+    assert!(ok, "{said}");
+    assert!(said.contains("serves 3 receivers"), "{said}");
+    assert!(said.contains("Waiting for receiver 3 of 3"), "{said}");
+    assert!(said.contains("Receiver 3 of 3: done"), "{said}");
+    assert_eq!(said.matches("Hashing..").count(), 1, "{said}");
+    assert_eq!(said.matches("Building zipfile..").count(), 1, "{said}");
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_transfer_uses_up_its_turn_and_a_wrong_code_ends_the_run() {
+    let server = MailboxServer::start().await;
+    let config = Config {
+        relay_url: server.url(),
+        ..Config::default()
+    };
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--times", "2", "--text", "hi"])
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    let mut refusing = wyrmyon_wormhole::join(&config, code.parse().unwrap())
+        .await
+        .unwrap()
+        .pair()
+        .await
+        .unwrap();
+    refusing.receive_json().await.unwrap();
+    refusing
+        .send_json(&json!({"error": "transfer rejected"}))
+        .await
+        .unwrap();
+    refusing.close(Mood::Happy).await;
+    let (ok, stdout, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", &code])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "hi\n");
+    let (ok, _, _) = finish(sender).await;
+    let said = collected.await.unwrap();
+    assert!(!ok, "{said}");
+    assert!(said.contains("Receiver 1 of 2: "), "{said}");
+    assert!(said.contains("Receiver 2 of 2: done"), "{said}");
+    assert!(said.contains("1 of 2 transfers failed"), "{said}");
+
+    let mut sender = wyrm(&server.url())
+        .args([
+            "send",
+            "--times",
+            "2",
+            "--code",
+            "7-guitarist-revenge",
+            "--text",
+            "hi",
+        ])
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    assert_eq!(code, "7-guitarist-revenge");
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "7-wrong-guess"])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(!ok, "{stderr}");
+    let (ok, _, _) = finish(sender).await;
+    let said = collected.await.unwrap();
+    assert!(!ok, "{said}");
+    assert!(
+        said.contains("receiver 1 of 2: the key exchange failed"),
+        "{said}"
+    );
+    assert!(!said.contains("Waiting for receiver 2"), "{said}");
+    assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
 }

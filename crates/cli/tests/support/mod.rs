@@ -41,6 +41,31 @@ pub async fn read_code(stream: impl AsyncRead + Unpin + Send + 'static) -> Strin
         .expect("the sender exited without printing a code")
 }
 
+pub async fn read_code_keeping(
+    stream: impl AsyncRead + Unpin + Send + 'static,
+) -> (String, tokio::task::JoinHandle<String>) {
+    let (code_tx, code_rx) = tokio::sync::oneshot::channel();
+    let collected = tokio::spawn(async move {
+        let mut lines = BufReader::new(stream).lines();
+        let (mut all, mut code_tx) = (String::new(), Some(code_tx));
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(code) = line.split("code is: ").nth(1)
+                && let Some(tx) = code_tx.take()
+            {
+                let _ = tx.send(code.trim().to_owned());
+            }
+            all.push_str(&line);
+            all.push('\n');
+        }
+        all
+    });
+    let code = tokio::time::timeout(TIMEOUT, code_rx)
+        .await
+        .expect("the sender never printed a code")
+        .expect("the sender exited without printing a code");
+    (code, collected)
+}
+
 pub async fn read_hint(stream: impl AsyncRead + Unpin + Send + 'static) -> (String, String) {
     let (found, hint) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
