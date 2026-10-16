@@ -34,6 +34,11 @@ impl Code {
     }
 
     #[must_use]
+    pub fn is_reusable(&self) -> bool {
+        self.nameplate().len() >= 7
+    }
+
+    #[must_use]
     pub(crate) fn with_nameplate(nameplate: &str, words: &str) -> Self {
         Self(format!("{nameplate}-{words}"))
     }
@@ -158,6 +163,11 @@ mod tests {
         assert!((1_000_000..10_000_000).contains(&nameplate));
         assert_eq!(code.as_str().split('-').count(), 4);
         assert!(looks_like_code(code.as_str()));
+        assert!(code.is_reusable());
+        let given: Code = "0000007-guitarist-revenge".parse().unwrap();
+        assert!(given.is_reusable());
+        let given: Code = "999999-guitarist-revenge".parse().unwrap();
+        assert!(!given.is_reusable());
     }
 
     #[test]
