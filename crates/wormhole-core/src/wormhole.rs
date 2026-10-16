@@ -239,6 +239,9 @@ impl Pending {
                 body: hex::encode(sealed),
             })
             .await?;
+        self.conn
+            .expect(|msg| matches!(msg, Inbound::Released).then_some(()))
+            .await?;
 
         let mut inbox = Inbox {
             their_side,

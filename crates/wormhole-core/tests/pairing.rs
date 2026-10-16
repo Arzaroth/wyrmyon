@@ -127,6 +127,39 @@ async fn a_third_side_is_turned_away_until_every_side_has_released() {
 }
 
 #[tokio::test]
+async fn a_paired_code_is_free_again_and_pairs_anew() {
+    let server = MailboxServer::start().await;
+    let config = config(&server, json!({}));
+    let first = within(wyrmyon_wormhole::create(&config, 2)).await.unwrap();
+    let code = first.code().clone();
+    let mut keys = Vec::new();
+    for sender in [Some(first), None] {
+        let sender = match sender {
+            Some(sender) => sender,
+            None => within(wyrmyon_wormhole::join(&config, code.clone()))
+                .await
+                .unwrap(),
+        };
+        let receiver = tokio::spawn({
+            let (config, code) = (config.clone(), code.clone());
+            async move {
+                within(async { wyrmyon_wormhole::join(&config, code).await?.pair().await })
+                    .await
+                    .unwrap()
+            }
+        });
+        let sender = within(sender.pair()).await.unwrap();
+        let receiver = receiver.await.unwrap();
+        assert_eq!(server.claimed_nameplates(), Vec::<String>::new());
+        assert_eq!(sender.key(), receiver.key());
+        keys.push(sender.key().clone());
+        within(sender.close(Mood::Happy)).await;
+        within(receiver.close(Mood::Happy)).await;
+    }
+    assert_ne!(keys[0], keys[1]);
+}
+
+#[tokio::test]
 async fn a_malformed_pake_message_fails_cleanly() {
     let server = MailboxServer::start().await;
     let pending = within(wyrmyon_wormhole::create(&config(&server, json!({})), 2))
