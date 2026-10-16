@@ -102,7 +102,18 @@ free; the iroh path is then a pure upgrade on top of it.
       the peer is known; our own JSON manifest as the first child, checked
       against the offer before any file data; the control stream unchanged.
 
+## M9 - Several receivers
+
+- [x] `wyrm send --times N` serves N receivers with one code, in turn.
+      Decided: a random 7-digit nameplate, past the server's allocator; a
+      fresh mailbox connection per receiver; the payload staged once; a
+      wrong code ends the run so the code allows one guess.
+
 ## Later
+
+- [ ] `--times` receivers served at once rather than in turn: one
+      mailbox connection per pairing in flight, and progress bars that can
+      share the terminal.
 
 - [ ] Publish the wheels to PyPI (`uvx wyrmyon`, `pipx install wyrmyon`) and
       a Homebrew formula in `Arzaroth/homebrew-tap`: needs the PyPI project

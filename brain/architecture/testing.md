@@ -42,14 +42,16 @@ pairs two `please relay` lines and splices them, and `IrohRelay`, n0's
 relay server (the `iroh-relay` crate's `server` feature) on a localhost
 port over plain HTTP, for `--iroh-relays http://...`. `start_with_welcome` sets the MOTD or a
 refusal. Like the real server it answers `error` to a third side on a
-nameplate (`crowded`), to anything before `bind` and to `add` before `open`.
+nameplate (`crowded`), to anything before `bind` and to `add` before `open`,
+and a side that released keeps its place on the nameplate until every side
+has released, and cannot claim it again (`reclaimed`).
 `claimed_nameplates()` and `moods()` let tests check that a session released
 its nameplate and closed with the right mood. It is a dev-dependency only.
 
 | Suite | What it covers |
 | --- | --- |
 | `crates/wormhole-core/src/*` unit tests | Key derivations pinned to the Python client's values, secretbox, code parsing and word choice, server message shapes |
-| `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same keys and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message, a crowded nameplate, a malicious peer's malformed PAKE; nameplates released and moods recorded every time. Every await has a 10 s timeout |
+| `crates/wormhole-core/tests/pairing.rs` | Two peers pairing through `MailboxServer`: same keys and verifier, `app_versions` exchanged, phases in order, a wrong code, the welcome message, a nameplate crowded until every side has released, the same code pairing again with a fresh key once both peers paired, a malicious peer's malformed PAKE; nameplates released and moods recorded every time. Every await has a 10 s timeout |
 | `crates/transport-classic/src/records.rs` unit tests | Oversized length, replayed record and tampered record all refused |
 | `crates/transport-classic/tests/transit.rs` | Two transits on localhost: handshake, records both ways including a 4 MiB one, mismatched keys never connecting, `NoConnection` when nothing is reachable, peers meeting only through `TransitRelay`, the relay taking over after the delay when the direct hints are dead |
 | `crates/transport-iroh/tests/blobs.rs` | A verified blob over a bound connection with the cache cleared after, blobs bigger or smaller than the offer refused and dropped, a 64 MiB transfer cut mid-way (the receiver stalls in its progress callback while the sender is aborted) that must fail, then resume strictly between 0 and the full size on a fresh connection, an import of a missing file, the provider counting the file as sent, a failed export that discards what it may have moved |

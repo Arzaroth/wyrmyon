@@ -31,6 +31,7 @@ wyrm                         # no arguments: prompt for a code (Tab completes), 
 wyrm 7-guitarist-revenge     # a code: receive
 wyrm receive --new           # receiver first: allocate a code and wait
 wyrm send --code CODE FILE   # use a code the receiver allocated
+wyrm send --times 3 FILE     # one code, three receivers in turn
 wyrm netcheck                # how this network lets peers connect directly
 ```
 

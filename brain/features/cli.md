@@ -37,7 +37,8 @@ can be piped in.
 
 The sender prints the code with what the other side should run, whether it
 allocated the code or was given one with `--code`: `wyrm CODE` (or
-`wormhole receive CODE`). After `receive --new` the receiver prints
+`wormhole receive CODE`). With `--times N` it prints them once for the
+whole run ([several-receivers.md](several-receivers.md)). After `receive --new` the receiver prints
 `wyrm send --code CODE FILE`. Under the `wormhole` name the two forms swap
 places ([wormhole-shim.md](wormhole-shim.md)). `wyrm send --qr` also
 draws `wormhole-transfer:CODE`, the URI the Python client puts in its QR code,

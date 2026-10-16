@@ -230,3 +230,16 @@ the repository rather than on a keyserver: users fetch it from
 .deb stays unsigned (apt ignores signatures on local files), and the MSI and
 any macOS package would need paid code-signing certificates, which the
 project does not have.
+
+## One code for several receivers: a 7-digit nameplate, in turn, ended by a wrong code
+
+`wyrm send --times N` reuses one code rather than printing one code per
+receiver, so a group chat gets a single code. The code would have been safe to
+reuse only if it were long, but ending the run at the first failed pairing
+keeps the attacker to one guess, as with any code, so the usual word count
+stays. The nameplate is a random 7-digit number because the server hands out
+1 to 999999 and would give a freed small nameplate to a stranger between two
+receivers, whose receiver would then meet ours and fail both. Receivers take
+turns because the server counts a released side on a nameplate until every
+side has released; serving them at once is in the roadmap. The cost of
+reuse: anyone who sees the code can take a turn until the N are used up.

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `wyrm send --times N` serves N receivers with one code, one after
+  another, so the same files can go to several people. Each receiver can
+  run any magic-wormhole client. The generated code sits on a 7-digit
+  nameplate the server never hands out, a failed transfer uses up its turn,
+  and a wrong code ends the run, so the code still allows a single guess.
+
 ## [0.3.0] - 2026-10-14
 
 ### Added

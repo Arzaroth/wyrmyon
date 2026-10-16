@@ -12,7 +12,7 @@ implementation, checked against the Python client (`wormhole` 0.22); see
 | --- | --- |
 | `create(&Config, words)` | Binds, allocates a nameplate, claims it, opens the mailbox, sends the PAKE message. Returns a `Pending` holding the generated `Code` |
 | `join(&Config, Code)` | The same with a known code, without allocating |
-| `Pending::pair()` | Waits for the peer's PAKE message, releases the nameplate, derives the key, exchanges version messages. Returns a `Wormhole` |
+| `Pending::pair()` | Waits for the peer's PAKE message, releases the nameplate, derives the key, exchanges version messages, and waits for the server's `released`. Returns a `Wormhole`, with the nameplate free for the next claim |
 | `Pending::abandon()` | Releases the nameplate and closes the mailbox `lonely` |
 | `Wormhole::send` / `receive` (and `_json`) | Numbered phases `0, 1, 2...`, encrypted, delivered in order |
 | `Wormhole::their_app_versions()` | The peer's `app_versions`, where capability adverts live |
@@ -44,7 +44,7 @@ server acks each one. The session runs:
    password and the appid as identity.
 5. On the peer's `pake`: `release {nameplate}`, finish SPAKE2 into the
    32-byte wormhole key, `add {phase: "version"}` with
-   `{"app_versions": ...}` encrypted.
+   `{"app_versions": ...}` encrypted, then wait for `released`.
 6. The peer's `version` must decrypt, or the code was wrong: close `scary`,
    `Error::WrongCode`.
 7. Application messages are phases `"0"`, `"1"`, ... each encrypted with its own
@@ -90,6 +90,9 @@ words (`7--x`, `7-x-`); its `Debug`
 hides the value. `choose_words` alternates the PGP word list's odd and even
 words starting with odd, as the Python client does; `completions` follows the
 same rule. `wordlist_data.rs` is generated from the Python client's list.
+`Code::reusable` puts the words on a random 7-digit nameplate, past what the
+server allocates, for a code used more than once
+([several-receivers.md](../features/several-receivers.md)).
 
 ## Sources
 
