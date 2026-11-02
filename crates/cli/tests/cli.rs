@@ -1007,3 +1007,38 @@ async fn one_hashed_file_serves_two_iroh_receivers() {
     let said = collected.await.unwrap();
     assert!(said.matches("Hashing..").count() <= 1, "{said}");
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_the_sender_cannot_read_fails_both_sides_over_iroh() {
+    use std::os::unix::fs::PermissionsExt;
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let locked = from.path().join("locked.bin");
+    std::fs::write(&locked, vec![3u8; 100_000]).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::File::open(&locked).is_ok() {
+        return;
+    }
+    let mut sender = wyrm(&server.url())
+        .args(["send", "locked.bin"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(!ok);
+    assert!(
+        stderr.contains("the sender could not read its data"),
+        "{stderr}"
+    );
+    assert!(!finish(sender).await.0);
+    assert!(!to.path().join("locked.bin").exists());
+}
