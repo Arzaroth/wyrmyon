@@ -8,7 +8,11 @@
   45, whose rpm 6 refuses a package it cannot check, and the check installed
   the .rpm without the release key. They now import the key as a user must,
   and the README says to `rpm --import` it before `dnf install`. This is the
-  first published release of the 0.5.0 changes below.
+  first published release of the
+  [0.5.0 changes](https://github.com/Arzaroth/wyrmyon/blob/master/CHANGELOG.md#050---2026-11-02):
+  `wyrm send -R`, `wyrm receive --overwrite`, several paths landing side by
+  side on another wyrm, hashing while the code waits, and the receiver's
+  spinner.
 
 ## [0.5.0] - 2026-11-02
 
