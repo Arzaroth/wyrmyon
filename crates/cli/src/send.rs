@@ -450,6 +450,21 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
     Ok(Payload::File(path, offer))
 }
 
+fn top_names(entries: &[zipdir::Entry]) -> Vec<String> {
+    let named = entries.iter().filter_map(|entry| match entry {
+        zipdir::Entry::File { name, .. } | zipdir::Entry::EmptyDir(name) => {
+            (!name.is_empty()).then_some(name)
+        }
+    });
+    let top: std::collections::BTreeSet<String> = named
+        .map(|name| match name.split_once('/') {
+            Some((first, _)) => format!("{first}/"),
+            None => name.clone(),
+        })
+        .collect();
+    top.into_iter().collect()
+}
+
 pub fn kept(path: &Path) -> anyhow::Result<PathBuf> {
     let text = path
         .to_str()
@@ -560,6 +575,11 @@ async fn send_tree(
         numbytes: built.numbytes,
         numfiles: built.numfiles,
         bundle,
+        names: if bundle {
+            top_names(entries)
+        } else {
+            Vec::new()
+        },
     };
     let size = offer.zipsize;
     let path = built.file.path().to_owned();
@@ -599,6 +619,11 @@ async fn send_collection(
             numbytes: manifest.numbytes(),
             numfiles: manifest.files.len() as u64,
             bundle,
+            names: if bundle {
+                top_names(entries)
+            } else {
+                Vec::new()
+            },
         };
         staged.collection = Some((offered, offer));
     }

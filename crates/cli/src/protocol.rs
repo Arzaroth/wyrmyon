@@ -45,6 +45,8 @@ pub struct DirectoryOffer {
     pub numfiles: u64,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub bundle: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +56,8 @@ pub struct CollectionOffer {
     pub numfiles: u64,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub bundle: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,6 +121,7 @@ mod tests {
             numbytes: 1,
             numfiles: 1,
             bundle: false,
+            names: Vec::new(),
         };
         assert_eq!(
             serde_json::to_value(&offer).unwrap(),
@@ -129,9 +134,11 @@ mod tests {
             numbytes: 1,
             numfiles: 1,
             bundle: true,
+            names: vec!["etc/".into()],
         };
         let value = serde_json::to_value(&offer).unwrap();
         assert_eq!(value["bundle"], true);
+        assert_eq!(value["names"], json!(["etc/"]));
         let back: DirectoryOffer = serde_json::from_value(value).unwrap();
         assert!(back.bundle);
     }

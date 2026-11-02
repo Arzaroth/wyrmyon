@@ -211,10 +211,9 @@ impl Connection {
     }
 }
 
-#[derive(Clone, Copy)]
 enum Target<'a> {
     Named(&'a str),
-    Bundle,
+    Bundle(&'a [String]),
 }
 
 async fn receive_payload(
@@ -300,8 +299,8 @@ async fn accept(
 ) -> anyhow::Result<(PathBuf, Partial, tokio::fs::File)> {
     let classic = matches!(connection, Connection::Classic(..));
     let (dest, next_to, name, replacing) = match target {
-        Target::Bundle => {
-            let base = bundle_base(wormhole, classic, global, args, describe).await?;
+        Target::Bundle(names) => {
+            let base = bundle_base(wormhole, classic, global, args, describe, names).await?;
             let name = "wyrm-bundle".to_owned();
             (base.clone(), base.join(&name), name, false)
         }
@@ -341,8 +340,12 @@ async fn bundle_base(
     global: &Global,
     args: &ReceiveArgs,
     describe: &str,
+    names: &[String],
 ) -> anyhow::Result<PathBuf> {
     require_iroh(wormhole, global, classic).await?;
+    if merge::named(names).is_none() {
+        return refuse(wormhole, "the sender did not name what the bundle holds").await;
+    }
     let base = args
         .output_file
         .clone()
@@ -354,7 +357,7 @@ async fn bundle_base(
         );
         return refuse(wormhole, &why).await;
     }
-    consent(wormhole, args, describe, &base).await?;
+    consent(wormhole, args, describe, &base, &merge::listing(names)).await?;
     if let Err(e) = std::fs::create_dir_all(&base) {
         protocol::send_error(wormhole, "the receiver cannot write there").await?;
         return Err(e).with_context(|| format!("creating {}", base.display()));
@@ -399,7 +402,7 @@ async fn destination(
         Some(_) => eprintln!("Overwriting {}", dest.display()),
         None => {}
     }
-    consent(wormhole, args, describe, &dest).await?;
+    consent(wormhole, args, describe, &dest, "").await?;
     Ok((dest, name, existing.is_some()))
 }
 
@@ -408,8 +411,10 @@ async fn consent(
     args: &ReceiveArgs,
     describe: &str,
     dest: &Path,
+    listing: &str,
 ) -> anyhow::Result<()> {
     eprintln!("Receiving {describe} into: {}", dest.display());
+    eprint!("{listing}");
     if !args.accept_file {
         match confirm("ok? (Y/n) ").await {
             Ok(true) => {}
@@ -457,7 +462,8 @@ async fn receive_directory(
     if offer.mode != "zipfile/deflated" {
         return refuse(wormhole, "unknown directory transfer mode").await;
     }
-    let describe = if offer.bundle {
+    let bundle = offer.bundle;
+    let describe = if bundle {
         format!(
             "{} files ({} bytes, {} bytes compressed)",
             offer.numfiles, offer.numbytes, offer.zipsize
@@ -470,8 +476,8 @@ async fn receive_directory(
     };
     let incoming = receive_payload(
         wormhole,
-        if offer.bundle {
-            Target::Bundle
+        if bundle {
+            Target::Bundle(&offer.names)
         } else {
             Target::Named(&offer.dirname)
         },
@@ -490,12 +496,13 @@ async fn receive_directory(
     };
     let (target, zip) = (incoming.dest.clone(), incoming.partial.path.clone());
     let replacing = incoming.partial.replacing;
-    let (bundle, overwrite) = (offer.bundle, args.overwrite);
+    let overwrite = args.overwrite;
+    let names = merge::named(&offer.names).unwrap_or_default();
     let cancel = zipdir::Cancel::default();
     let _cancel_on_drop = cancel.on_drop();
     let unpacked = tokio::task::spawn_blocking(move || {
         if bundle {
-            let mut merge = Merge::new(&target, overwrite);
+            let mut merge = Merge::new(&target, overwrite, names);
             zipdir::extract_with(&zip, &mut merge, &limits, &cancel)?;
             merge.keep();
             return anyhow::Ok(());
@@ -535,7 +542,7 @@ async fn collection_target(
         )
     };
     if offer.bundle {
-        let base = bundle_base(wormhole, false, global, args, &describe).await?;
+        let base = bundle_base(wormhole, false, global, args, &describe, &offer.names).await?;
         return Ok((base.clone(), base, None));
     }
     let (dest, _, replacing) =
@@ -594,9 +601,10 @@ async fn receive_collection(
             let why = format!("{} cannot be written here", printable(bad));
             return Err(listed.refuse(&why).await.into());
         }
+        let names = merge::named(&offer.names).unwrap_or_default();
         if let Some(why) = offer
             .bundle
-            .then(|| merge::clashing(&dest, manifest, args.overwrite))
+            .then(|| merge::clashing(&dest, manifest, args.overwrite, &names))
             .flatten()
         {
             return Err(listed.refuse(&why).await.into());
@@ -604,7 +612,7 @@ async fn receive_collection(
         let fetched = listed.fetch(&pipe, &mut |n| bar.set_position(n)).await?;
         transfer::finale(&bar).await;
         if offer.bundle {
-            return merge::export(fetched, &dest, args.overwrite).await;
+            return merge::export(fetched, &dest, args.overwrite, names).await;
         }
         fetched.export_into(&into).await?;
         if into != dest {

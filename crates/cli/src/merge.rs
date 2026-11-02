@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -26,15 +27,63 @@ pub fn clash(into: &Path, path: &Path, dir: bool, overwrite: bool) -> Option<Str
     }
 }
 
-pub fn clashing(into: &Path, manifest: &Manifest, overwrite: bool) -> Option<String> {
+const LISTED: usize = 20;
+
+pub fn named(names: &[String]) -> Option<BTreeSet<String>> {
+    let set: BTreeSet<String> = names
+        .iter()
+        .map(|name| name.strip_suffix('/').unwrap_or(name).to_owned())
+        .collect();
+    let usable = set
+        .iter()
+        .all(|name| crate::usable_name(name, cfg!(windows)) && !name.contains(['/', '\\']));
+    (usable && !set.is_empty()).then_some(set)
+}
+
+pub fn listing(names: &[String]) -> String {
+    use std::fmt::Write;
+    let mut listed = String::new();
+    for name in names.iter().take(LISTED) {
+        let _ = writeln!(listed, "  {}", printable(name));
+    }
+    if names.len() > LISTED {
+        let _ = writeln!(listed, "  and {} more", names.len() - LISTED);
+    }
+    listed
+}
+
+pub fn outside(names: &BTreeSet<String>, path: &Path) -> Option<String> {
+    let first = path.components().next()?;
+    let first = first.as_os_str().to_str()?;
+    (!names.contains(first)).then(|| {
+        format!(
+            "{} is not under a name the sender offered",
+            printable(&path.display().to_string())
+        )
+    })
+}
+
+pub fn clashing(
+    into: &Path,
+    manifest: &Manifest,
+    overwrite: bool,
+    names: &BTreeSet<String>,
+) -> Option<String> {
     let files = manifest.files.iter().map(|f| (&f.path, false));
     files
         .chain(manifest.dirs.iter().map(|d| (d, true)))
-        .find_map(|(path, dir)| clash(into, Path::new(path), dir, overwrite))
+        .find_map(|(path, dir)| {
+            outside(names, Path::new(path)).or_else(|| clash(into, Path::new(path), dir, overwrite))
+        })
 }
 
-pub async fn export(collection: Collection, into: &Path, overwrite: bool) -> anyhow::Result<()> {
-    let mut merge = Merge::new(into, overwrite);
+pub async fn export(
+    collection: Collection,
+    into: &Path,
+    overwrite: bool,
+    names: BTreeSet<String>,
+) -> anyhow::Result<()> {
+    let mut merge = Merge::new(into, overwrite, names);
     collection.export_with(&mut merge).await?;
     merge.keep();
     Ok(())
@@ -43,6 +92,7 @@ pub async fn export(collection: Collection, into: &Path, overwrite: bool) -> any
 pub struct Merge {
     into: PathBuf,
     overwrite: bool,
+    names: BTreeSet<String>,
     dirs: Vec<PathBuf>,
     files: Vec<PathBuf>,
     partial: Option<PathBuf>,
@@ -50,10 +100,11 @@ pub struct Merge {
 }
 
 impl Merge {
-    pub fn new(into: &Path, overwrite: bool) -> Self {
+    pub fn new(into: &Path, overwrite: bool, names: BTreeSet<String>) -> Self {
         Self {
             into: into.to_owned(),
             overwrite,
+            names,
             dirs: Vec::new(),
             files: Vec::new(),
             partial: None,
@@ -68,6 +119,9 @@ impl Merge {
 
 impl Placement for Merge {
     fn dir(&mut self, path: &Path) -> io::Result<()> {
+        if let Some(why) = outside(&self.names, path) {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, why));
+        }
         let mut at = self.into.clone();
         for part in path.components() {
             at.push(part);
@@ -87,6 +141,9 @@ impl Placement for Merge {
     }
 
     fn file(&mut self, path: &Path) -> io::Result<PathBuf> {
+        if let Some(why) = outside(&self.names, path) {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, why));
+        }
         if let Some(parent) = path.parent() {
             self.dir(parent)?;
         }
@@ -156,6 +213,34 @@ impl Drop for Merge {
 mod tests {
     use super::*;
 
+    fn top() -> BTreeSet<String> {
+        ["etc", "void", "a", "sub", "moved", "other"]
+            .map(String::from)
+            .into()
+    }
+
+    #[test]
+    fn a_path_outside_the_offered_names_is_refused() {
+        let into = tempfile::tempdir().unwrap();
+        let mut merge = Merge::new(into.path(), false, top());
+        let refused = merge.file(Path::new(".ssh/authorized_keys")).unwrap_err();
+        assert!(
+            refused.to_string().contains("not under a name"),
+            "{refused}"
+        );
+        assert!(merge.dir(Path::new(".git/hooks")).is_err());
+        assert_eq!(named(&["a.txt".into(), "photos/".into()]).unwrap().len(), 2);
+        assert_eq!(named(&[]), None);
+        assert_eq!(named(&["a/b".into()]), None);
+        assert_eq!(named(&["..".into()]), None);
+        let many: Vec<String> = (0..25).map(|n| format!("f{n}")).collect();
+        let listed = listing(&many);
+        assert!(
+            listed.starts_with("  f0\n") && listed.ends_with("  and 5 more\n"),
+            "{listed}"
+        );
+    }
+
     fn written(merge: &mut Merge, path: &str, contents: &[u8]) -> io::Result<()> {
         let partial = merge.file(Path::new(path))?;
         std::fs::write(&partial, contents)?;
@@ -202,7 +287,7 @@ mod tests {
         let into = into.path();
         std::fs::create_dir_all(into.join("etc/x")).unwrap();
         std::fs::write(into.join("etc/x/keep"), b"mine").unwrap();
-        let mut merge = Merge::new(into, false);
+        let mut merge = Merge::new(into, false, top());
         written(&mut merge, "etc/x/y.conf", b"new").unwrap();
         written(&mut merge, "etc/z/w.conf", b"new").unwrap();
         merge.dir(Path::new("void/inner")).unwrap();
@@ -233,7 +318,7 @@ mod tests {
         let into = tempfile::tempdir().unwrap();
         let into = into.path();
         std::fs::write(into.join("a"), b"old").unwrap();
-        let mut merge = Merge::new(into, true);
+        let mut merge = Merge::new(into, true, top());
         written(&mut merge, "a", b"new").unwrap();
         written(&mut merge, "sub/b", b"new").unwrap();
         merge.keep();
@@ -249,7 +334,7 @@ mod tests {
         let into = tempfile::tempdir().unwrap();
         let into = into.path();
         std::fs::write(into.join("etc"), b"a file").unwrap();
-        let mut merge = Merge::new(into, true);
+        let mut merge = Merge::new(into, true, top());
         let refused = merge.file(Path::new("etc/x")).unwrap_err();
         assert!(refused.to_string().ends_with("is in the way"), "{refused}");
         let partial = merge.file(Path::new("other")).unwrap();
@@ -262,7 +347,7 @@ mod tests {
     fn a_file_that_appears_meanwhile_is_kept_and_the_partial_dropped() {
         let into = tempfile::tempdir().unwrap();
         let into = into.path();
-        let mut merge = Merge::new(into, false);
+        let mut merge = Merge::new(into, false, top());
         let partial = merge.file(Path::new("a")).unwrap();
         std::fs::write(&partial, b"theirs").unwrap();
         std::fs::write(into.join("a"), b"mine").unwrap();
@@ -281,7 +366,7 @@ mod tests {
     fn what_cannot_be_hard_linked_is_moved_instead() {
         let into = tempfile::tempdir().unwrap();
         let into = into.path();
-        let mut merge = Merge::new(into, false);
+        let mut merge = Merge::new(into, false, top());
         let partial = merge.file(Path::new("moved")).unwrap();
         std::fs::create_dir(&partial).unwrap();
         merge.placed(Path::new("moved"), &partial).unwrap();
@@ -294,7 +379,7 @@ mod tests {
     fn a_merge_into_nothing_fails_without_leaving_anything() {
         let into = tempfile::tempdir().unwrap();
         let missing = into.path().join("missing");
-        let mut merge = Merge::new(&missing, false);
+        let mut merge = Merge::new(&missing, false, top());
         let failed = merge.file(Path::new("a/b")).unwrap_err();
         assert_eq!(failed.kind(), io::ErrorKind::NotFound);
         drop(merge);
