@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `wyrm receive --overwrite` replaces a file already at the destination. It
+  never replaces a directory.
+
 ### Changed
 
 - The sender hashes what it sends for iroh while the code waits for its

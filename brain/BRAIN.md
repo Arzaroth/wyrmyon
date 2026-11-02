@@ -37,6 +37,7 @@ wyrmyon.
 | Which servers does it talk to, and why always the public mailbox? | [architecture/servers.md](architecture/servers.md) |
 | What does `wyrm` do without a subcommand? | [features/cli.md](features/cli.md) |
 | How does an interrupted transfer resume, and where is the cache? | [features/resume.md](features/resume.md) |
+| Can a transfer replace a file the receiver already has? | [features/files.md](features/files.md) |
 | Can one code serve several receivers? | [features/several-receivers.md](features/several-receivers.md) |
 | How is the iroh connection authenticated? | [architecture/iroh-v1.md](architecture/iroh-v1.md) |
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |

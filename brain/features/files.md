@@ -51,8 +51,9 @@ too, as the Python client does; `wyrm send --qr` adds a QR code of it
    without a `transit` message, all before asking anything.
 3. Refuses to overwrite: anything at the destination, a dangling symlink
    included, is answered with an `error`. `-o DIR` naming an existing
-   directory puts the file inside it, as the Python client does. Only under
-   the `wormhole` name does `-o` replace an existing file
+   directory puts the file inside it, as the Python client does.
+   `--overwrite` replaces a file there (printing `Overwriting <path>`), never
+   a directory; under the `wormhole` name, `-o` alone does the same
    ([wormhole-shim.md](wormhole-shim.md)).
 4. Asks `ok? (Y/n)` unless `--accept-file`: Enter alone or any answer
    starting with `y` accepts, as in the Python client, and end of input
