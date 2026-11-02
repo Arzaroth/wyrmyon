@@ -174,15 +174,26 @@ fn only_regular_files_are_offered() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sender_that_sends_more_than_it_offered_leaves_nothing_behind() {
+    for overwrite in [false, true] {
+        a_sender_sends_more_than_it_offered(overwrite).await;
+    }
+}
+
+async fn a_sender_sends_more_than_it_offered(overwrite: bool) {
     let server = MailboxServer::start().await;
     let config = Config {
         relay_url: server.url(),
         ..Config::default()
     };
     let to = tempfile::tempdir().unwrap();
+    if overwrite {
+        std::fs::write(to.path().join("x.bin"), b"old").unwrap();
+    }
     let pending = wyrmyon_wormhole::create(&config, 2).await.unwrap();
     let receiver = wyrm(&server.url())
-        .args(["receive", "--accept-file", pending.code().as_str()])
+        .args(["receive", "--accept-file"])
+        .args(overwrite.then_some("--overwrite"))
+        .arg(pending.code().as_str())
         .current_dir(to.path())
         .spawn()
         .unwrap();
@@ -211,7 +222,12 @@ async fn a_sender_that_sends_more_than_it_offered_leaves_nothing_behind() {
     let (ok, _, stderr) = finish(receiver).await;
     assert!(!ok);
     assert!(stderr.contains("more than"), "{stderr}");
-    assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 0);
+    if overwrite {
+        assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 1);
+        assert_eq!(std::fs::read(to.path().join("x.bin")).unwrap(), b"old");
+    } else {
+        assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 0);
+    }
     wormhole.close(Mood::Happy).await;
 }
 
@@ -1084,7 +1100,7 @@ async fn overwrite_replaces_a_file_but_never_a_directory() {
     )
     .await;
     assert!(sent && received, "{stderr}");
-    assert!(stderr.contains("Overwriting"), "{stderr}");
+    assert!(stderr.contains("Overwriting a.txt"), "{stderr}");
     assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), b"new");
 
     std::fs::remove_file(to.path().join("a.txt")).unwrap();
@@ -1102,4 +1118,51 @@ async fn overwrite_replaces_a_file_but_never_a_directory() {
         stderr.contains("not deleting the existing directory"),
         "{stderr}"
     );
+    assert!(to.path().join("a.txt").is_dir());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overwrite_keeps_the_old_file_when_the_offer_is_not_accepted() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"new").unwrap();
+    std::fs::write(to.path().join("a.txt"), b"old").unwrap();
+    let receiving = ["receive", "--overwrite"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "a.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(!sent && !received, "{stderr}");
+    assert!(stderr.contains("without a terminal"), "{stderr}");
+    assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), b"old");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overwrite_lets_a_directory_replace_a_file_over_iroh_or_a_zip() {
+    let server = MailboxServer::start().await;
+    let from = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(from.path().join("tree/sub")).unwrap();
+    std::fs::write(from.path().join("tree/sub/b.txt"), b"inside").unwrap();
+    for flags in [&[][..], &["--force-classic"]] {
+        let to = tempfile::tempdir().unwrap();
+        std::fs::write(to.path().join("tree"), b"a file").unwrap();
+        let sending = [flags, &["send", "tree"]].concat();
+        let receiving = ["receive", "--accept-file", "--overwrite"];
+        let (sent, received, stderr) =
+            handed(&server, from.path(), &sending, to.path(), &receiving).await;
+        assert!(sent && received, "{flags:?}: {stderr}");
+        assert_eq!(
+            std::fs::read(to.path().join("tree/sub/b.txt")).unwrap(),
+            b"inside"
+        );
+        assert_eq!(
+            std::fs::read_dir(to.path()).unwrap().count(),
+            1,
+            "{flags:?}"
+        );
+    }
 }

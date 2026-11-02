@@ -108,6 +108,7 @@ fn what_wyrmyon_cannot_do_fails_before_the_network() {
             "only speaks the standard appid",
         ),
         (&["rx", "-c", "3"], "Must use --allocate with --code-length"),
+        (&["rx", "--overwrite"], "--overwrite"),
     ] {
         let (ok, _, stderr) = offline(args);
         assert!(!ok, "{args:?}");
