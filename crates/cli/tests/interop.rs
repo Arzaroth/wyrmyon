@@ -294,7 +294,7 @@ async fn kept_paths_reach_python_inside_files() {
     std::fs::write(from.path().join("c.txt"), b"gamma").unwrap();
     let mut sender = wyrm(&mailbox.url)
         .args(["--no-listen", "--transit-helper", &hint])
-        .args(["send", "-R", "tree", "c.txt"])
+        .args(["send", "-R", "tree/sub", "c.txt"])
         .current_dir(from.path())
         .spawn()
         .unwrap();
@@ -310,7 +310,12 @@ async fn kept_paths_reach_python_inside_files() {
     .await;
     assert!(ok, "{stderr}");
     assert!(finish(sender).await.0);
-    assert_same_tree(&to.path().join("files/tree"));
+    assert_eq!(
+        std::fs::read(to.path().join("files/tree/sub/b.bin")).unwrap(),
+        blob(500_000)
+    );
+    assert!(to.path().join("files/tree/sub/empty").is_dir());
+    assert!(!to.path().join("files/tree/a.txt").exists());
     assert_eq!(
         std::fs::read(to.path().join("files/c.txt")).unwrap(),
         b"gamma"

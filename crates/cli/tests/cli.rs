@@ -1274,3 +1274,86 @@ async fn a_bundle_needs_a_directory_to_land_in() {
         b"a"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_holding_the_same_content_twice_lands_whole() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for dir in ["a", "b"] {
+        std::fs::create_dir(from.path().join(dir)).unwrap();
+        std::fs::write(from.path().join(dir).join("big.bin"), vec![9u8; 50_000]).unwrap();
+    }
+    let receiving = ["receive", "--accept-file"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "a", "b"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(sent && received, "{stderr}");
+    for dir in ["a", "b"] {
+        assert_eq!(
+            std::fs::read(to.path().join(dir).join("big.bin")).unwrap(),
+            vec![9u8; 50_000]
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_receiver_that_hides_it_is_a_wyrm_gets_a_bundle_inside_files() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"a").unwrap();
+    std::fs::write(from.path().join("b.txt"), b"b").unwrap();
+    let receiving = ["--force-classic", "receive", "--accept-file"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "a.txt", "b.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(sent && received, "{stderr}");
+    assert!(stderr.contains("Receiving directory"), "{stderr}");
+    assert_eq!(std::fs::read(to.path().join("files/a.txt")).unwrap(), b"a");
+    assert!(!to.path().join("a.txt").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_lists_its_names_and_takes_back_what_it_placed_when_a_later_file_clashes() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"new").unwrap();
+    std::fs::create_dir(from.path().join("sub")).unwrap();
+    std::fs::write(from.path().join("sub/b.txt"), b"new").unwrap();
+    std::fs::create_dir(to.path().join("sub")).unwrap();
+    std::fs::write(to.path().join("sub/b.txt"), b"old").unwrap();
+    let sending = ["--force-classic", "send", "a.txt", "sub"];
+    let receiving = ["receive", "--accept-file"];
+    let (sent, received, stderr) =
+        handed(&server, from.path(), &sending, to.path(), &receiving).await;
+    assert!(!sent && !received, "{stderr}");
+    assert!(stderr.contains("into: .\n  a.txt\n  sub/\n"), "{stderr}");
+    assert!(stderr.contains("refusing to overwrite"), "{stderr}");
+    assert!(!to.path().join("a.txt").exists());
+    assert_eq!(std::fs::read(to.path().join("sub/b.txt")).unwrap(), b"old");
+    assert_eq!(std::fs::read_dir(to.path().join("sub")).unwrap().count(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_marker_in_a_kept_path_says_where_it_starts() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir_all(from.path().join("etc/x")).unwrap();
+    std::fs::write(from.path().join("etc/x/y.conf"), b"conf").unwrap();
+    let receiving = ["receive", "--accept-file"];
+    let sending = ["send", "-R", "etc/./x/y.conf"];
+    let (sent, received, stderr) =
+        handed(&server, from.path(), &sending, to.path(), &receiving).await;
+    assert!(sent && received, "{stderr}");
+    assert_eq!(std::fs::read(to.path().join("x/y.conf")).unwrap(), b"conf");
+    assert!(!to.path().join("etc").exists());
+}
