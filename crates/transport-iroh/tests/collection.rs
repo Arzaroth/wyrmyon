@@ -319,3 +319,17 @@ fn hex(bytes: &[u8; 32]) -> String {
         out
     })
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn importing_a_collection_counts_up_to_every_byte_it_hashed() {
+    let dir = tempfile::tempdir().unwrap();
+    let sources = sources(dir.path(), &[("a", data(300_000)), ("b", data(20))]);
+    let mut seen = Vec::new();
+    let (offered, manifest) =
+        Offered::import_collection_with_progress(&sources, &[], &mut |n| seen.push(n))
+            .await
+            .unwrap();
+    assert!(seen.is_sorted(), "{seen:?}");
+    assert_eq!(seen.last(), Some(&manifest.numbytes()));
+    offered.close().await;
+}

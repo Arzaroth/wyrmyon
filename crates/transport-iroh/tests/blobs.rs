@@ -164,3 +164,25 @@ async fn importing_something_that_is_not_there_fails() {
     let dir = tempfile::tempdir().unwrap();
     assert!(Offered::import(&dir.path().join("missing")).await.is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn importing_a_file_counts_no_more_than_its_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.bin");
+    std::fs::write(&source, data(1_000_000)).unwrap();
+    let mut seen = Vec::new();
+    let offered = Offered::import_with_progress(&source, &mut |n| seen.push(n))
+        .await
+        .unwrap();
+    assert!(seen.is_sorted(), "{seen:?}");
+    assert!(seen.iter().all(|&n| n <= 1_000_000), "{seen:?}");
+    offered.close().await;
+    let mut seen = Vec::new();
+    let missing = dir.path().join("missing");
+    assert!(
+        Offered::import_with_progress(&missing, &mut |n| seen.push(n))
+            .await
+            .is_err()
+    );
+    assert_eq!(seen, Vec::<u64>::new());
+}

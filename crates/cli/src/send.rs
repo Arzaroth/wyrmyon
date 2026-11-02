@@ -660,3 +660,32 @@ async fn send_over(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dropping_a_hashing_stops_its_task() {
+        let (held, released) = tokio::sync::oneshot::channel::<()>();
+        let hashing = Hashing::<()>::start(0, move |_| async move {
+            let _held = held;
+            std::future::pending().await
+        });
+        drop(hashing);
+        assert!(released.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn aborting_a_finished_hashing_hands_back_what_it_imported() {
+        let hashing = Hashing::start(0, |mut progress| async move {
+            progress(7);
+            Ok(7)
+        });
+        while !hashing.task.as_ref().unwrap().is_finished() {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(hashing.hashed.load(Ordering::Relaxed), 7);
+        assert_eq!(hashing.abort().await, Some(7));
+    }
+}

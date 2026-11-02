@@ -313,6 +313,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_spinner_hides_on_request_and_ticks_in_ascii_when_asked() {
+        assert!(spinner(true, false).is_hidden());
+        let ascii = spinner(false, true);
+        assert!(!ascii.is_finished());
+        ascii.finish_and_clear();
+    }
+
+    #[tokio::test]
     async fn the_announcer_follows_the_route_until_the_pipe_goes() {
         let (tx, rx) = watch::channel(Some(Route::Relay));
         let announcer = announce_routes(rx, Some(Route::Relay), progress(0, true, false, false));
