@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, anyhow, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
-use wyrmyon_transport_iroh::{IrohTransport, Offered, Role as IrohRole, Source};
+use wyrmyon_transport_iroh::{IrohTransport, Manifest, Offered, Role as IrohRole, Source};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::protocol::{
@@ -51,15 +52,140 @@ struct Staged {
     zip: Option<zipdir::Built>,
     blob: Option<Offered>,
     collection: Option<(Offered, CollectionOffer)>,
+    blob_ahead: Option<Hashing<Offered>>,
+    collection_ahead: Option<Hashing<(Offered, Manifest)>>,
 }
 
 impl Staged {
-    async fn close(self) {
+    fn hash_ahead(&mut self, payload: &Payload) {
+        match payload {
+            Payload::Text(_) => {}
+            Payload::File(path, offer) => {
+                self.blob_ahead = Some(Hashing::blob(path.clone(), offer.filesize));
+            }
+            Payload::Tree(_, entries) => {
+                self.collection_ahead = Some(Hashing::collection(entries));
+            }
+        }
+    }
+
+    async fn drop_blob_ahead(&mut self) {
+        if let Some(ahead) = self.blob_ahead.take()
+            && let Some(offered) = ahead.abort().await
+        {
+            offered.close().await;
+        }
+    }
+
+    async fn drop_collection_ahead(&mut self) {
+        if let Some(ahead) = self.collection_ahead.take()
+            && let Some((offered, _)) = ahead.abort().await
+        {
+            offered.close().await;
+        }
+    }
+
+    async fn close(mut self) {
+        self.drop_blob_ahead().await;
+        self.drop_collection_ahead().await;
         if let Some(blob) = self.blob {
             blob.close().await;
         }
         if let Some((offered, _)) = self.collection {
             offered.close().await;
+        }
+    }
+}
+
+struct Hashing<T> {
+    hashed: Arc<AtomicU64>,
+    total: u64,
+    task: Option<tokio::task::JoinHandle<Result<T, wyrmyon_transport_iroh::Error>>>,
+}
+
+impl<T: Send + 'static> Hashing<T> {
+    fn start<F>(total: u64, import: impl FnOnce(Box<dyn FnMut(u64) + Send>) -> F) -> Self
+    where
+        F: Future<Output = Result<T, wyrmyon_transport_iroh::Error>> + Send + 'static,
+    {
+        let hashed = Arc::new(AtomicU64::new(0));
+        let counter = Arc::clone(&hashed);
+        let progress = Box::new(move |n| counter.store(n, Ordering::Relaxed));
+        Self {
+            hashed,
+            total,
+            task: Some(tokio::spawn(import(progress))),
+        }
+    }
+
+    async fn finish(mut self, global: &Global) -> anyhow::Result<T> {
+        let mut task = self
+            .task
+            .take()
+            .expect("a hashing task runs until finished");
+        if !task.is_finished() {
+            eprintln!("Hashing..");
+            let bar = transfer::progress(self.total, global.hide_progress, global.ascii, false);
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(100));
+            let joined = loop {
+                tokio::select! {
+                    joined = &mut task => break joined,
+                    _ = tick.tick() => bar.set_position(self.hashed.load(Ordering::Relaxed)),
+                }
+            };
+            bar.finish_and_clear();
+            return Ok(joined.context("hashing the data")??);
+        }
+        Ok(task.await.context("hashing the data")??)
+    }
+
+    async fn abort(mut self) -> Option<T> {
+        let task = self.task.take()?;
+        task.abort();
+        task.await.ok()?.ok()
+    }
+}
+
+impl Hashing<Offered> {
+    fn blob(path: PathBuf, total: u64) -> Self {
+        Self::start(total, move |mut progress| async move {
+            Offered::import_with_progress(&path, &mut progress).await
+        })
+    }
+}
+
+impl Hashing<(Offered, Manifest)> {
+    fn collection(entries: &[zipdir::Entry]) -> Self {
+        let (mut sources, mut dirs, mut total) = (Vec::new(), Vec::new(), 0);
+        for entry in entries {
+            match entry {
+                zipdir::Entry::File {
+                    source,
+                    name,
+                    mode,
+                    size,
+                } => {
+                    total += size;
+                    sources.push(Source {
+                        path: source.clone(),
+                        name: name.clone(),
+                        mode: *mode,
+                    });
+                }
+                zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
+                zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
+            }
+        }
+        Self::start(total, move |mut progress| async move {
+            Offered::import_collection_with_progress(&sources, &dirs, &mut progress).await
+        })
+    }
+}
+
+impl<T> Drop for Hashing<T> {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
         }
     }
 }
@@ -128,6 +254,9 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
 
     let code = pending.code().clone();
     let mut staged = Staged::default();
+    if !global.force_classic {
+        staged.hash_ahead(&payload);
+    }
     let (mut round, mut failed) = (1, 0);
     let outcome = loop {
         let mut wormhole = match pending.pair().await {
@@ -309,6 +438,7 @@ async fn send_tree(
     if global.use_collection(wormhole) {
         return send_collection(wormhole, global, staged, name, entries).await;
     }
+    staged.drop_collection_ahead().await;
     require_iroh(wormhole, global).await?;
     if staged.zip.is_none() {
         eprintln!("Building zipfile..");
@@ -360,26 +490,15 @@ async fn send_collection(
     entries: &[zipdir::Entry],
 ) -> anyhow::Result<()> {
     if staged.collection.is_none() {
-        let (mut sources, mut dirs) = (Vec::new(), Vec::new());
-        for entry in entries {
-            match entry {
-                zipdir::Entry::File {
-                    source, name, mode, ..
-                } => sources.push(Source {
-                    path: source.clone(),
-                    name: name.clone(),
-                    mode: *mode,
-                }),
-                zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
-                zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
-            }
-        }
-        eprintln!("Hashing..");
-        let (offered, manifest) = match Offered::import_collection(&sources, &dirs).await {
+        let hashing = staged
+            .collection_ahead
+            .take()
+            .unwrap_or_else(|| Hashing::collection(entries));
+        let (offered, manifest) = match hashing.finish(global).await {
             Ok(imported) => imported,
             Err(e) => {
                 protocol::send_error(wormhole, "the sender could not read its data").await?;
-                return Err(e.into());
+                return Err(e);
             }
         };
         let offer = CollectionOffer {
@@ -417,13 +536,19 @@ async fn send_data(
     size: u64,
 ) -> anyhow::Result<()> {
     let use_iroh = require_iroh(wormhole, global).await?;
+    if !use_iroh {
+        staged.drop_blob_ahead().await;
+    }
     if use_iroh && staged.blob.is_none() {
-        eprintln!("Hashing..");
-        match Offered::import(path).await {
+        let hashing = staged
+            .blob_ahead
+            .take()
+            .unwrap_or_else(|| Hashing::blob(path.to_owned(), size));
+        match hashing.finish(global).await {
             Ok(offered) => staged.blob = Some(offered),
             Err(e) => {
                 protocol::send_error(wormhole, "the sender could not read its data").await?;
-                return Err(e.into());
+                return Err(e);
             }
         }
     }
