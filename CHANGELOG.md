@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-02
+
 ### Fixed
 
 - 0.5.0 was tagged but never published: its release checks failed on Fedora
