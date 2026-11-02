@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::time::Duration;
 
 use wyrmyon_transport_iroh::{IrohPipe, IrohTransport, Offered, Relays, Role};
@@ -171,18 +172,24 @@ async fn importing_a_file_counts_no_more_than_its_size() {
     let source = dir.path().join("source.bin");
     std::fs::write(&source, data(1_000_000)).unwrap();
     let mut seen = Vec::new();
-    let offered = Offered::import_with_progress(&source, &mut |n| seen.push(n))
-        .await
-        .unwrap();
+    let offered = Offered::import_with_progress(&source, &mut |n| {
+        seen.push(n);
+        ControlFlow::Continue(())
+    })
+    .await
+    .unwrap();
     assert!(seen.is_sorted(), "{seen:?}");
     assert!(seen.iter().all(|&n| n <= 1_000_000), "{seen:?}");
     offered.close().await;
     let mut seen = Vec::new();
     let missing = dir.path().join("missing");
     assert!(
-        Offered::import_with_progress(&missing, &mut |n| seen.push(n))
-            .await
-            .is_err()
+        Offered::import_with_progress(&missing, &mut |n| {
+            seen.push(n);
+            ControlFlow::Continue(())
+        })
+        .await
+        .is_err()
     );
     assert_eq!(seen, Vec::<u64>::new());
 }

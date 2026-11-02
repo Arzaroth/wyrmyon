@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::time::Duration;
 
@@ -325,11 +326,24 @@ async fn importing_a_collection_counts_up_to_every_byte_it_hashed() {
     let dir = tempfile::tempdir().unwrap();
     let sources = sources(dir.path(), &[("a", data(300_000)), ("b", data(20))]);
     let mut seen = Vec::new();
-    let (offered, manifest) =
-        Offered::import_collection_with_progress(&sources, &[], &mut |n| seen.push(n))
-            .await
-            .unwrap();
+    let (offered, manifest) = Offered::import_collection_with_progress(&sources, &[], &mut |n| {
+        seen.push(n);
+        ControlFlow::Continue(())
+    })
+    .await
+    .unwrap();
     assert!(seen.is_sorted(), "{seen:?}");
     assert_eq!(seen.last(), Some(&manifest.numbytes()));
     offered.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_import_told_to_stop_fails_and_lets_its_store_go() {
+    let dir = tempfile::tempdir().unwrap();
+    let sources = sources(dir.path(), &[("a", data(20)), ("b", data(20))]);
+    let stopped =
+        Offered::import_collection_with_progress(&sources, &[], &mut |_| ControlFlow::Break(()))
+            .await;
+    let message = stopped.err().unwrap().to_string();
+    assert!(message.contains("stopped"), "{message}");
 }

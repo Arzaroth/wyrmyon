@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
@@ -123,13 +124,14 @@ impl Offered {
         sources: &[Source],
         dirs: &[String],
     ) -> Result<(Self, Manifest), Error> {
-        Self::import_collection_with_progress(sources, dirs, &mut |_| {}).await
+        Self::import_collection_with_progress(sources, dirs, &mut |_| ControlFlow::Continue(()))
+            .await
     }
 
     pub async fn import_collection_with_progress(
         sources: &[Source],
         dirs: &[String],
-        progress: &mut (dyn FnMut(u64) + Send),
+        progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
     ) -> Result<(Self, Manifest), Error> {
         let (dir, store) = crate::blobs::throwaway_store().await?;
         match import_all(&store, sources, dirs, progress).await {
@@ -158,7 +160,7 @@ type Failed = Box<dyn std::error::Error + Send + Sync>;
 async fn import_file(
     store: &FsStore,
     source: &Source,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
 ) -> Result<(TempTag, u64), Failed> {
     let tag = match crate::blobs::add_path(store, &source.path, progress).await {
         Ok(tag) => tag,
@@ -172,7 +174,7 @@ async fn import_all(
     store: &FsStore,
     sources: &[Source],
     dirs: &[String],
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
 ) -> Result<(Hash, Vec<TempTag>, Manifest), Failed> {
     let mut tags = Vec::with_capacity(sources.len() + 2);
     let mut files = Vec::with_capacity(sources.len());
@@ -180,7 +182,9 @@ async fn import_all(
     for source in sources {
         let (tag, size) = import_file(store, source, &mut |hashed| progress(done + hashed)).await?;
         done += size;
-        progress(done);
+        if progress(done).is_break() {
+            return Err(crate::blobs::stopped().into());
+        }
         files.push(ManifestFile {
             path: source.name.clone(),
             size,

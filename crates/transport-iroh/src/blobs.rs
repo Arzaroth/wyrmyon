@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -41,7 +42,7 @@ pub(crate) async fn throwaway_store() -> Result<(tempfile::TempDir, FsStore), Er
 pub(crate) async fn add_path(
     store: &FsStore,
     path: &Path,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
 ) -> std::io::Result<TempTag> {
     let items = store
         .blobs()
@@ -55,7 +56,11 @@ pub(crate) async fn add_path(
     let mut items = std::pin::pin!(items);
     while let Some(item) = items.next().await {
         match item {
-            AddProgressItem::OutboardProgress(hashed) => progress(hashed),
+            AddProgressItem::OutboardProgress(hashed) => {
+                if progress(hashed).is_break() {
+                    return Err(stopped());
+                }
+            }
             AddProgressItem::Done(tag) => return Ok(tag),
             AddProgressItem::Error(e) => return Err(e),
             _ => {}
@@ -66,14 +71,18 @@ pub(crate) async fn add_path(
     ))
 }
 
+pub(crate) fn stopped() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Interrupted, "the import was stopped")
+}
+
 impl Offered {
     pub async fn import(path: &Path) -> Result<Self, Error> {
-        Self::import_with_progress(path, &mut |_| {}).await
+        Self::import_with_progress(path, &mut |_| ControlFlow::Continue(())).await
     }
 
     pub async fn import_with_progress(
         path: &Path,
-        progress: &mut (dyn FnMut(u64) + Send),
+        progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
     ) -> Result<Self, Error> {
         let (dir, store) = throwaway_store().await?;
         let added = add_path(&store, path, progress).await;

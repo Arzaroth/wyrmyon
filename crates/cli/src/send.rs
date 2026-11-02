@@ -1,6 +1,7 @@
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use anyhow::{Context, anyhow, bail};
 use clap::Args;
@@ -71,7 +72,7 @@ impl Staged {
 
     async fn drop_blob_ahead(&mut self) {
         if let Some(ahead) = self.blob_ahead.take()
-            && let Some(offered) = ahead.abort().await
+            && let Some(offered) = ahead.stop().await
         {
             offered.close().await;
         }
@@ -79,7 +80,7 @@ impl Staged {
 
     async fn drop_collection_ahead(&mut self) {
         if let Some(ahead) = self.collection_ahead.take()
-            && let Some((offered, _)) = ahead.abort().await
+            && let Some((offered, _)) = ahead.stop().await
         {
             offered.close().await;
         }
@@ -99,20 +100,30 @@ impl Staged {
 
 struct Hashing<T> {
     hashed: Arc<AtomicU64>,
+    stop: Arc<AtomicBool>,
     total: u64,
     task: Option<tokio::task::JoinHandle<Result<T, wyrmyon_transport_iroh::Error>>>,
 }
 
 impl<T: Send + 'static> Hashing<T> {
-    fn start<F>(total: u64, import: impl FnOnce(Box<dyn FnMut(u64) + Send>) -> F) -> Self
+    fn start<F>(total: u64, import: impl FnOnce(Progress) -> F) -> Self
     where
         F: Future<Output = Result<T, wyrmyon_transport_iroh::Error>> + Send + 'static,
     {
         let hashed = Arc::new(AtomicU64::new(0));
-        let counter = Arc::clone(&hashed);
-        let progress = Box::new(move |n| counter.store(n, Ordering::Relaxed));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (counter, stopped) = (Arc::clone(&hashed), Arc::clone(&stop));
+        let progress = Box::new(move |n| {
+            counter.store(n, Ordering::Relaxed);
+            if stopped.load(Ordering::Relaxed) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        });
         Self {
             hashed,
+            stop,
             total,
             task: Some(tokio::spawn(import(progress))),
         }
@@ -139,9 +150,9 @@ impl<T: Send + 'static> Hashing<T> {
         Ok(task.await.context("hashing the data")??)
     }
 
-    async fn abort(mut self) -> Option<T> {
+    async fn stop(mut self) -> Option<T> {
         let task = self.task.take()?;
-        task.abort();
+        self.stop.store(true, Ordering::Relaxed);
         task.await.ok()?.ok()
     }
 }
@@ -184,11 +195,11 @@ impl Hashing<(Offered, Manifest)> {
 
 impl<T> Drop for Hashing<T> {
     fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
+        self.stop.store(true, Ordering::Relaxed);
     }
 }
+
+type Progress = Box<dyn FnMut(u64) -> ControlFlow<()> + Send>;
 
 impl SendArgs {
     pub fn of_paths(paths: Vec<PathBuf>) -> Self {
@@ -665,27 +676,38 @@ async fn send_over(
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn dropping_a_hashing_stops_its_task() {
-        let (held, released) = tokio::sync::oneshot::channel::<()>();
-        let hashing = Hashing::<()>::start(0, move |_| async move {
-            let _held = held;
-            std::future::pending().await
+    fn running() -> (Hashing<()>, tokio::sync::oneshot::Receiver<()>) {
+        let (ended, released) = tokio::sync::oneshot::channel::<()>();
+        let hashing = Hashing::start(0, move |mut progress| async move {
+            let _ended = ended;
+            while progress(1).is_continue() {
+                tokio::task::yield_now().await;
+            }
+            Err(wyrmyon_transport_iroh::Error::Blob("stopped".into()))
         });
+        (hashing, released)
+    }
+
+    #[tokio::test]
+    async fn dropping_or_stopping_a_hashing_ends_its_import() {
+        let (hashing, released) = running();
         drop(hashing);
+        assert!(released.await.is_err());
+        let (hashing, released) = running();
+        assert_eq!(hashing.stop().await, None);
         assert!(released.await.is_err());
     }
 
     #[tokio::test]
     async fn aborting_a_finished_hashing_hands_back_what_it_imported() {
         let hashing = Hashing::start(0, |mut progress| async move {
-            progress(7);
+            let _ = progress(7);
             Ok(7)
         });
         while !hashing.task.as_ref().unwrap().is_finished() {
             tokio::task::yield_now().await;
         }
         assert_eq!(hashing.hashed.load(Ordering::Relaxed), 7);
-        assert_eq!(hashing.abort().await, Some(7));
+        assert_eq!(hashing.stop().await, Some(7));
     }
 }
