@@ -55,6 +55,7 @@ struct Staged {
     collection: Option<(Offered, CollectionOffer)>,
     blob_ahead: Option<Hashing<Offered>>,
     collection_ahead: Option<Hashing<(Offered, Manifest)>>,
+    several: bool,
 }
 
 impl Staged {
@@ -71,6 +72,9 @@ impl Staged {
     }
 
     async fn drop_blob_ahead(&mut self) {
+        if self.several {
+            return;
+        }
         if let Some(ahead) = self.blob_ahead.take()
             && let Some(offered) = ahead.stop().await
         {
@@ -79,6 +83,9 @@ impl Staged {
     }
 
     async fn drop_collection_ahead(&mut self) {
+        if self.several {
+            return;
+        }
         if let Some(ahead) = self.collection_ahead.take()
             && let Some((offered, _)) = ahead.stop().await
         {
@@ -87,6 +94,7 @@ impl Staged {
     }
 
     async fn close(mut self) {
+        self.several = false;
         self.drop_blob_ahead().await;
         self.drop_collection_ahead().await;
         if let Some(blob) = self.blob {
@@ -264,7 +272,10 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     }
 
     let code = pending.code().clone();
-    let mut staged = Staged::default();
+    let mut staged = Staged {
+        several: times > 1,
+        ..Staged::default()
+    };
     if !global.force_classic {
         staged.hash_ahead(&payload);
     }
