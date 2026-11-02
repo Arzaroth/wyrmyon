@@ -52,9 +52,12 @@ too, as the Python client does; `wyrm send --qr` adds a QR code of it
 3. Refuses to overwrite: anything at the destination, a dangling symlink
    included, is answered with an `error`. `-o DIR` naming an existing
    directory puts the file inside it, as the Python client does.
-   `--overwrite` replaces a file there (printing `Overwriting <path>`), never
-   a directory; under the `wormhole` name, `-o` alone does the same
-   ([wormhole-shim.md](wormhole-shim.md)).
+   `--overwrite` replaces anything there but a directory (printing
+   `Overwriting <path>`): a file, or a symlink, which is replaced and never
+   followed. Under the `wormhole` name, `-o` alone does the same
+   ([wormhole-shim.md](wormhole-shim.md)). What is there stays until the new
+   data is complete (step 5), so a refused, failed or interrupted transfer
+   leaves it as it was.
 4. Asks `ok? (Y/n)` unless `--accept-file`: Enter alone or any answer
    starting with `y` accepts, as in the Python client, and end of input
    refuses. On Unix, input typed before the prompt appeared is
@@ -66,7 +69,8 @@ too, as the Python client does; `wyrm send --qr` adds a QR code of it
    records into it, stops at the offered size and fails if the sender sends
    more, syncs, then hard-links it to the destination, which fails rather than
    overwrite a file that appeared meanwhile (a checked rename where hard links
-   are not supported). The partial file is removed on every exit, Ctrl-C
+   are not supported). When it is replacing what step 3 found, it renames the
+   partial file over it instead. The partial file is removed on every exit, Ctrl-C
    included: `wyrmyon::main` turns Ctrl-C into an error, which unwinds the
    transfer. The consent prompt reads its answer on a thread of its own,
    not tokio's blocking pool, so a read left behind cannot hold the exit,

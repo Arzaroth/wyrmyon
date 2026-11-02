@@ -4,8 +4,9 @@
 
 ### Added
 
-- `wyrm receive --overwrite` replaces a file already at the destination. It
-  never replaces a directory.
+- `wyrm receive --overwrite` replaces what is already at the destination
+  (a file, or a symlink, never followed), but never a directory. The old one
+  stays until the new data is complete, so a failed transfer loses nothing.
 
 ### Changed
 

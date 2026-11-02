@@ -34,7 +34,7 @@ pub struct ReceiveArgs {
     /// Where to write a received file or directory, instead of its name in the current directory
     #[arg(long, short = 'o')]
     pub(crate) output_file: Option<PathBuf>,
-    /// Replace a file already at the destination; a directory is never replaced
+    /// Replace what is already at the destination, once the new data is complete; never a directory
     #[arg(long)]
     pub(crate) overwrite: bool,
     #[arg(skip)]

@@ -35,7 +35,11 @@ answered by the same `file_ack`.
 ## Receiver
 
 The same checks as a file before anything is accepted: a usable name, a
-transit offer, nothing at the destination, confirmation or `--accept-file`.
+transit offer, nothing at the destination (or, with `--overwrite`, anything
+but a directory), confirmation or `--accept-file`. When it replaces what is
+there, the directory is built beside it as `.<name>.<unique>.wyrm-part` and
+swapped in only once it is complete, so a failed transfer leaves the old
+entry as it was.
 An unknown `mode` is refused. The zip file streams into a partial file next to
 the destination, then `zipdir::extract`:
 
@@ -77,7 +81,8 @@ order.
 ```
 
 The receiver asks the same question as for a zipped directory, creates the
-destination itself (failing if anything is there), and then:
+destination itself (failing if anything is there, or building beside it
+under `--overwrite` as for a zip), and then:
 
 - fetches only the hash sequence and the manifest, at most
   `32 × (numfiles + 1)` bytes plus 16 MiB, and checks the manifest before any
