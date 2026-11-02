@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use clap::Args;
+use indicatif::ProgressBar;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, MAX_FILES, Role as IrohRole};
@@ -54,7 +55,16 @@ impl ReceiveArgs {
 }
 
 pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
-    let pending = if args.new {
+    let code: Option<Code> = match (&args.code, args.new) {
+        (Some(code), _) => Some(code.parse()?),
+        (None, false) => Some(prompt_code(usize::from(args.code_length)).await?),
+        (None, true) => None,
+    };
+    let waiting = Waiting(transfer::spinner(global.hide_progress, global.ascii));
+    waiting.0.set_message("Connecting..");
+    let pending = if let Some(code) = code {
+        wyrmyon_wormhole::join(&global.config(), code).await?
+    } else {
         let pending =
             wyrmyon_wormhole::create(&global.config(), usize::from(args.code_length)).await?;
         let code = pending.code();
@@ -65,26 +75,33 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         };
         let other_side =
             format!("  {first} send --code {code} FILE\n\n(or: {then} send --code {code} FILE)");
-        show_code(code, None, &other_side);
+        waiting.0.suspend(|| show_code(code, None, &other_side));
         pending
-    } else {
-        let code: Code = match &args.code {
-            Some(code) => code.parse()?,
-            None => prompt_code(usize::from(args.code_length)).await?,
-        };
-        wyrmyon_wormhole::join(&global.config(), code).await?
     };
-    show_welcome(pending.welcome());
+    waiting.0.suspend(|| show_welcome(pending.welcome()));
+    waiting.0.set_message("Waiting for the sender..");
     let mut wormhole = pending.pair().await?;
-    let result = receive_offer(&mut wormhole, global, &args).await;
+    waiting
+        .0
+        .set_message("Connected, the sender is preparing the transfer..");
+    let result = receive_offer(&mut wormhole, global, &args, &waiting.0).await;
     wormhole.close(mood_for(&result)).await;
     result
+}
+
+struct Waiting(ProgressBar);
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        self.0.finish_and_clear();
+    }
 }
 
 async fn receive_offer(
     wormhole: &mut Wormhole,
     global: &Global,
     args: &ReceiveArgs,
+    waiting: &ProgressBar,
 ) -> anyhow::Result<()> {
     let iroh_allowed = global.use_iroh(wormhole);
     let mut connection: Option<Connection> = None;
@@ -103,6 +120,7 @@ async fn receive_offer(
             Ok(AppMessage::Offer(offer)) => break offer,
             Ok(_) => {}
             Err(e) => {
+                waiting.finish_and_clear();
                 if let Some(connection) = connection {
                     connection.close().await;
                 }
@@ -110,6 +128,7 @@ async fn receive_offer(
             }
         }
     };
+    waiting.finish_and_clear();
     if args.only_text && !matches!(offer, Offer::Message(_)) {
         if let Some(connection) = connection {
             connection.close().await;

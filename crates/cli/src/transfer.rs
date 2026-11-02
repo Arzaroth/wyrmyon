@@ -156,6 +156,22 @@ fn old_console() -> bool {
     cfg!(windows) && std::env::var_os("WT_SESSION").is_none()
 }
 
+pub fn spinner(hidden: bool, ascii: bool) -> ProgressBar {
+    if hidden {
+        return ProgressBar::hidden();
+    }
+    let bar = ProgressBar::new_spinner();
+    let style = ProgressStyle::with_template("{spinner} {msg} ({elapsed})")
+        .expect("the spinner template is valid");
+    bar.set_style(if ascii || old_console() {
+        style.tick_chars("-\\|/ ")
+    } else {
+        style
+    });
+    bar.enable_steady_tick(std::time::Duration::from_millis(100));
+    bar
+}
+
 pub async fn finale(bar: &ProgressBar) {
     if !bar.is_hidden() && !bar.is_finished() {
         tokio::time::sleep(FINALE).await;
