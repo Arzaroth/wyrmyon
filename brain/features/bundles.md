@@ -30,7 +30,7 @@ changes nothing, unlike rsync, and `..` cannot be kept.
 | `wyrm send -R /etc/x/y.conf` | `etc/x/y.conf` |
 | `wyrm send -R /etc/./x/y.conf` | `x/y.conf` |
 | `wyrm send -R photos` or `-R photos/` | `photos/...` |
-| `wyrm send -R photos/./` | what is inside `photos`, without `photos/` |
+| `wyrm send -R photos/./` | what is inside `photos`, without `photos/`; it cannot go with other paths |
 | `wyrm send -R ../a.txt` | refused: `..` cannot be kept |
 | `wyrm send -R .././a.txt` | `a.txt` |
 | `wyrm send a/x.txt b/x.txt` | refused: two of the paths are named `x.txt` |
@@ -47,15 +47,30 @@ explicit form (`wyrm send -R ...`), not the bare one.
 | `wyrm receive CODE` | the current directory |
 | `wyrm receive -o DIR CODE` | `DIR`, created with its parents when missing; refused when `DIR` is a file |
 
-The prompt reads `Receiving 3 files (12 bytes) into: DIR`. Inside the
-destination the bundle merges:
+The prompt names everything the bundle brings at the top of the destination,
+directories with a trailing `/`, the first 20 and then how many more:
+
+```
+Receiving 3 files (12 bytes) into: .
+  .ssh/
+  a.txt
+  photos/
+ok? (Y/n)
+```
+
+(over a zip it reads `3 files (12 bytes, 9 bytes compressed)`). The names
+come from the offer, and the receiver holds the sender to them: a path whose
+first component is not one of them is refused, before any file data for a
+collection and while unpacking for a zip, so what lands is always under a
+name you saw. A bundle that names nothing is refused before the question.
+Inside the destination the bundle merges:
 
 | At a path the bundle brings | Without `--overwrite` | With `--overwrite` |
 | --- | --- | --- |
 | nothing | created, with any missing directories | the same |
 | a directory, where the bundle has a directory | used as it is | the same |
 | a file, where the bundle has a file | the whole bundle is refused: `refusing to overwrite PATH` | replaced |
-| a directory, where the bundle has a file | refused | refused: a directory is never replaced |
+| a directory, or a symlink to one, where the bundle has a file | refused | refused: a directory is never replaced |
 | a file, where the bundle has a directory | refused: `PATH is in the way` | refused |
 
 Existing directories are used even when they are symlinks the receiver made.
@@ -68,15 +83,20 @@ travels as a zip, the check happens while it unpacks, after the download.
 place, so a file that appeared there meanwhile is never overwritten (renamed
 where hard links do not work, and renamed over the old file under
 `--overwrite`). A transfer that fails on the way removes the files and
-directories it created, leaves what was there before, and keeps the new
-content of a file it already replaced under `--overwrite`.
+directories it created, the `-o` directory too when it made it, leaves what
+was there before, and keeps the new content of a file it already replaced
+under `--overwrite`. Content that appears twice in a collection is copied
+out of the store each time, so placing one copy never takes the data from
+the other.
 
 ## On the wire
 
-A bundle is offered under the name `files`, with a `bundle` flag:
+A bundle is offered under the name `files`, with a `bundle` flag and the
+names it brings at the top:
 
 ```json
-{"wyrmyon-collection-v1": {"name": "files", "numbytes": 12, "numfiles": 3, "bundle": true}}
+{"wyrmyon-collection-v1": {"name": "files", "numbytes": 12, "numfiles": 3,
+                           "bundle": true, "names": [".ssh/", "a.txt", "photos/"]}}
 ```
 
 | Receiver | What the sender offers | Where it lands |
@@ -89,15 +109,19 @@ A bundle is offered under the name `files`, with a `bundle` flag:
 
 The flag goes into a zip offer only when the peer's encrypted version message
 advertises `iroh-v1`, so a legacy client never sees it
-([negotiation.md](../architecture/negotiation.md)). The zip itself is received
-as `.wyrm-bundle.<unique>.wyrm-part` in the destination. Under the `wormhole`
-name a bundle lands loose too: it only comes from a wyrm.
+([negotiation.md](../architecture/negotiation.md)). The receiver takes the
+flag from any peer: a hostile one could advertise `iroh-v1` all the same, and
+what protects the receiver is the names it is shown and held to. The zip
+itself is received as `.wyrm-bundle.<unique>.wyrm-part` in the cache
+directory ([resume.md](resume.md)), so the destination's top need not be
+writable. Under the `wormhole` name a bundle lands loose too: it only comes
+from a wyrm.
 
 ## Sources
 
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs) (`kept`, `paths_payload`, `send_tree`)
 - [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs) (`list_bundle`, `extract_with`)
-- [crates/cli/src/merge.rs](../../crates/cli/src/merge.rs)
+- [crates/cli/src/merge.rs](../../crates/cli/src/merge.rs) (`named`, `listing`, `outside`, `clash`, `Merge`)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs) (`bundle_base`, `receive_directory`, `receive_collection`)
 - [crates/cli/src/protocol.rs](../../crates/cli/src/protocol.rs)
 - [crates/transport-iroh/src/collection.rs](../../crates/transport-iroh/src/collection.rs) (`Placement`, `Under`)

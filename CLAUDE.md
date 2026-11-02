@@ -66,7 +66,7 @@ never touch n0's iroh relays: `tests/support` disables them.
   older wyrmyon peers: the `app_versions` key `wyrmyon`, the transport name
   `iroh-v1`, the `offers` entry `collection-v1` with its offer
   `wyrmyon-collection-v1` and the manifest's fields, the offers' `bundle`
-  flag, the app message
+  flag and `names` list, the app message
   `wyrmyon-iroh-v1` and its `IrohInfo` fields, the ALPN `wyrmyon/1`, the
   HKDF label `wyrmyon/iroh-v1/confirm`, the binding tag info
   `<role>:<sender id>:<receiver id>`, and what follows the tags on the

@@ -21,6 +21,13 @@ done.
       `crowded` if the receiver releases only later; the Python client and
       wyrm release first, other clients are unchecked. Retry briefly on
       `crowded` if one does not.
+- [ ] The interop test `one_wyrm_code_serves_python_receivers_back_to_back`
+      fails now and then in a full run: a Python receiver gets `Connection
+      refused` from its mailbox. It passes alone and touches nothing the
+      branches around it changed; find out whether the mailbox server is
+      still starting.
+- [ ] `scripts/coverage.sh --lcov` fails: it writes to `target/llvm-cov/`
+      without creating it.
 - [ ] `tests/peers.rs` once hung for hours in a full `cargo test`, waiting
       on a `wyrm` child that had already exited (left defunct); it passes
       alone in seconds. Find the test and put a timeout on its wait.

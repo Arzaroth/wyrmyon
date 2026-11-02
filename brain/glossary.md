@@ -45,7 +45,8 @@ checked chunk by chunk; partial blobs live in the receiver's cache until
 complete.
 
 **Bundle**: several paths, or paths sent with `-R`, offered as one directory
-named `files` with a `bundle` flag; another wyrm merges them loose into its
+named `files` with a `bundle` flag and the names it brings at the top; another
+wyrm lists those names before accepting and merges the paths loose into its
 destination, a legacy client unpacks the `files` directory.
 
 **Collection**: a directory or a bundle sent between two wyrms as an

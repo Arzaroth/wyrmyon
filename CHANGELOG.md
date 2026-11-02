@@ -17,10 +17,11 @@
 - Several paths sent to another wyrm no longer arrive inside a `files`
   directory: they land side by side in the receiver's current directory, or
   under `-o DIR` (created when missing), merged into the directories already
-  there. A file already there refuses the whole transfer unless the receiver
-  passed `--overwrite`. The Python client, and wyrmyon 0.4.0 and older, still
-  get a `files` directory.
-
+  there. The prompt lists the names the bundle brings at the top, and nothing
+  lands outside them. A file already there refuses the whole transfer unless
+  the receiver passed `--overwrite`. The Python client, wyrmyon 0.4.0 and
+  older, and a wyrm receiving with `--force-classic` still get a `files`
+  directory.
 - The sender hashes what it sends for iroh while the code waits for its
   receiver, instead of after the two sides meet, so a large file no longer
   holds both ends silent for the time it takes to hash. When the receiver

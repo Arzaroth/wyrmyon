@@ -40,11 +40,12 @@ The leading `/` is dropped, a `/./` in the path marks where the kept part starts
   wyrm send -R photos/./         the files inside photos, without photos/
   wyrm send -R ../a.txt          refused: use /./ to say what to keep
 
-The receiver puts the kept paths under its current directory, or under the \
-directory `-o` names: `wyrm receive -o / CODE` puts etc/x/y.conf back at \
-/etc/x/y.conf. It creates the directories that are missing, uses the ones \
-already there, and refuses a file that is already there unless it was given \
---overwrite."
+Another wyrm shows the top names before accepting, then puts the kept paths \
+under its current directory, or under the directory `-o` names: \
+`wyrm receive -o / CODE` puts etc/x/y.conf back at /etc/x/y.conf. It creates \
+the directories that are missing, uses the ones already there, and refuses a \
+file that is already there unless it was given --overwrite. Any other \
+receiver, the Python client included, gets them inside a directory named files."
     )]
     pub(crate) relative: bool,
     /// Number of words in the generated code
