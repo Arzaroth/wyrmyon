@@ -72,15 +72,33 @@ pub fn list(dir: &Path, cancel: &Cancel) -> anyhow::Result<Vec<Entry>> {
     Ok(walk.entries)
 }
 
-pub fn list_bundle(paths: &[PathBuf], cancel: &Cancel) -> anyhow::Result<Vec<Entry>> {
+pub fn list_bundle(
+    paths: &[PathBuf],
+    relative: bool,
+    cancel: &Cancel,
+) -> anyhow::Result<Vec<Entry>> {
     let mut named = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
     for path in paths {
-        let name = crate::send::display_name(path)?;
-        if !seen.insert(name.clone()) {
-            bail!("two of the paths are named {name}");
+        let name = if relative {
+            crate::send::kept(path)?
+        } else {
+            PathBuf::from(crate::send::display_name(path)?)
+        };
+        named.push((path, name));
+    }
+    let mut landing: Vec<&PathBuf> = named.iter().map(|(_, name)| name).collect();
+    landing.sort();
+    for pair in landing.windows(2) {
+        if pair[0] == pair[1] {
+            bail!("two of the paths are named {}", pair[0].display());
         }
-        named.push((path, PathBuf::from(name)));
+        if pair[1].starts_with(pair[0]) {
+            bail!(
+                "{} is inside {}, which is sent too",
+                pair[1].display(),
+                pair[0].display()
+            );
+        }
     }
     let mut walk = Walk::new(cancel);
     for (path, name) in &named {

@@ -89,7 +89,7 @@ enum Command {
     Shim(shim::ShimArgs),
 }
 
-fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
+pub(crate) fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
     wormhole.their_app_versions()["wyrmyon"]["transports"]
         .as_array()
         .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT))

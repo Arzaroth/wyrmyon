@@ -745,10 +745,10 @@ async fn several_paths_travel_as_one_bundle() {
     .await;
     assert!(ok, "{stderr}");
     assert!(finish(sender).await.0);
-    let files = to.path().join("files");
-    assert_eq!(std::fs::read(files.join("a.txt")).unwrap(), b"alpha");
+    assert!(!to.path().join("files").exists());
+    assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), b"alpha");
     assert_eq!(
-        std::fs::read(files.join("photos/2026/p.raw")).unwrap(),
+        std::fs::read(to.path().join("photos/2026/p.raw")).unwrap(),
         vec![1u8; 50_000]
     );
 

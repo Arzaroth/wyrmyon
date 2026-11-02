@@ -32,7 +32,8 @@ pub struct ReceiveArgs {
     /// Accept a file or directory without asking
     #[arg(long)]
     pub(crate) accept_file: bool,
-    /// Where to write a received file or directory, instead of its name in the current directory
+    /// Where to write a received file or directory, instead of its name in the current directory;
+    /// for several paths (or `send -R`), the directory they land in, created if missing
     #[arg(long, short = 'o')]
     pub(crate) output_file: Option<PathBuf>,
     /// Replace what is already at the destination, once the new data is complete; never a directory

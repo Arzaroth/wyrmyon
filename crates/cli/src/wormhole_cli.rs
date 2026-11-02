@@ -278,6 +278,7 @@ fn send_args(
         text,
         literal_text,
         paths,
+        relative: false,
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         code: args.code,
         qr: args.qr && !args.no_qr,

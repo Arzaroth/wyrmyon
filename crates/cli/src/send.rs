@@ -1,5 +1,5 @@
 use std::ops::ControlFlow;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -22,8 +22,31 @@ pub struct SendArgs {
     /// Text to send; `-` reads it from stdin
     #[arg(long)]
     pub(crate) text: Option<String>,
-    /// Files or directories to send; several travel as one bundle named `files`
+    /// Files or directories to send; several travel as one bundle, and land side by side
     pub(crate) paths: Vec<PathBuf>,
+    /// Keep each path as typed, not only its last name, like `rsync -R`
+    #[arg(
+        short = 'R',
+        long,
+        long_help = "Keep each path as typed, not only its last name, like `rsync -R` or `tar`. \
+The leading `/` is dropped, a `/./` in the path marks where the kept part starts, \
+`..` cannot be kept, and a trailing slash changes nothing.
+
+  wyrm send a/b.txt              b.txt
+  wyrm send -R a/b.txt           a/b.txt
+  wyrm send -R /etc/x/y.conf     etc/x/y.conf
+  wyrm send -R /etc/./x/y.conf   x/y.conf
+  wyrm send -R photos/           photos/... (the same as photos)
+  wyrm send -R photos/./         the files inside photos, without photos/
+  wyrm send -R ../a.txt          refused: use /./ to say what to keep
+
+The receiver puts the kept paths under its current directory, or under the \
+directory `-o` names: `wyrm receive -o / CODE` puts etc/x/y.conf back at \
+/etc/x/y.conf. It creates the directories that are missing, uses the ones \
+already there, and refuses a file that is already there unless it was given \
+--overwrite."
+    )]
+    pub(crate) relative: bool,
     /// Number of words in the generated code
     #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
     pub(crate) code_length: u8,
@@ -45,7 +68,7 @@ pub struct SendArgs {
 enum Payload {
     Text(String),
     File(PathBuf, FileOffer),
-    Tree(String, Arc<Vec<zipdir::Entry>>),
+    Tree(String, Arc<Vec<zipdir::Entry>>, bool),
 }
 
 #[derive(Default)]
@@ -65,7 +88,7 @@ impl Staged {
             Payload::File(path, offer) => {
                 self.blob_ahead = Some(Hashing::blob(path.clone(), offer.filesize));
             }
-            Payload::Tree(_, entries) => {
+            Payload::Tree(_, entries, _) => {
                 self.collection_ahead = Some(Hashing::collection(entries));
             }
         }
@@ -219,6 +242,7 @@ impl SendArgs {
         Self {
             text: None,
             paths,
+            relative: false,
             code_length: CODE_LENGTH,
             code: None,
             qr: false,
@@ -232,6 +256,7 @@ impl SendArgs {
         Self {
             text: Some("-".into()),
             paths: Vec::new(),
+            relative: false,
             code_length: CODE_LENGTH,
             code: None,
             qr: false,
@@ -247,7 +272,7 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     let payload = match args.text {
         Some(text) if text == "-" && !args.literal_text => Payload::Text(stdin_text().await?),
         Some(text) => Payload::Text(text),
-        None => paths_payload(args.paths).await?,
+        None => paths_payload(args.paths, args.relative).await?,
     };
 
     let qr = args.qr.then_some(global.ascii);
@@ -346,7 +371,9 @@ async fn deliver(
             )
             .await
         }
-        Payload::Tree(name, entries) => send_tree(wormhole, global, staged, name, entries).await,
+        Payload::Tree(name, entries, bundle) => {
+            send_tree(wormhole, global, staged, name, entries, *bundle).await
+        }
     }
 }
 
@@ -385,12 +412,12 @@ impl Prepared {
     }
 }
 
-async fn paths_payload(mut paths: Vec<PathBuf>) -> anyhow::Result<Payload> {
-    if paths.len() == 1 {
+async fn paths_payload(mut paths: Vec<PathBuf>, relative: bool) -> anyhow::Result<Payload> {
+    if paths.len() == 1 && !relative {
         return path_payload(paths.remove(0)).await;
     }
-    let entries = listed(move |cancel| zipdir::list_bundle(&paths, cancel)).await?;
-    Ok(Payload::Tree("files".into(), Arc::new(entries)))
+    let entries = listed(move |cancel| zipdir::list_bundle(&paths, relative, cancel)).await?;
+    Ok(Payload::Tree("files".into(), Arc::new(entries), true))
 }
 
 async fn listed(
@@ -410,7 +437,7 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
     let name = display_name(&path)?;
     if meta.is_dir() {
         let entries = listed(move |cancel| zipdir::list(&path, cancel)).await?;
-        return Ok(Payload::Tree(name, Arc::new(entries)));
+        return Ok(Payload::Tree(name, Arc::new(entries), false));
     }
     if !meta.is_file() {
         bail!("{} is not a regular file", path.display());
@@ -421,6 +448,34 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
         filesize: meta.len(),
     };
     Ok(Payload::File(path, offer))
+}
+
+pub fn kept(path: &Path) -> anyhow::Result<PathBuf> {
+    let text = path
+        .to_str()
+        .with_context(|| format!("{} is not valid UTF-8", path.display()))?;
+    let markers: &[&str] = if cfg!(windows) {
+        &["/./", "\\.\\", "/.\\", "\\./"]
+    } else {
+        &["/./"]
+    };
+    let tail = markers
+        .iter()
+        .filter_map(|m| text.find(m).map(|at| at + m.len()))
+        .min()
+        .map_or(text, |from| &text[from..]);
+    let mut kept = PathBuf::new();
+    for part in Path::new(tail).components() {
+        match part {
+            Component::Normal(name) => kept.push(name),
+            Component::ParentDir => bail!(
+                "-R cannot keep `..` in {}: mark where the kept path starts with /./",
+                path.display()
+            ),
+            Component::Prefix(_) | Component::RootDir | Component::CurDir => {}
+        }
+    }
+    Ok(kept)
 }
 
 pub fn display_name(path: &Path) -> anyhow::Result<String> {
@@ -461,9 +516,10 @@ async fn send_tree(
     staged: &mut Staged,
     name: &str,
     entries: &Arc<Vec<zipdir::Entry>>,
+    bundle: bool,
 ) -> anyhow::Result<()> {
     if global.use_collection(wormhole) {
-        return send_collection(wormhole, global, staged, name, entries).await;
+        return send_collection(wormhole, global, staged, name, entries, bundle).await;
     }
     staged.drop_collection_ahead().await;
     require_iroh(wormhole, global).await?;
@@ -485,17 +541,25 @@ async fn send_tree(
         }
     }
     let built = staged.zip.as_ref().expect("the zip file was just built");
-    eprintln!(
-        "Sending directory ({} bytes compressed) named '{name}'",
-        built.zipsize
-    );
+    let bundle = bundle && crate::speaks_iroh(wormhole);
+    if bundle {
+        eprintln!(
+            "Sending {} files ({} bytes compressed)",
+            built.numfiles, built.zipsize
+        );
+    } else {
+        eprintln!(
+            "Sending directory ({} bytes compressed) named '{name}'",
+            built.zipsize
+        );
+    }
     let offer = DirectoryOffer {
         mode: "zipfile/deflated".into(),
         dirname: name.to_owned(),
         zipsize: built.zipsize,
         numbytes: built.numbytes,
         numfiles: built.numfiles,
-        bundle: false,
+        bundle,
     };
     let size = offer.zipsize;
     let path = built.file.path().to_owned();
@@ -516,6 +580,7 @@ async fn send_collection(
     staged: &mut Staged,
     name: &str,
     entries: &[zipdir::Entry],
+    bundle: bool,
 ) -> anyhow::Result<()> {
     if staged.collection.is_none() {
         let hashing = staged
@@ -533,7 +598,7 @@ async fn send_collection(
             name: name.to_owned(),
             numbytes: manifest.numbytes(),
             numfiles: manifest.files.len() as u64,
-            bundle: false,
+            bundle,
         };
         staged.collection = Some((offered, offer));
     }
@@ -541,10 +606,17 @@ async fn send_collection(
         .collection
         .as_ref()
         .expect("the collection was just imported");
-    eprintln!(
-        "Sending directory ({} files, {} bytes) named '{}'",
-        offer.numfiles, offer.numbytes, offer.name
-    );
+    if offer.bundle {
+        eprintln!(
+            "Sending {} files ({} bytes)",
+            offer.numfiles, offer.numbytes
+        );
+    } else {
+        eprintln!(
+            "Sending directory ({} files, {} bytes) named '{}'",
+            offer.numfiles, offer.numbytes, offer.name
+        );
+    }
     send_over(
         wormhole,
         global,
