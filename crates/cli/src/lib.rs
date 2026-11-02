@@ -1,3 +1,4 @@
+mod merge;
 mod netcheck;
 mod protocol;
 mod qr;

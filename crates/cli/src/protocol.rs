@@ -43,6 +43,8 @@ pub struct DirectoryOffer {
     pub zipsize: u64,
     pub numbytes: u64,
     pub numfiles: u64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bundle: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +52,8 @@ pub struct CollectionOffer {
     pub name: String,
     pub numbytes: u64,
     pub numfiles: u64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bundle: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

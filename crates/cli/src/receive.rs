@@ -9,6 +9,7 @@ use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, MAX_FILES, Role as IrohRole};
 use wyrmyon_wormhole::{Code, Wormhole};
 
+use crate::merge::{self, Merge};
 use crate::protocol::{
     self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
 };
@@ -209,9 +210,15 @@ impl Connection {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Target<'a> {
+    Named(&'a str),
+    Bundle,
+}
+
 async fn receive_payload(
     wormhole: &mut Wormhole,
-    offered_name: &str,
+    target: Target<'_>,
     size: u64,
     describe: &str,
     connection: Option<Connection>,
@@ -221,7 +228,7 @@ async fn receive_payload(
     let Some(connection) = connection else {
         return refuse(wormhole, "the sender did not offer a connection").await;
     };
-    let accepted = accept(wormhole, offered_name, &connection, global, args, describe).await;
+    let accepted = accept(wormhole, target, &connection, global, args, describe).await;
     let (dest, partial, mut file) = match accepted {
         Ok(accepted) => accepted,
         Err(e) => {
@@ -284,16 +291,26 @@ async fn receive_payload(
 
 async fn accept(
     wormhole: &mut Wormhole,
-    offered_name: &str,
+    target: Target<'_>,
     connection: &Connection,
     global: &Global,
     args: &ReceiveArgs,
     describe: &str,
 ) -> anyhow::Result<(PathBuf, Partial, tokio::fs::File)> {
     let classic = matches!(connection, Connection::Classic(..));
-    let (dest, name, replacing) =
-        destination(wormhole, offered_name, classic, global, args, describe).await?;
-    match Partial::create(&dest, &name).await {
+    let (dest, next_to, name, replacing) = match target {
+        Target::Bundle => {
+            let base = bundle_base(wormhole, classic, global, args, describe).await?;
+            let name = "wyrm-bundle".to_owned();
+            (base.clone(), base.join(&name), name, false)
+        }
+        Target::Named(offered) => {
+            let (dest, name, replacing) =
+                destination(wormhole, offered, classic, global, args, describe).await?;
+            (dest.clone(), dest, name, replacing)
+        }
+    };
+    match Partial::create(&next_to, &name).await {
         Ok((mut partial, file)) => {
             partial.replacing = replacing;
             Ok((dest, partial, file))
@@ -305,6 +322,45 @@ async fn accept(
     }
 }
 
+async fn require_iroh(
+    wormhole: &mut Wormhole,
+    global: &Global,
+    classic: bool,
+) -> anyhow::Result<()> {
+    if global.force_iroh && classic {
+        protocol::send_error(wormhole, "the receiver requires iroh-v1").await?;
+        bail!("the other side does not speak iroh-v1 (--force-iroh)");
+    }
+    Ok(())
+}
+
+async fn bundle_base(
+    wormhole: &mut Wormhole,
+    classic: bool,
+    global: &Global,
+    args: &ReceiveArgs,
+    describe: &str,
+) -> anyhow::Result<PathBuf> {
+    require_iroh(wormhole, global, classic).await?;
+    let base = args
+        .output_file
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("."));
+    if base.symlink_metadata().is_ok() && !base.is_dir() {
+        let why = format!(
+            "{} is not a directory",
+            printable(&base.display().to_string())
+        );
+        return refuse(wormhole, &why).await;
+    }
+    consent(wormhole, args, describe, &base).await?;
+    if let Err(e) = std::fs::create_dir_all(&base) {
+        protocol::send_error(wormhole, "the receiver cannot write there").await?;
+        return Err(e).with_context(|| format!("creating {}", base.display()));
+    }
+    Ok(base)
+}
+
 async fn destination(
     wormhole: &mut Wormhole,
     offered_name: &str,
@@ -313,10 +369,7 @@ async fn destination(
     args: &ReceiveArgs,
     describe: &str,
 ) -> anyhow::Result<(PathBuf, String, bool)> {
-    if global.force_iroh && classic {
-        protocol::send_error(wormhole, "the receiver requires iroh-v1").await?;
-        bail!("the other side does not speak iroh-v1 (--force-iroh)");
-    }
+    require_iroh(wormhole, global, classic).await?;
     let Some(name) = safe_name(offered_name) else {
         return refuse(wormhole, "the offered name is not usable").await;
     };
@@ -379,7 +432,7 @@ async fn receive_file(
     let describe = format!("file ({} bytes)", offer.filesize);
     let incoming = receive_payload(
         wormhole,
-        &offer.filename,
+        Target::Named(&offer.filename),
         offer.filesize,
         &describe,
         connection,
@@ -403,13 +456,24 @@ async fn receive_directory(
     if offer.mode != "zipfile/deflated" {
         return refuse(wormhole, "unknown directory transfer mode").await;
     }
-    let describe = format!(
-        "directory ({} files, {} bytes, {} bytes compressed)",
-        offer.numfiles, offer.numbytes, offer.zipsize
-    );
+    let describe = if offer.bundle {
+        format!(
+            "{} files ({} bytes, {} bytes compressed)",
+            offer.numfiles, offer.numbytes, offer.zipsize
+        )
+    } else {
+        format!(
+            "directory ({} files, {} bytes, {} bytes compressed)",
+            offer.numfiles, offer.numbytes, offer.zipsize
+        )
+    };
     let incoming = receive_payload(
         wormhole,
-        &offer.dirname,
+        if offer.bundle {
+            Target::Bundle
+        } else {
+            Target::Named(&offer.dirname)
+        },
         offer.zipsize,
         &describe,
         connection,
@@ -425,9 +489,16 @@ async fn receive_directory(
     };
     let (target, zip) = (incoming.dest.clone(), incoming.partial.path.clone());
     let replacing = incoming.partial.replacing;
+    let (bundle, overwrite) = (offer.bundle, args.overwrite);
     let cancel = zipdir::Cancel::default();
     let _cancel_on_drop = cancel.on_drop();
     let unpacked = tokio::task::spawn_blocking(move || {
+        if bundle {
+            let mut merge = Merge::new(&target, overwrite);
+            zipdir::extract_with(&zip, &mut merge, &limits, &cancel)?;
+            merge.keep();
+            return anyhow::Ok(());
+        }
         let into = if replacing {
             beside(&target)
         } else {
@@ -448,6 +519,40 @@ async fn receive_directory(
     Ok(())
 }
 
+async fn collection_target(
+    wormhole: &mut Wormhole,
+    offer: &CollectionOffer,
+    global: &Global,
+    args: &ReceiveArgs,
+) -> anyhow::Result<(PathBuf, PathBuf, Option<zipdir::NewDir>)> {
+    let describe = if offer.bundle {
+        format!("{} files ({} bytes)", offer.numfiles, offer.numbytes)
+    } else {
+        format!(
+            "directory ({} files, {} bytes)",
+            offer.numfiles, offer.numbytes
+        )
+    };
+    if offer.bundle {
+        let base = bundle_base(wormhole, false, global, args, &describe).await?;
+        return Ok((base.clone(), base, None));
+    }
+    let (dest, _, replacing) =
+        destination(wormhole, &offer.name, false, global, args, &describe).await?;
+    let into = if replacing {
+        beside(&dest)
+    } else {
+        dest.clone()
+    };
+    match zipdir::NewDir::create(&into) {
+        Ok(dir) => Ok((dest, into, Some(dir))),
+        Err(e) => {
+            protocol::send_error(wormhole, "the receiver cannot write there").await?;
+            Err(e)
+        }
+    }
+}
+
 async fn receive_collection(
     wormhole: &mut Wormhole,
     offer: CollectionOffer,
@@ -462,27 +567,7 @@ async fn receive_collection(
         iroh.close().await;
         return refuse(wormhole, "the sender offered too many files").await;
     }
-    let describe = format!(
-        "directory ({} files, {} bytes)",
-        offer.numfiles, offer.numbytes
-    );
-    let chosen = async {
-        let (dest, _, replacing) =
-            destination(wormhole, &offer.name, false, global, args, &describe).await?;
-        let into = if replacing {
-            beside(&dest)
-        } else {
-            dest.clone()
-        };
-        match zipdir::NewDir::create(&into) {
-            Ok(dir) => Ok((dest, into, dir)),
-            Err(e) => {
-                protocol::send_error(wormhole, "the receiver cannot write there").await?;
-                Err(e)
-            }
-        }
-    }
-    .await;
+    let chosen = collection_target(wormhole, &offer, global, args).await;
     let (dest, into, dir) = match chosen {
         Ok(chosen) => chosen,
         Err(e) => {
@@ -508,8 +593,18 @@ async fn receive_collection(
             let why = format!("{} cannot be written here", printable(bad));
             return Err(listed.refuse(&why).await.into());
         }
+        if let Some(why) = offer
+            .bundle
+            .then(|| merge::clashing(&dest, manifest, args.overwrite))
+            .flatten()
+        {
+            return Err(listed.refuse(&why).await.into());
+        }
         let fetched = listed.fetch(&pipe, &mut |n| bar.set_position(n)).await?;
         transfer::finale(&bar).await;
+        if offer.bundle {
+            return merge::export(fetched, &dest, args.overwrite).await;
+        }
         fetched.export_into(&into).await?;
         if into != dest {
             swap_in(&into, &dest)?;
@@ -520,7 +615,9 @@ async fn receive_collection(
     let mut pipe = Pipe::Iroh(pipe);
     let done = match received {
         Ok(()) => {
-            dir.keep();
+            if let Some(dir) = dir {
+                dir.keep();
+            }
             if let Some(went) = pipe.went() {
                 eprintln!("{went}");
             }
@@ -613,7 +710,7 @@ impl Drop for Partial {
     }
 }
 
-fn unique_suffix() -> String {
+pub(crate) fn unique_suffix() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.subsec_nanos());

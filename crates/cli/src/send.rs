@@ -495,6 +495,7 @@ async fn send_tree(
         zipsize: built.zipsize,
         numbytes: built.numbytes,
         numfiles: built.numfiles,
+        bundle: false,
     };
     let size = offer.zipsize;
     let path = built.file.path().to_owned();
@@ -532,6 +533,7 @@ async fn send_collection(
             name: name.to_owned(),
             numbytes: manifest.numbytes(),
             numfiles: manifest.files.len() as u64,
+            bundle: false,
         };
         staged.collection = Some((offered, offer));
     }
