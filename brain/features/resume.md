@@ -13,9 +13,13 @@ wyrm send big.iso        # a new code; the receiver fetches only what it lacks
 
 ## How it works
 
-- **Sender.** Once iroh is chosen, `Offered::import` hashes the file into a
-  throwaway iroh-blobs store, referencing it in place rather than copying it
-  (`Hashing..`). After the channel binding it writes the 32-byte BLAKE3 hash on
+- **Sender.** `Offered::import` hashes the file into a throwaway iroh-blobs
+  store, referencing it in place rather than copying it. It starts in the
+  background as soon as the code is shown (not under `--force-classic`), so
+  it is usually done by the time the receiver has typed the code; if the peer
+  turns out to be iroh-v1 before it is, `Hashing..` and a bar of the bytes
+  hashed so far show the rest, and a legacy peer stops it. After the channel
+  binding it writes the 32-byte BLAKE3 hash on
   the control stream and serves iroh-blobs requests arriving on further
   streams of the same, already authenticated connection; nothing else can
   reach that store. It then waits for the ack on the control stream.

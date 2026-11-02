@@ -34,9 +34,11 @@ more (`Code::is_reusable`), or the run is refused before it starts.
 5. The run fails at the end with `F of N transfers failed` if any did.
 
 The payload is staged once for the whole run (`Staged` in `send.rs`): the
-zip is built at most once, the blob or the collection hashed at most once,
-each the first time a receiver needs it, and all of it closed when the run
-ends.
+zip is built at most once, the first time a receiver needs it, and the blob
+or the collection hashed at most once, starting when the code is shown
+([resume.md](resume.md)). A receiver that cannot use the hash (a legacy
+client, or one that takes a zip) stops the hashing, and a later iroh
+receiver starts it again. All of it is closed when the run ends.
 
 ## Why a wrong code ends the run
 
@@ -65,8 +67,8 @@ other.
 
 ## Files edited during a run
 
-The blob and the collection are hashed the first time an iroh receiver
-needs them and refer to the files on disk; the zip is a copy made the first
+The blob and the collection are hashed while the code waits for its first
+receiver and refer to the files on disk; the zip is a copy made the first
 time a zip receiver needs it; classic transit re-reads a single file each
 turn. A file edited mid-run therefore makes later iroh turns fail their
 verification, and can give zip and iroh receivers different contents.

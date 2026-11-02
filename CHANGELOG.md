@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The sender hashes what it sends for iroh while the code waits for its
+  receiver, instead of after the two sides meet, so a large file no longer
+  holds both ends silent for the time it takes to hash. When the receiver
+  arrives before it is done, `Hashing..` comes with a bar of how far it got.
+- The receiver no longer sits silent between the code and the offer: a
+  spinner says whether it is connecting, waiting for the sender, or waiting
+  while the sender prepares the transfer, and for how long.
+
 ## [0.4.0] - 2026-10-16
 
 ### Added

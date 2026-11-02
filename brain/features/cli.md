@@ -91,7 +91,19 @@ receive, and the Python client has none there either. The URI carries no
 
 ## Progress
 
-Both sides draw a bar while the data moves, on stderr and only in a
+Before any data moves, neither side sits silent. The receiver shows a
+spinner with the time spent (`transfer::spinner`) that names what it waits
+on: `Connecting..` to the mailbox, `Waiting for the sender..` until the
+two sides pair, then `Connected, the sender is preparing the transfer..`
+until the offer arrives; it is cleared before the offer is shown or asked
+about, and before any error. The sender starts hashing for iroh as soon as
+the code is shown ([resume.md](resume.md)); when the receiver arrives before
+it is done, it prints `Hashing..` and a bar of the bytes hashed so far. The
+spinner turns in ASCII (`-\|/`) under `--ascii` and on an old Windows
+console, and like every bar is not drawn under `--hide-progress` or off a
+terminal.
+
+Then both sides draw a bar while the data moves, on stderr and only in a
 terminal: a wyrm (`wyrm.rs`) drawn in braille, so each character holds two
 by four dots. Its body is a wave that runs from the head back to the tail,
 so every part of it rises and falls, with an aurora gradient (violet to
@@ -143,10 +155,10 @@ refused before anything is sent.
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`Cli`, `bare`, `show_code`)
 - [crates/cli/src/qr.rs](../../crates/cli/src/qr.rs)
 - [crates/cli/src/qr/logo.rs](../../crates/cli/src/qr/logo.rs), [scripts/qr-logo.py](../../scripts/qr-logo.py)
-- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs) (`progress`, `follow_sent`)
+- [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs) (`progress`, `follow_sent`, `spinner`)
 - [crates/cli/src/wyrm.rs](../../crates/cli/src/wyrm.rs)
 - [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs) (`count_sent`)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs) (`prompt_code`, `CodeCompleter`)
-- [crates/cli/src/send.rs](../../crates/cli/src/send.rs) (`paths_payload`)
+- [crates/cli/src/send.rs](../../crates/cli/src/send.rs) (`paths_payload`, `Hashing`)
 - [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs) (`build_bundle`)
 - [crates/wormhole-core/src/code.rs](../../crates/wormhole-core/src/code.rs)

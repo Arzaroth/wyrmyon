@@ -59,7 +59,9 @@ The ack carries the SHA-256 of the zip file as received.
 When iroh-v1 is chosen and the peer's version message lists `collection-v1`
 under `offers` ([negotiation.md](../architecture/negotiation.md)), there is no
 zip. The sender imports every file of the list into its throwaway store by
-reference, hashing it in place, and offers
+reference, hashing it in place, starting in the background when the code is
+shown as for a single file ([resume.md](resume.md)); a peer that takes a zip
+stops it. It offers
 
 ```json
 {"wyrmyon-collection-v1": {"name": "photos", "numbytes": 5678, "numfiles": 3}}
