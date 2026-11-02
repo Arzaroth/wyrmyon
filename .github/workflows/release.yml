@@ -303,7 +303,12 @@ jobs:
       - name: The .rpm on Fedora
         run: |
           docker run --rm -v "$PWD/dist:/d:ro" fedora:latest sh -ec '
-            rpm -i /d/wyrmyon-*.${{ matrix.rpm }}.rpm
+            if [ -f /d/wyrmyon-release-key.asc ]; then
+              rpm --import /d/wyrmyon-release-key.asc
+              rpm -i /d/wyrmyon-*.${{ matrix.rpm }}.rpm
+            else
+              rpm -i --nosignature /d/wyrmyon-*.${{ matrix.rpm }}.rpm
+            fi
             wyrm --version; rpm -V wyrmyon'
 
       - name: The Arch package
