@@ -44,7 +44,11 @@ URLs and direct socket addresses, sent as `wyrmyon-iroh-v1` through the mailbox.
 checked chunk by chunk; partial blobs live in the receiver's cache until
 complete.
 
-**Collection**: a directory or several paths sent between two wyrms as an
+**Bundle**: several paths, or paths sent with `-R`, offered as one directory
+named `files` with a `bundle` flag; another wyrm merges them loose into its
+destination, a legacy client unpacks the `files` directory.
+
+**Collection**: a directory or a bundle sent between two wyrms as an
 iroh-blobs hash sequence: our manifest first, then one blob per file. Offered
 as `wyrmyon-collection-v1`, only to a peer advertising `collection-v1`.
 

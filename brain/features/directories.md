@@ -40,6 +40,9 @@ but a directory), confirmation or `--accept-file`. When it replaces what is
 there, the directory is built beside it as `.<name>.<unique>.wyrm-part` and
 swapped in only once it is complete, so a failed transfer leaves the old
 entry as it was.
+A directory offer marked `"bundle": true` is several paths instead, and
+merges into the destination ([bundles.md](bundles.md)); what follows is a
+plain directory.
 An unknown `mode` is refused. The zip file streams into a partial file next to
 the destination, then `zipdir::extract`:
 
@@ -70,6 +73,8 @@ stops it, unless `--times` leaves it for a later iroh receiver. It offers
 ```json
 {"wyrmyon-collection-v1": {"name": "photos", "numbytes": 5678, "numfiles": 3}}
 ```
+
+(with `"bundle": true` for several paths, [bundles.md](bundles.md))
 
 The data is an iroh-blobs hash sequence: the first child is our manifest, a
 JSON list of every file's `/`-separated path, size and permission bits, plus

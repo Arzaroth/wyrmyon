@@ -74,7 +74,9 @@ free; the iroh path is then a pure upgrade on top of it.
 - [x] The argument decides the action: paths send, a code receives, piped
       stdin sends text, nothing prompts. An argument that is both a code and a
       path on disk is refused until a subcommand says which. Decided: several
-      paths travel as one directory named `files`.
+      paths travel as one directory named `files`. Revised: between two wyrms
+      they land loose, merged into the receiver's directories, and `send -R`
+      keeps paths as typed; legacy receivers still get `files/`.
 - [x] Code prompt with word completion (rustyline, Tab); prefer it over codes
       on the command line, which leak into `ps` and shell history.
 - [x] Receiver-first mode (`wyrm receive --new`), indicatif progress bars

@@ -37,7 +37,8 @@ wyrmyon.
 | Which servers does it talk to, and why always the public mailbox? | [architecture/servers.md](architecture/servers.md) |
 | What does `wyrm` do without a subcommand? | [features/cli.md](features/cli.md) |
 | How does an interrupted transfer resume, and where is the cache? | [features/resume.md](features/resume.md) |
-| Can a transfer replace a file the receiver already has? | [features/files.md](features/files.md) |
+| Where do several paths, or `send -R`, land on the receiver? | [features/bundles.md](features/bundles.md) |
+| Can a transfer replace a file the receiver already has? | [features/bundles.md](features/bundles.md), [features/files.md](features/files.md) |
 | Can one code serve several receivers? | [features/several-receivers.md](features/several-receivers.md) |
 | How is the iroh connection authenticated? | [architecture/iroh-v1.md](architecture/iroh-v1.md) |
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |
@@ -56,7 +57,8 @@ wyrmyon.
 | Directories, and collections between two wyrms | [features/directories.md](features/directories.md) |
 | Verified, resumable transfers | [features/resume.md](features/resume.md) |
 | One code for several receivers in turn | [features/several-receivers.md](features/several-receivers.md) |
-| The command line: bare arguments, the code prompt and hint, the QR code, the progress bar, bundles | [features/cli.md](features/cli.md) |
+| The command line: bare arguments, the code prompt and hint, the QR code, the progress bar | [features/cli.md](features/cli.md) |
+| Several paths and kept paths (`-R`), merged into the receiver's directories | [features/bundles.md](features/bundles.md) |
 | Updating itself | [features/update.md](features/update.md) |
 | Checking the network | [features/netcheck.md](features/netcheck.md) |
 | Answering to `wormhole`, and `wyrm shim` | [features/wormhole-shim.md](features/wormhole-shim.md) |

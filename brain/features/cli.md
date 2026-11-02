@@ -145,10 +145,11 @@ drops progress events when they come faster than they are read.
 ## Several paths
 
 `wyrm send a.txt photos/` (or bare `wyrm a.txt photos/`) offers the paths
-side by side, each under its own name, as one directory named `files`: a
-collection between two wyrms, a zip file any other receiver unpacks like a
-directory ([directories.md](directories.md)). Two paths with the same name are
-refused before anything is sent.
+as one bundle, and `wyrm send -R PATH...` keeps each path as typed. Another
+wyrm puts them side by side in its current directory or under `-o DIR`,
+merging into the directories already there; any other receiver gets them in
+a directory named `files`. What each path is named, where it lands, and what
+happens to a file already there: [bundles.md](bundles.md).
 
 ## Sources
 
@@ -160,5 +161,5 @@ refused before anything is sent.
 - [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs) (`count_sent`)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs) (`prompt_code`, `CodeCompleter`)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs) (`paths_payload`, `Hashing`)
-- [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs) (`build_bundle`)
+- [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs) (`list_bundle`)
 - [crates/wormhole-core/src/code.rs](../../crates/wormhole-core/src/code.rs)

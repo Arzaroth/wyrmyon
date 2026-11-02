@@ -32,11 +32,13 @@ wyrm 7-guitarist-revenge     # a code: receive
 wyrm receive --new           # receiver first: allocate a code and wait
 wyrm send --code CODE FILE   # use a code the receiver allocated
 wyrm send --times 3 FILE     # one code, three receivers in turn
+wyrm send -R /etc/x/y.conf   # keep the path: `wyrm receive -o / CODE` puts it back at /etc/x/y.conf
 wyrm netcheck                # how this network lets peers connect directly
 ```
 
 `wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,
-`--code-length`, `--text`); `wyrm --help` lists the global ones
+`--overwrite`, `-R`, `--code-length`, `--text`); several paths land side by
+side on another wyrm, merged into the directories already there; `wyrm --help` lists the global ones
 (`--relay-url`, `--transit-helper`, `--no-listen`, `--force-classic`,
 `--iroh-relays`, `--hide-progress`, `--ascii`...). `wyrm send --qr` also shows the code as a
 QR code for a phone to scan.

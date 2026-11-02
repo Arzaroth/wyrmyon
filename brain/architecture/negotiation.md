@@ -19,7 +19,9 @@ the same for every client; only the data transport differs.
    the standard ones this side can receive. Today that is only
    `collection-v1`, a directory as a collection of blobs
    ([features/directories.md](../features/directories.md)); a wyrmyon older
-   than it advertises no `offers` and gets a zip.
+   than it advertises no `offers` and gets a zip. The advert is also what
+   lets a sender mark a zip offer as a bundle ([features/bundles.md](../features/bundles.md)):
+   the flag only goes to a peer that advertises `iroh-v1`.
 
 4. **Decision**: both peers now hold both adverts and decide at the same time,
    so there is no race. Both advertise `iroh-v1`: the iroh-v1 transport
