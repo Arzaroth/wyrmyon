@@ -144,15 +144,20 @@ impl<T: Send + 'static> Hashing<T> {
             .expect("a hashing task runs until finished");
         if !task.is_finished() {
             eprintln!("Hashing..");
-            let bar = transfer::progress(self.total, global.hide_progress, global.ascii, false);
+            let bar = transfer::Cleared(transfer::progress(
+                self.total,
+                global.hide_progress,
+                global.ascii,
+                false,
+            ));
             let mut tick = tokio::time::interval(std::time::Duration::from_millis(100));
             let joined = loop {
                 tokio::select! {
                     joined = &mut task => break joined,
-                    _ = tick.tick() => bar.set_position(self.hashed.load(Ordering::Relaxed)),
+                    _ = tick.tick() => bar.0.set_position(self.hashed.load(Ordering::Relaxed)),
                 }
             };
-            bar.finish_and_clear();
+            drop(bar);
             return Ok(joined.context("hashing the data")??);
         }
         Ok(task.await.context("hashing the data")??)
