@@ -14,11 +14,11 @@ pub fn clash(into: &Path, path: &Path, dir: bool, overwrite: bool) -> Option<Str
         }
     }
     let at = into.join(path);
-    let meta = at.symlink_metadata().ok()?;
+    at.symlink_metadata().ok()?;
     match (dir, at.is_dir()) {
         (true, true) => None,
         (true, false) => Some(in_the_way(&at)),
-        (false, _) if overwrite && !meta.is_dir() => None,
+        (false, false) if overwrite => None,
         (false, _) => Some(format!(
             "refusing to overwrite {}",
             printable(&at.display().to_string())
@@ -214,6 +214,18 @@ mod tests {
         left.sort();
         assert_eq!(left, ["etc", "etc/x", "etc/x/keep"]);
         assert_eq!(std::fs::read(into.join("etc/x/keep")).unwrap(), b"mine");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_to_a_directory_counts_as_one_even_under_overwrite() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        std::fs::create_dir(into.join("real")).unwrap();
+        std::os::unix::fs::symlink(into.join("real"), into.join("link")).unwrap();
+        let refused = clash(into, Path::new("link"), false, true).unwrap();
+        assert!(refused.starts_with("refusing to overwrite"), "{refused}");
+        assert_eq!(clash(into, Path::new("link"), true, false), None);
     }
 
     #[test]
