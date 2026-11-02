@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 0.5.0 was tagged but never published: its release checks failed on Fedora
+  45, whose rpm 6 refuses a package it cannot check, and the check installed
+  the .rpm without the release key. They now import the key as a user must,
+  and the README says to `rpm --import` it before `dnf install`. This is the
+  first published release of the 0.5.0 changes below.
+
 ## [0.5.0] - 2026-11-02
 
 ### Added

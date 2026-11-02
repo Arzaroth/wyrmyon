@@ -133,7 +133,10 @@ for an existing tag):
 2. **arch**, in an `archlinux` container: `scripts/arch.sh bin` and
    `scripts/arch.sh source` against GitHub's tarball of the tag.
 3. **checksums**: `SHA256SUMS` over everything.
-4. **verify**: the `.deb` on Debian 11, the `.rpm` on Fedora, the Arch
+4. **verify**: the `.deb` on Debian 11, the `.rpm` on Fedora (after
+   `rpm --import` of the release key, as a user must: from Fedora 45, rpm 6
+   refuses a package it cannot check; an unsigned pull-request build goes
+   in with `--nosignature`), the Arch
    package (x86_64, there is no arm64 Arch image), `install.sh` on Linux and
    macOS, `install.ps1` and an MSI install and uninstall on Windows, on both
    architectures where a runner exists.

@@ -65,7 +65,7 @@ on x86_64 and arm64:
 | System | Install |
 | --- | --- |
 | Debian, Ubuntu | `sudo apt install ./wyrmyon_X.Y.Z_amd64.deb` |
-| Fedora, RHEL, openSUSE | `sudo dnf install ./wyrmyon-X.Y.Z-1.x86_64.rpm` (signed; `sudo rpm --import` the key below to check it) |
+| Fedora, RHEL, openSUSE | `sudo dnf install ./wyrmyon-X.Y.Z-1.x86_64.rpm`, once rpm trusts the key below (rpm 6, from Fedora 45, refuses a package it cannot check) |
 | Arch | `sudo pacman -U` the package's URL, once pacman trusts the key below, or `makepkg -si` from the PKGBUILDs in `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` |
 | Windows | the `.msi` (unsigned: SmartScreen asks once), or the script below |
 | Any Linux, macOS | the script below, or a `.tar.gz` |
@@ -78,7 +78,13 @@ powershell -c "irm https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scr
 The RPMs, the Arch packages (a `.sig` beside each) and `SHA256SUMS` (in
 `SHA256SUMS.asc`) are signed with the release key
 [`packaging/wyrmyon.asc`](packaging/wyrmyon.asc), fingerprint
-`D399CF355EE4767B49F8C76E76B59B8342D88151`. For Arch, trust it once:
+`D399CF355EE4767B49F8C76E76B59B8342D88151`. For an RPM, trust it once:
+
+```
+sudo rpm --import https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/packaging/wyrmyon.asc
+```
+
+For Arch, the same:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/packaging/wyrmyon.asc | sudo pacman-key --add -
