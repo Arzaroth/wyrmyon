@@ -291,9 +291,13 @@ async fn accept(
     describe: &str,
 ) -> anyhow::Result<(PathBuf, Partial, tokio::fs::File)> {
     let classic = matches!(connection, Connection::Classic(..));
-    let (dest, name) = destination(wormhole, offered_name, classic, global, args, describe).await?;
+    let (dest, name, replacing) =
+        destination(wormhole, offered_name, classic, global, args, describe).await?;
     match Partial::create(&dest, &name).await {
-        Ok((partial, file)) => Ok((dest, partial, file)),
+        Ok((mut partial, file)) => {
+            partial.replacing = replacing;
+            Ok((dest, partial, file))
+        }
         Err(e) => {
             protocol::send_error(wormhole, "the receiver cannot write there").await?;
             Err(e)
@@ -308,7 +312,7 @@ async fn destination(
     global: &Global,
     args: &ReceiveArgs,
     describe: &str,
-) -> anyhow::Result<(PathBuf, String)> {
+) -> anyhow::Result<(PathBuf, String, bool)> {
     if global.force_iroh && classic {
         protocol::send_error(wormhole, "the receiver requires iroh-v1").await?;
         bail!("the other side does not speak iroh-v1 (--force-iroh)");
@@ -352,13 +356,7 @@ async fn destination(
             }
         }
     }
-    if existing.is_some()
-        && let Err(e) = std::fs::remove_file(&dest)
-    {
-        protocol::send_error(wormhole, "the receiver cannot write there").await?;
-        return Err(e).with_context(|| format!("removing {}", dest.display()));
-    }
-    Ok((dest, name))
+    Ok((dest, name, existing.is_some()))
 }
 
 async fn receive_file(
@@ -416,11 +414,20 @@ async fn receive_directory(
         numfiles: offer.numfiles,
     };
     let (target, zip) = (incoming.dest.clone(), incoming.partial.path.clone());
+    let replacing = incoming.partial.replacing;
     let cancel = zipdir::Cancel::default();
     let _cancel_on_drop = cancel.on_drop();
     let unpacked = tokio::task::spawn_blocking(move || {
-        let dir = zipdir::NewDir::create(&target)?;
-        zipdir::extract(&zip, &target, &limits, &cancel)?;
+        let into = if replacing {
+            beside(&target)
+        } else {
+            target.clone()
+        };
+        let dir = zipdir::NewDir::create(&into)?;
+        zipdir::extract(&zip, &into, &limits, &cancel)?;
+        if replacing {
+            swap_in(&into, &target)?;
+        }
         dir.keep();
         anyhow::Ok(())
     })
@@ -450,9 +457,15 @@ async fn receive_collection(
         offer.numfiles, offer.numbytes
     );
     let chosen = async {
-        let (dest, _) = destination(wormhole, &offer.name, false, global, args, &describe).await?;
-        match zipdir::NewDir::create(&dest) {
-            Ok(dir) => Ok((dest, dir)),
+        let (dest, _, replacing) =
+            destination(wormhole, &offer.name, false, global, args, &describe).await?;
+        let into = if replacing {
+            beside(&dest)
+        } else {
+            dest.clone()
+        };
+        match zipdir::NewDir::create(&into) {
+            Ok(dir) => Ok((dest, into, dir)),
             Err(e) => {
                 protocol::send_error(wormhole, "the receiver cannot write there").await?;
                 Err(e)
@@ -460,7 +473,7 @@ async fn receive_collection(
         }
     }
     .await;
-    let (dest, dir) = match chosen {
+    let (dest, into, dir) = match chosen {
         Ok(chosen) => chosen,
         Err(e) => {
             iroh.close().await;
@@ -487,7 +500,10 @@ async fn receive_collection(
         }
         let fetched = listed.fetch(&pipe, &mut |n| bar.set_position(n)).await?;
         transfer::finale(&bar).await;
-        fetched.export_into(&dest).await?;
+        fetched.export_into(&into).await?;
+        if into != dest {
+            swap_in(&into, &dest)?;
+        }
         anyhow::Ok(())
     }
     .await;
@@ -518,6 +534,7 @@ async fn receive_collection(
 
 struct Partial {
     path: PathBuf,
+    replacing: bool,
 }
 
 impl Partial {
@@ -531,12 +548,37 @@ impl Partial {
             .open(&path)
             .await
             .with_context(|| format!("creating {}", path.display()))?;
-        Ok((Self { path }, handle))
+        Ok((
+            Self {
+                path,
+                replacing: false,
+            },
+            handle,
+        ))
     }
 
     fn finish(&self, dest: &Path) -> anyhow::Result<()> {
+        if self.replacing {
+            return std::fs::rename(&self.path, dest)
+                .with_context(|| format!("replacing {}", dest.display()));
+        }
         settle(std::fs::hard_link(&self.path, dest), &self.path, dest)
     }
+}
+
+fn beside(dest: &Path) -> PathBuf {
+    let name = dest.file_name().unwrap_or_default().to_string_lossy();
+    dest.with_file_name(format!(".{name}.{}.wyrm-part", unique_suffix()))
+}
+
+fn swap_in(staged: &Path, dest: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(dest) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(e).with_context(|| format!("replacing {}", dest.display()));
+        }
+        _ => {}
+    }
+    std::fs::rename(staged, dest).with_context(|| format!("moving the files to {}", dest.display()))
 }
 
 fn settle(linked: std::io::Result<()>, partial: &Path, dest: &Path) -> anyhow::Result<()> {
