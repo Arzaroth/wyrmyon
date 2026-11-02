@@ -345,6 +345,16 @@ async fn destination(
         Some(_) => eprintln!("Overwriting {}", dest.display()),
         None => {}
     }
+    consent(wormhole, args, describe, &dest).await?;
+    Ok((dest, name, existing.is_some()))
+}
+
+async fn consent(
+    wormhole: &mut Wormhole,
+    args: &ReceiveArgs,
+    describe: &str,
+    dest: &Path,
+) -> anyhow::Result<()> {
     eprintln!("Receiving {describe} into: {}", dest.display());
     if !args.accept_file {
         match confirm("ok? (Y/n) ").await {
@@ -356,7 +366,7 @@ async fn destination(
             }
         }
     }
-    Ok((dest, name, existing.is_some()))
+    Ok(())
 }
 
 async fn receive_file(

@@ -88,6 +88,12 @@ enum Command {
     Shim(shim::ShimArgs),
 }
 
+fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
+    wormhole.their_app_versions()["wyrmyon"]["transports"]
+        .as_array()
+        .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT))
+}
+
 impl Global {
     fn config(&self) -> Config {
         let app_versions = if self.force_classic {
@@ -106,10 +112,7 @@ impl Global {
     }
 
     fn use_iroh(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
-        let theirs = wormhole.their_app_versions()["wyrmyon"]["transports"]
-            .as_array()
-            .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT));
-        theirs && !self.force_classic
+        speaks_iroh(wormhole) && !self.force_classic
     }
 
     fn use_collection(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
