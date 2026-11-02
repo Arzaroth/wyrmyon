@@ -172,6 +172,14 @@ pub fn spinner(hidden: bool, ascii: bool) -> ProgressBar {
     bar
 }
 
+pub struct Cleared(pub ProgressBar);
+
+impl Drop for Cleared {
+    fn drop(&mut self) {
+        self.0.finish_and_clear();
+    }
+}
+
 pub async fn finale(bar: &ProgressBar) {
     if !bar.is_hidden() && !bar.is_finished() {
         tokio::time::sleep(FINALE).await;

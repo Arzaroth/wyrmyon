@@ -60,7 +60,7 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         (None, false) => Some(prompt_code(usize::from(args.code_length)).await?),
         (None, true) => None,
     };
-    let waiting = Waiting(transfer::spinner(global.hide_progress, global.ascii));
+    let waiting = transfer::Cleared(transfer::spinner(global.hide_progress, global.ascii));
     waiting.0.set_message("Connecting..");
     let pending = if let Some(code) = code {
         wyrmyon_wormhole::join(&global.config(), code).await?
@@ -87,14 +87,6 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
     let result = receive_offer(&mut wormhole, global, &args, &waiting.0).await;
     wormhole.close(mood_for(&result)).await;
     result
-}
-
-struct Waiting(ProgressBar);
-
-impl Drop for Waiting {
-    fn drop(&mut self) {
-        self.0.finish_and_clear();
-    }
 }
 
 async fn receive_offer(
