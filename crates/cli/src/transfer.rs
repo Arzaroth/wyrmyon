@@ -136,9 +136,8 @@ pub fn progress(size: u64, hidden: bool, ascii: bool, wormhole: bool) -> Progres
         return ProgressBar::hidden();
     }
     let bar = ProgressBar::new(size);
-    let console = cfg!(windows) && std::env::var_os("WT_SESSION").is_none();
     let look = Look {
-        ascii: ascii || console,
+        ascii: ascii || old_console(),
         paint: Paint::detect(),
         wormhole,
     };
@@ -151,6 +150,10 @@ pub fn progress(size: u64, hidden: bool, ascii: bool, wormhole: bool) -> Progres
     );
     bar.enable_steady_tick(std::time::Duration::from_millis(50));
     bar
+}
+
+fn old_console() -> bool {
+    cfg!(windows) && std::env::var_os("WT_SESSION").is_none()
 }
 
 pub async fn finale(bar: &ProgressBar) {
