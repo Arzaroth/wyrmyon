@@ -3,12 +3,12 @@ use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
 use iroh_blobs::api::TempTag;
-use iroh_blobs::api::blobs::{AddPathOptions, BlobStatus, ExportMode, ExportOptions, ImportMode};
+use iroh_blobs::api::blobs::{BlobStatus, ExportMode, ExportOptions};
 use iroh_blobs::api::remote::GetProgressItem;
 use iroh_blobs::hashseq::HashSeq;
 use iroh_blobs::protocol::{ChunkRanges, GetRequest};
 use iroh_blobs::store::fs::FsStore;
-use iroh_blobs::{BlobFormat, Hash, HashAndFormat};
+use iroh_blobs::{Hash, HashAndFormat};
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Fetched, IrohPipe, Offered};
@@ -123,8 +123,16 @@ impl Offered {
         sources: &[Source],
         dirs: &[String],
     ) -> Result<(Self, Manifest), Error> {
+        Self::import_collection_with_progress(sources, dirs, &mut |_| {}).await
+    }
+
+    pub async fn import_collection_with_progress(
+        sources: &[Source],
+        dirs: &[String],
+        progress: &mut (dyn FnMut(u64) + Send),
+    ) -> Result<(Self, Manifest), Error> {
         let (dir, store) = crate::blobs::throwaway_store().await?;
-        match import_all(&store, sources, dirs).await {
+        match import_all(&store, sources, dirs, progress).await {
             Ok((root, tags, manifest)) => Ok((
                 Self {
                     store,
@@ -147,17 +155,12 @@ impl Offered {
 
 type Failed = Box<dyn std::error::Error + Send + Sync>;
 
-async fn import_file(store: &FsStore, source: &Source) -> Result<(TempTag, u64), Failed> {
-    let added = store
-        .blobs()
-        .add_path_with_opts(AddPathOptions {
-            path: std::path::absolute(&source.path)?,
-            format: BlobFormat::Raw,
-            mode: ImportMode::TryReference,
-        })
-        .temp_tag()
-        .await;
-    let tag = match added {
+async fn import_file(
+    store: &FsStore,
+    source: &Source,
+    progress: &mut (dyn FnMut(u64) + Send),
+) -> Result<(TempTag, u64), Failed> {
+    let tag = match crate::blobs::add_path(store, &source.path, progress).await {
         Ok(tag) => tag,
         Err(e) => return Err(format!("{}: {e}", source.path.display()).into()),
     };
@@ -169,11 +172,15 @@ async fn import_all(
     store: &FsStore,
     sources: &[Source],
     dirs: &[String],
+    progress: &mut (dyn FnMut(u64) + Send),
 ) -> Result<(Hash, Vec<TempTag>, Manifest), Failed> {
     let mut tags = Vec::with_capacity(sources.len() + 2);
     let mut files = Vec::with_capacity(sources.len());
+    let mut done = 0u64;
     for source in sources {
-        let (tag, size) = import_file(store, source).await?;
+        let (tag, size) = import_file(store, source, &mut |hashed| progress(done + hashed)).await?;
+        done += size;
+        progress(done);
         files.push(ManifestFile {
             path: source.name.clone(),
             size,

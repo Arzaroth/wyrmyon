@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use iroh_blobs::api::blobs::{AddPathOptions, BlobStatus, ExportMode, ExportOptions, ImportMode};
+use iroh_blobs::api::blobs::{
+    AddPathOptions, AddProgressItem, BlobStatus, ExportMode, ExportOptions, ImportMode,
+};
 use iroh_blobs::api::remote::GetProgressItem;
 use iroh_blobs::api::{Store, TempTag};
 use iroh_blobs::provider::events::{
@@ -36,19 +38,45 @@ pub(crate) async fn throwaway_store() -> Result<(tempfile::TempDir, FsStore), Er
     Ok((dir, store))
 }
 
+pub(crate) async fn add_path(
+    store: &FsStore,
+    path: &Path,
+    progress: &mut (dyn FnMut(u64) + Send),
+) -> std::io::Result<TempTag> {
+    let items = store
+        .blobs()
+        .add_path_with_opts(AddPathOptions {
+            path: std::path::absolute(path)?,
+            format: BlobFormat::Raw,
+            mode: ImportMode::TryReference,
+        })
+        .stream()
+        .await;
+    let mut items = std::pin::pin!(items);
+    while let Some(item) = items.next().await {
+        match item {
+            AddProgressItem::OutboardProgress(hashed) => progress(hashed),
+            AddProgressItem::Done(tag) => return Ok(tag),
+            AddProgressItem::Error(e) => return Err(e),
+            _ => {}
+        }
+    }
+    Err(std::io::Error::other(
+        "the import stopped before it finished",
+    ))
+}
+
 impl Offered {
     pub async fn import(path: &Path) -> Result<Self, Error> {
+        Self::import_with_progress(path, &mut |_| {}).await
+    }
+
+    pub async fn import_with_progress(
+        path: &Path,
+        progress: &mut (dyn FnMut(u64) + Send),
+    ) -> Result<Self, Error> {
         let (dir, store) = throwaway_store().await?;
-        let absolute = std::path::absolute(path).map_err(|e| Error::Blob(e.to_string()))?;
-        let added = store
-            .blobs()
-            .add_path_with_opts(AddPathOptions {
-                path: absolute,
-                format: BlobFormat::Raw,
-                mode: ImportMode::TryReference,
-            })
-            .temp_tag()
-            .await;
+        let added = add_path(&store, path, progress).await;
         let tag = match added {
             Ok(tag) => tag,
             Err(e) => {
