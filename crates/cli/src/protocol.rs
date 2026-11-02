@@ -111,6 +111,32 @@ mod tests {
     }
 
     #[test]
+    fn only_a_bundle_says_so_on_the_wire() {
+        let offer = CollectionOffer {
+            name: "files".into(),
+            numbytes: 1,
+            numfiles: 1,
+            bundle: false,
+        };
+        assert_eq!(
+            serde_json::to_value(&offer).unwrap(),
+            json!({"name": "files", "numbytes": 1, "numfiles": 1})
+        );
+        let offer = DirectoryOffer {
+            mode: "zipfile/deflated".into(),
+            dirname: "files".into(),
+            zipsize: 1,
+            numbytes: 1,
+            numfiles: 1,
+            bundle: true,
+        };
+        let value = serde_json::to_value(&offer).unwrap();
+        assert_eq!(value["bundle"], true);
+        let back: DirectoryOffer = serde_json::from_value(value).unwrap();
+        assert!(back.bundle);
+    }
+
+    #[test]
     fn unknown_offers_and_answers_still_parse() {
         let msg: AppMessage =
             serde_json::from_value(json!({"offer": {"hologram": {"size": 3}}})).unwrap();

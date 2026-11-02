@@ -377,6 +377,50 @@ mod tests {
     }
 
     #[test]
+    fn a_bundle_names_each_path_and_refuses_one_inside_another() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(src.path().join("etc/x")).unwrap();
+        std::fs::write(src.path().join("etc/x/y.conf"), b"y").unwrap();
+        std::fs::write(src.path().join("a.txt"), b"a").unwrap();
+        std::fs::create_dir(src.path().join("void")).unwrap();
+        let (cancel, at) = (Cancel::default(), |p: &str| src.path().join(p));
+        let names = |entries: Vec<Entry>| -> Vec<String> {
+            entries
+                .into_iter()
+                .filter_map(|e| match e {
+                    Entry::File { name, .. } => Some(name),
+                    Entry::EmptyDir(_) => None,
+                })
+                .collect()
+        };
+        let kept = list_bundle(&[at("etc/x/y.conf"), at("a.txt")], true, &cancel).unwrap();
+        let mut kept = names(kept);
+        kept.sort();
+        assert!(kept[0].ends_with("/a.txt"), "{kept:?}");
+        assert!(kept[1].ends_with("/etc/x/y.conf"), "{kept:?}");
+        assert!(kept.iter().all(|k| !k.starts_with('/') && !k.contains(':')));
+        let loose = list_bundle(
+            &[at("etc/x/y.conf"), at("a.txt"), at("void")],
+            false,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(names(loose), ["y.conf", "a.txt"]);
+        let marked = |p: &str| PathBuf::from(format!("{}/./{p}", src.path().display()));
+        let inside = list_bundle(&[marked("etc"), marked("etc/x/y.conf")], true, &cancel);
+        let refused = inside.err().unwrap().to_string();
+        assert!(refused.contains("which is sent too"), "{refused}");
+        let twice = list_bundle(&[marked("a.txt"), marked("./a.txt")], true, &cancel);
+        assert!(
+            twice
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("two of the paths")
+        );
+    }
+
+    #[test]
     fn a_directory_round_trips_through_zip() {
         let src = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(src.path().join("sub/empty")).unwrap();

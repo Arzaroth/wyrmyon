@@ -1085,6 +1085,70 @@ async fn handed(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn kept_paths_merge_into_the_receivers_directories_over_iroh_or_a_zip() {
+    let server = MailboxServer::start().await;
+    let from = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(from.path().join("etc/x")).unwrap();
+    std::fs::write(from.path().join("etc/x/y.conf"), b"conf").unwrap();
+    std::fs::write(from.path().join("a.txt"), b"alpha").unwrap();
+    for classic in [false, true] {
+        let to = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(to.path().join("root/etc/x")).unwrap();
+        std::fs::write(to.path().join("root/etc/x/mine"), b"mine").unwrap();
+        let sending: &[&str] = if classic {
+            &["--force-classic", "send", "-R", "etc/x/y.conf", "a.txt"]
+        } else {
+            &["send", "-R", "etc/x/y.conf", "a.txt"]
+        };
+        let receiving = ["receive", "--accept-file", "-o", "root"];
+        let (sent, received, stderr) =
+            handed(&server, from.path(), sending, to.path(), &receiving).await;
+        assert!(sent && received, "{stderr}");
+        let root = to.path().join("root");
+        assert_eq!(std::fs::read(root.join("etc/x/y.conf")).unwrap(), b"conf");
+        assert_eq!(std::fs::read(root.join("etc/x/mine")).unwrap(), b"mine");
+        assert_eq!(std::fs::read(root.join("a.txt")).unwrap(), b"alpha");
+        let mut names: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.txt", "etc"], "{classic}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_refuses_a_file_already_there_unless_told_to_overwrite() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"new").unwrap();
+    std::fs::create_dir(from.path().join("sub")).unwrap();
+    std::fs::write(from.path().join("sub/b.txt"), b"new").unwrap();
+    std::fs::write(to.path().join("a.txt"), b"old").unwrap();
+    for classic in [false, true] {
+        let sending: &[&str] = if classic {
+            &["--force-classic", "send", "a.txt", "sub"]
+        } else {
+            &["send", "a.txt", "sub"]
+        };
+        let receiving = ["receive", "--accept-file"];
+        let (sent, received, stderr) =
+            handed(&server, from.path(), sending, to.path(), &receiving).await;
+        assert!(!sent && !received, "{stderr}");
+        assert!(stderr.contains("refusing to overwrite"), "{stderr}");
+        assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), b"old");
+        assert!(!to.path().join("sub").exists(), "{classic}");
+    }
+    let receiving = ["receive", "--accept-file", "--overwrite"];
+    let sending = ["send", "a.txt", "sub"];
+    let (sent, received, stderr) =
+        handed(&server, from.path(), &sending, to.path(), &receiving).await;
+    assert!(sent && received, "{stderr}");
+    assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), b"new");
+    assert_eq!(std::fs::read(to.path().join("sub/b.txt")).unwrap(), b"new");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn overwrite_replaces_a_file_but_never_a_directory() {
     let server = MailboxServer::start().await;
     let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -1165,4 +1229,48 @@ async fn overwrite_lets_a_directory_replace_a_file_over_iroh_or_a_zip() {
             "{flags:?}"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_needs_a_directory_to_land_in() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"a").unwrap();
+    std::fs::write(to.path().join("plain"), b"a file").unwrap();
+    let receiving = ["receive", "--accept-file", "-o", "plain"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "-R", "a.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(!sent && !received, "{stderr}");
+    assert!(stderr.contains("is not a directory"), "{stderr}");
+    let receiving = ["receive", "--accept-file", "-o", "plain/below"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "-R", "a.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(!sent && !received, "{stderr}");
+    assert!(stderr.contains("creating plain/below"), "{stderr}");
+    let receiving = ["receive", "--accept-file", "-o", "made/here"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "-R", "a.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(sent && received, "{stderr}");
+    assert_eq!(
+        std::fs::read(to.path().join("made/here/a.txt")).unwrap(),
+        b"a"
+    );
 }

@@ -286,6 +286,39 @@ async fn directory_from_wyrm_to_python_through_the_relay() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs the Python wormhole CLI and uvx"]
+async fn kept_paths_reach_python_inside_files() {
+    let mailbox = PythonMailbox::start().await;
+    let (_relay, hint) = python_transit_relay().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    tree_in(from.path());
+    std::fs::write(from.path().join("c.txt"), b"gamma").unwrap();
+    let mut sender = wyrm(&mailbox.url)
+        .args(["--no-listen", "--transit-helper", &hint])
+        .args(["send", "-R", "tree", "c.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        python(&mailbox.url)
+            .args(["--transit-helper", &hint, "receive", "--no-listen"])
+            .args(["--hide-progress", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(finish(sender).await.0);
+    assert_same_tree(&to.path().join("files/tree"));
+    assert_eq!(
+        std::fs::read(to.path().join("files/c.txt")).unwrap(),
+        b"gamma"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Python wormhole CLI and uvx"]
 async fn directory_from_python_to_wyrm_through_the_relay() {
     let mailbox = PythonMailbox::start().await;
     let (_relay, hint) = python_transit_relay().await;

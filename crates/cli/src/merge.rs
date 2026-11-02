@@ -151,3 +151,157 @@ impl Drop for Merge {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn written(merge: &mut Merge, path: &str, contents: &[u8]) -> io::Result<()> {
+        let partial = merge.file(Path::new(path))?;
+        std::fs::write(&partial, contents)?;
+        merge.placed(Path::new(path), &partial)
+    }
+
+    #[test]
+    fn what_is_already_there_clashes_unless_it_is_a_directory_or_overwritten() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        std::fs::create_dir_all(into.join("etc/x")).unwrap();
+        std::fs::write(into.join("etc/x/y.conf"), b"old").unwrap();
+        std::fs::write(into.join("file"), b"old").unwrap();
+        let clash = |path: &str, dir, overwrite| clash(into, Path::new(path), dir, overwrite);
+        assert_eq!(clash("etc/x/new.conf", false, false), None);
+        assert_eq!(clash("etc/x", true, false), None);
+        assert_eq!(clash("etc/x/z/deeper", false, false), None);
+        assert!(
+            clash("etc/x/y.conf", false, false)
+                .unwrap()
+                .starts_with("refusing to overwrite")
+        );
+        assert_eq!(clash("etc/x/y.conf", false, true), None);
+        assert!(
+            clash("etc/x", false, true)
+                .unwrap()
+                .starts_with("refusing to overwrite")
+        );
+        assert!(
+            clash("file", true, true)
+                .unwrap()
+                .ends_with("is in the way")
+        );
+        assert!(
+            clash("file/below", false, true)
+                .unwrap()
+                .ends_with("is in the way")
+        );
+    }
+
+    #[test]
+    fn a_merge_fills_existing_directories_and_takes_back_only_what_it_added() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        std::fs::create_dir_all(into.join("etc/x")).unwrap();
+        std::fs::write(into.join("etc/x/keep"), b"mine").unwrap();
+        let mut merge = Merge::new(into, false);
+        written(&mut merge, "etc/x/y.conf", b"new").unwrap();
+        written(&mut merge, "etc/z/w.conf", b"new").unwrap();
+        merge.dir(Path::new("void/inner")).unwrap();
+        assert_eq!(std::fs::read(into.join("etc/z/w.conf")).unwrap(), b"new");
+        let refused = written(&mut merge, "etc/x/keep", b"theirs").unwrap_err();
+        assert!(refused.to_string().starts_with("refusing to overwrite"));
+        drop(merge);
+        let mut left: Vec<_> = walkdir(into);
+        left.sort();
+        assert_eq!(left, ["etc", "etc/x", "etc/x/keep"]);
+        assert_eq!(std::fs::read(into.join("etc/x/keep")).unwrap(), b"mine");
+    }
+
+    #[test]
+    fn a_kept_merge_stays_and_overwrites_in_place() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        std::fs::write(into.join("a"), b"old").unwrap();
+        let mut merge = Merge::new(into, true);
+        written(&mut merge, "a", b"new").unwrap();
+        written(&mut merge, "sub/b", b"new").unwrap();
+        merge.keep();
+        assert_eq!(std::fs::read(into.join("a")).unwrap(), b"new");
+        assert_eq!(std::fs::read(into.join("sub/b")).unwrap(), b"new");
+        let mut left = walkdir(into);
+        left.sort();
+        assert_eq!(left, ["a", "sub", "sub/b"]);
+    }
+
+    #[test]
+    fn a_file_in_the_way_of_a_directory_stops_the_merge() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        std::fs::write(into.join("etc"), b"a file").unwrap();
+        let mut merge = Merge::new(into, true);
+        let refused = merge.file(Path::new("etc/x")).unwrap_err();
+        assert!(refused.to_string().ends_with("is in the way"), "{refused}");
+        let partial = merge.file(Path::new("other")).unwrap();
+        std::fs::write(&partial, b"half").unwrap();
+        drop(merge);
+        assert!(!partial.exists());
+    }
+
+    #[test]
+    fn a_file_that_appears_meanwhile_is_kept_and_the_partial_dropped() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        let mut merge = Merge::new(into, false);
+        let partial = merge.file(Path::new("a")).unwrap();
+        std::fs::write(&partial, b"theirs").unwrap();
+        std::fs::write(into.join("a"), b"mine").unwrap();
+        let refused = merge.placed(Path::new("a"), &partial).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .ends_with("appeared during the transfer")
+        );
+        drop(merge);
+        assert_eq!(std::fs::read(into.join("a")).unwrap(), b"mine");
+        assert!(!partial.exists());
+    }
+
+    #[test]
+    fn what_cannot_be_hard_linked_is_moved_instead() {
+        let into = tempfile::tempdir().unwrap();
+        let into = into.path();
+        let mut merge = Merge::new(into, false);
+        let partial = merge.file(Path::new("moved")).unwrap();
+        std::fs::create_dir(&partial).unwrap();
+        merge.placed(Path::new("moved"), &partial).unwrap();
+        merge.keep();
+        assert!(into.join("moved").is_dir());
+        assert!(!partial.exists());
+    }
+
+    #[test]
+    fn a_merge_into_nothing_fails_without_leaving_anything() {
+        let into = tempfile::tempdir().unwrap();
+        let missing = into.path().join("missing");
+        let mut merge = Merge::new(&missing, false);
+        let failed = merge.file(Path::new("a/b")).unwrap_err();
+        assert_eq!(failed.kind(), io::ErrorKind::NotFound);
+        drop(merge);
+        assert!(!missing.exists());
+    }
+
+    fn walkdir(root: &Path) -> Vec<String> {
+        let mut found = Vec::new();
+        let mut todo = vec![root.to_owned()];
+        while let Some(dir) = todo.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                let relative = path.strip_prefix(root).unwrap();
+                found.push(relative.to_string_lossy().replace('\\', "/"));
+                if path.is_dir() {
+                    todo.push(path);
+                }
+            }
+        }
+        found
+    }
+}

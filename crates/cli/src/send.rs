@@ -766,6 +766,26 @@ async fn send_over(
 mod tests {
     use super::*;
 
+    #[test]
+    fn relative_keeps_the_path_as_typed_from_the_marker_on() {
+        let kept =
+            |path: &str| kept(Path::new(path)).map(|p| p.to_string_lossy().replace('\\', "/"));
+        for (typed, landing) in [
+            ("a/b.txt", "a/b.txt"),
+            ("/etc/x/y.conf", "etc/x/y.conf"),
+            ("/etc/./x/y.conf", "x/y.conf"),
+            ("./a/./b/c", "b/c"),
+            ("photos/", "photos"),
+            ("photos/./", ""),
+            (".././a.txt", "a.txt"),
+        ] {
+            assert_eq!(kept(typed).unwrap(), landing, "{typed}");
+        }
+        let refused = kept("../a.txt").unwrap_err().to_string();
+        assert!(refused.contains("cannot keep `..`"), "{refused}");
+        assert!(kept("a/./../b").is_err());
+    }
+
     fn running() -> (Hashing<()>, tokio::sync::oneshot::Receiver<()>) {
         let (ended, released) = tokio::sync::oneshot::channel::<()>();
         let hashing = Hashing::start(0, move |mut progress| async move {
