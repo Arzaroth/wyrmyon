@@ -86,6 +86,14 @@ pub fn list_bundle(
         };
         named.push((path, name));
     }
+    if named.len() > 1
+        && let Some((path, _)) = named.iter().find(|(_, name)| name.as_os_str().is_empty())
+    {
+        bail!(
+            "-R {} sends what is inside it, so it cannot go with other paths",
+            path.display()
+        );
+    }
     let mut landing: Vec<&PathBuf> = named.iter().map(|(_, name)| name).collect();
     landing.sort();
     for pair in landing.windows(2) {
@@ -410,6 +418,11 @@ mod tests {
         let inside = list_bundle(&[marked("etc"), marked("etc/x/y.conf")], true, &cancel);
         let refused = inside.err().unwrap().to_string();
         assert!(refused.contains("which is sent too"), "{refused}");
+        let whole = list_bundle(&[at("etc/./"), at("a.txt")], true, &cancel);
+        let refused = whole.err().unwrap().to_string();
+        assert!(refused.contains("cannot go with other paths"), "{refused}");
+        let alone = list_bundle(&[at("etc/./")], true, &cancel).unwrap();
+        assert_eq!(names(alone), ["x/y.conf"]);
         let twice = list_bundle(&[marked("a.txt"), marked("./a.txt")], true, &cancel);
         assert!(
             twice
