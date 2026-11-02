@@ -394,9 +394,13 @@ impl Collection {
             place.dir(Path::new(empty))?;
         }
         let mut seen = BTreeSet::new();
+        let repeated: BTreeSet<_> = self.children[1..]
+            .iter()
+            .filter(|hash| !seen.insert(**hash))
+            .collect();
         for (hash, file) in self.children[1..].iter().zip(&self.manifest.files) {
             let target = std::path::absolute(place.file(Path::new(&file.path))?)?;
-            let mode = if cfg!(windows) || !seen.insert(*hash) {
+            let mode = if cfg!(windows) || repeated.contains(hash) {
                 ExportMode::Copy
             } else {
                 ExportMode::TryReference
