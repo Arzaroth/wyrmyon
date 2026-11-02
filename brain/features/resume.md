@@ -18,7 +18,10 @@ wyrm send big.iso        # a new code; the receiver fetches only what it lacks
   background as soon as the code is shown (not under `--force-classic`), so
   it is usually done by the time the receiver has typed the code; if the peer
   turns out to be iroh-v1 before it is, `Hashing..` and a bar of the bytes
-  hashed so far show the rest, and a legacy peer stops it. After the channel
+  hashed so far show the rest, and a legacy peer stops it: the import sees
+  the stop at its next progress report and shuts its store down. Since the
+  hash is taken when the code is shown, a file edited after that fails the
+  receiver's verification. After the channel
   binding it writes the 32-byte BLAKE3 hash on
   the control stream and serves iroh-blobs requests arriving on further
   streams of the same, already authenticated connection; nothing else can

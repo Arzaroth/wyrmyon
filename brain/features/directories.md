@@ -61,7 +61,7 @@ under `offers` ([negotiation.md](../architecture/negotiation.md)), there is no
 zip. The sender imports every file of the list into its throwaway store by
 reference, hashing it in place, starting in the background when the code is
 shown as for a single file ([resume.md](resume.md)); a peer that takes a zip
-stops it. It offers
+stops it, unless `--times` leaves it for a later iroh receiver. It offers
 
 ```json
 {"wyrmyon-collection-v1": {"name": "photos", "numbytes": 5678, "numfiles": 3}}

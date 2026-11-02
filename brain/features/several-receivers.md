@@ -37,8 +37,9 @@ The payload is staged once for the whole run (`Staged` in `send.rs`): the
 zip is built at most once, the first time a receiver needs it, and the blob
 or the collection hashed at most once, starting when the code is shown
 ([resume.md](resume.md)). A receiver that cannot use the hash (a legacy
-client, or one that takes a zip) stops the hashing, and a later iroh
-receiver starts it again. All of it is closed when the run ends.
+client, or one that takes a zip) leaves it running for the iroh receivers
+after it; with a single receiver it stops it. All of it is closed when the
+run ends.
 
 ## Why a wrong code ends the run
 
@@ -70,9 +71,10 @@ other.
 The blob and the collection are hashed while the code waits for its first
 receiver and refer to the files on disk; the zip is a copy made the first
 time a zip receiver needs it; classic transit re-reads a single file each
-turn. A file edited mid-run therefore makes later iroh turns fail their
-verification, and can give zip and iroh receivers different contents.
-Nothing arrives unverified; leave the files alone until the run ends.
+turn. A file edited once the code is shown, even before the first receiver
+arrives, therefore makes the iroh turns fail their verification, and can
+give zip and iroh receivers different contents. Nothing arrives unverified;
+leave the files alone from the code until the run ends.
 
 ## Sources
 
