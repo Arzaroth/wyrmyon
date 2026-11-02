@@ -1042,3 +1042,64 @@ async fn a_file_the_sender_cannot_read_fails_both_sides_over_iroh() {
     assert!(!finish(sender).await.0);
     assert!(!to.path().join("locked.bin").exists());
 }
+
+async fn handed(
+    server: &MailboxServer,
+    from: &std::path::Path,
+    sending: &[&str],
+    to: &std::path::Path,
+    receiving: &[&str],
+) -> (bool, bool, String) {
+    let mut sender = wyrm(&server.url())
+        .args(sending)
+        .current_dir(from)
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (received, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(receiving)
+            .arg(&code)
+            .current_dir(to)
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    (finish(sender).await.0, received, stderr)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overwrite_replaces_a_file_but_never_a_directory() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), b"new").unwrap();
+    std::fs::write(to.path().join("a.txt"), b"old").unwrap();
+    let receiving = ["receive", "--accept-file", "--overwrite"];
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "a.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(sent && received, "{stderr}");
+    assert!(stderr.contains("Overwriting"), "{stderr}");
+    assert_eq!(std::fs::read(to.path().join("a.txt")).unwrap(), b"new");
+
+    std::fs::remove_file(to.path().join("a.txt")).unwrap();
+    std::fs::create_dir(to.path().join("a.txt")).unwrap();
+    let (sent, received, stderr) = handed(
+        &server,
+        from.path(),
+        &["send", "a.txt"],
+        to.path(),
+        &receiving,
+    )
+    .await;
+    assert!(!sent && !received, "{stderr}");
+    assert!(
+        stderr.contains("not deleting the existing directory"),
+        "{stderr}"
+    );
+}
