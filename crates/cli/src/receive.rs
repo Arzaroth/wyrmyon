@@ -34,6 +34,9 @@ pub struct ReceiveArgs {
     /// Where to write a received file or directory, instead of its name in the current directory
     #[arg(long, short = 'o')]
     pub(crate) output_file: Option<PathBuf>,
+    /// Replace a file already at the destination; a directory is never replaced
+    #[arg(long)]
+    pub(crate) overwrite: bool,
     #[arg(skip)]
     pub(crate) only_text: bool,
     #[arg(skip)]
@@ -48,6 +51,7 @@ impl ReceiveArgs {
             code_length: CODE_LENGTH,
             accept_file: false,
             output_file: None,
+            overwrite: false,
             only_text: false,
             as_wormhole: false,
         }
@@ -318,7 +322,7 @@ async fn destination(
         None => PathBuf::from(&name),
     };
     let existing = dest.symlink_metadata().ok();
-    let overwrite = args.as_wormhole && args.output_file.is_some();
+    let overwrite = args.overwrite || (args.as_wormhole && args.output_file.is_some());
     match &existing {
         Some(_) if !overwrite => {
             return refuse(

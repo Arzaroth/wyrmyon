@@ -293,6 +293,7 @@ fn receive_args(args: ReceiveArgs) -> receive::ReceiveArgs {
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         accept_file: args.accept_file,
         output_file: args.output_file,
+        overwrite: false,
         only_text: args.only_text,
         as_wormhole: true,
     }
