@@ -372,8 +372,12 @@ impl Collection {
     }
 
     pub async fn export_into(self, dir: &Path) -> Result<(), Error> {
+        self.export_with(&mut Under(dir.to_owned())).await
+    }
+
+    pub async fn export_with(self, place: &mut (dyn Placement + Send)) -> Result<(), Error> {
         let exported = match self.fetched.begin_export().await {
-            Ok(()) => self.export_all(dir).await,
+            Ok(()) => self.export_all(place).await,
             Err(e) => Err(e),
         };
         match exported {
@@ -385,17 +389,13 @@ impl Collection {
         }
     }
 
-    async fn export_all(&self, dir: &Path) -> std::io::Result<()> {
-        let dir = std::path::absolute(dir)?;
+    async fn export_all(&self, place: &mut (dyn Placement + Send)) -> std::io::Result<()> {
         for empty in &self.manifest.dirs {
-            tokio::fs::create_dir_all(dir.join(empty)).await?;
+            place.dir(Path::new(empty))?;
         }
         let mut seen = BTreeSet::new();
         for (hash, file) in self.children[1..].iter().zip(&self.manifest.files) {
-            let target = dir.join(&file.path);
-            if let Some(parent) = target.parent() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
+            let target = std::path::absolute(place.file(Path::new(&file.path))?)?;
             let mode = if cfg!(windows) || !seen.insert(*hash) {
                 ExportMode::Copy
             } else {
@@ -418,7 +418,34 @@ impl Collection {
                 .sync_all()
                 .await?;
             set_mode(&target, file.mode & 0o777)?;
+            place.placed(Path::new(&file.path), &target)?;
         }
+        Ok(())
+    }
+}
+
+pub trait Placement {
+    fn dir(&mut self, path: &Path) -> std::io::Result<()>;
+    fn file(&mut self, path: &Path) -> std::io::Result<PathBuf>;
+    fn placed(&mut self, path: &Path, written: &Path) -> std::io::Result<()>;
+}
+
+pub struct Under(pub PathBuf);
+
+impl Placement for Under {
+    fn dir(&mut self, path: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(self.0.join(path))
+    }
+
+    fn file(&mut self, path: &Path) -> std::io::Result<PathBuf> {
+        let target = self.0.join(path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        Ok(target)
+    }
+
+    fn placed(&mut self, _: &Path, _: &Path) -> std::io::Result<()> {
         Ok(())
     }
 }

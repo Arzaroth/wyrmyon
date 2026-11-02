@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, bail};
+use wyrmyon_transport_iroh::{Placement, Under};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -206,6 +207,15 @@ pub fn extract(
     limits: &Limits,
     cancel: &Cancel,
 ) -> anyhow::Result<()> {
+    extract_with(zip_path, &mut Under(dest.to_owned()), limits, cancel)
+}
+
+pub fn extract_with(
+    zip_path: &Path,
+    place: &mut dyn Placement,
+    limits: &Limits,
+    cancel: &Cancel,
+) -> anyhow::Result<()> {
     let mut archive =
         ZipArchive::new(File::open(zip_path).context("opening the received zip file")?)
             .context("the received data is not a zip file")?;
@@ -219,9 +229,8 @@ pub fn extract(
                 crate::printable(entry.name())
             );
         };
-        let target = dest.join(&relative);
         if entry.is_dir() {
-            std::fs::create_dir_all(&target)?;
+            place.dir(&relative)?;
             continue;
         }
         if entry.is_symlink() {
@@ -235,7 +244,7 @@ pub fn extract(
                 limits.numfiles
             );
         }
-        std::fs::create_dir_all(target.parent().unwrap_or(dest))?;
+        let target = place.file(&relative)?;
         let mode = entry.unix_mode().map_or(0o644, |m| m & 0o777);
         let mut out =
             create_new(&target, mode).with_context(|| format!("creating {}", target.display()))?;
@@ -255,6 +264,7 @@ pub fn extract(
         bytes += copied;
         out.flush()?;
         set_mode(&target, mode)?;
+        place.placed(&relative, &target)?;
     }
     Ok(())
 }
