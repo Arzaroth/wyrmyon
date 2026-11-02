@@ -363,6 +363,17 @@ impl NewDir {
         })
     }
 
+    pub fn create_all(path: &Path) -> anyhow::Result<Option<Self>> {
+        let top = path
+            .ancestors()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .take_while(|dir| dir.symlink_metadata().is_err())
+            .last()
+            .map(Path::to_owned);
+        std::fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
+        Ok(top.map(|path| Self { path, keep: false }))
+    }
+
     pub fn keep(mut self) {
         self.keep = true;
     }
@@ -382,6 +393,19 @@ mod tests {
 
     fn build(dir: &Path, cancel: &Cancel) -> anyhow::Result<Built> {
         zip(&list(dir, cancel)?, cancel)
+    }
+
+    #[test]
+    fn a_directory_made_with_its_parents_goes_unless_kept() {
+        let root = tempfile::tempdir().unwrap();
+        let deep = root.path().join("new/deep/dir");
+        let made = NewDir::create_all(&deep).unwrap();
+        assert!(deep.is_dir());
+        drop(made);
+        assert!(!root.path().join("new").exists());
+        NewDir::create_all(&deep).unwrap().unwrap().keep();
+        assert!(deep.is_dir());
+        assert!(NewDir::create_all(&deep).unwrap().is_none());
     }
 
     #[test]
