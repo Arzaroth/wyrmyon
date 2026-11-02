@@ -701,7 +701,7 @@ impl Partial {
     }
 }
 
-fn beside(dest: &Path) -> PathBuf {
+pub(crate) fn beside(dest: &Path) -> PathBuf {
     let name = dest.file_name().unwrap_or_default().to_string_lossy();
     dest.with_file_name(format!(".{name}.{}.wyrm-part", unique_suffix()))
 }
@@ -738,7 +738,7 @@ impl Drop for Partial {
     }
 }
 
-pub(crate) fn unique_suffix() -> String {
+fn unique_suffix() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.subsec_nanos());

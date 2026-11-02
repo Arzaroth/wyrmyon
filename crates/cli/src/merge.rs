@@ -150,12 +150,7 @@ impl Placement for Merge {
         if let Some(why) = clash(&self.into, path, false, self.overwrite) {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, why));
         }
-        let target = self.into.join(path);
-        let name = target.file_name().unwrap_or_default().to_string_lossy();
-        let partial = target.with_file_name(format!(
-            ".{name}.{}.wyrm-part",
-            crate::receive::unique_suffix()
-        ));
+        let partial = crate::receive::beside(&self.into.join(path));
         self.partial = Some(partial.clone());
         Ok(partial)
     }
