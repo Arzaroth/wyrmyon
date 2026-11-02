@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
 ### Added
 
 - `wyrm send -R` (`--relative`) keeps each path as typed, the way `rsync -R`
