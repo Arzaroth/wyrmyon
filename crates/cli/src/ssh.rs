@@ -15,6 +15,8 @@ use crate::{CODE_LENGTH, Global, home, mood_for, send, show_welcome};
 
 pub const APPID: &str = "lothar.com/wormhole/ssh-add";
 
+const MAX_LINE: usize = 16 * 1024;
+
 const KINDS: [&str; 8] = [
     "ssh-ed25519",
     "ssh-rsa",
@@ -285,8 +287,14 @@ struct PublicKey {
 impl PublicKey {
     fn parse(text: &str) -> anyhow::Result<Self> {
         let line = text.trim();
-        if line.chars().any(|c| c.is_control() && c != '\t') {
-            bail!("not one line");
+        if line.len() > MAX_LINE {
+            bail!("too long for a public key");
+        }
+        if line
+            .chars()
+            .any(|c| c != '\t' && (c.is_control() || invisible(c)))
+        {
+            bail!("not one line of visible text");
         }
         let mut fields = line.splitn(2, char::is_whitespace);
         let kind = fields.next().unwrap_or_default();
@@ -324,6 +332,13 @@ impl PublicKey {
     fn fingerprint(&self) -> String {
         format!("SHA256:{}", STANDARD_NO_PAD.encode(self.digest))
     }
+}
+
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}'
+    )
 }
 
 fn named_kind(blob: &[u8]) -> Option<&[u8]> {
@@ -391,21 +406,11 @@ impl Target {
     }
 
     fn append(&self, key: &PublicKey) -> anyhow::Result<()> {
-        if !self.dir.exists() {
-            let mut dir = DirBuilder::new();
-            private_dir(&mut dir);
-            dir.create(&self.dir)
-                .with_context(|| format!("cannot create {}", self.dir.display()))?;
-            give(&self.dir, self.owner)?;
-        }
         let path = self.keys();
-        let existed = path.exists();
-        let mut options = OpenOptions::new();
-        options.read(true).append(true).create(true);
-        private_file(&mut options);
-        let mut file = options
-            .open(&path)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        let mut file = match self.owner {
+            Some(owner) => owned_keys(&self.dir, owner)?,
+            None => self.own_keys()?,
+        };
         let mut line = String::new();
         if !ends_a_line(&mut file).with_context(|| format!("cannot read {}", path.display()))? {
             line.push('\n');
@@ -414,11 +419,91 @@ impl Target {
         line.push('\n');
         file.write_all(line.as_bytes())
             .with_context(|| format!("cannot write {}", path.display()))?;
-        if !existed {
-            give(&path, self.owner)?;
-        }
         Ok(())
     }
+
+    fn own_keys(&self) -> anyhow::Result<fs::File> {
+        if !self.dir.exists() {
+            let mut dir = DirBuilder::new();
+            private_dir(&mut dir);
+            dir.create(&self.dir)
+                .with_context(|| format!("cannot create {}", self.dir.display()))?;
+        }
+        let path = self.keys();
+        let mut options = OpenOptions::new();
+        options.read(true).append(true).create(true);
+        private_file(&mut options);
+        options
+            .open(&path)
+            .with_context(|| format!("cannot write {}", path.display()))
+    }
+}
+
+#[cfg(unix)]
+fn owned_keys(dir: &Path, (uid, gid): (u32, u32)) -> anyhow::Result<fs::File> {
+    use rustix::fs::{CWD, Mode, OFlags, openat};
+    use std::os::unix::fs::fchown;
+    let mut builder = DirBuilder::new();
+    private_dir(&mut builder);
+    let made = match builder.create(dir) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(e) => return Err(e).with_context(|| format!("cannot create {}", dir.display())),
+    };
+    let unlinked = |path: &Path| format!("cannot open {} without following a link", path.display());
+    let nofollow = OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let ssh = openat(
+        CWD,
+        dir,
+        OFlags::RDONLY | OFlags::DIRECTORY | nofollow,
+        Mode::empty(),
+    )
+    .with_context(|| unlinked(dir))?;
+    let ssh = fs::File::from(ssh);
+    if made {
+        fchown(&ssh, Some(uid), Some(gid))
+            .with_context(|| format!("cannot hand over {}", dir.display()))?;
+    }
+    theirs(&ssh, uid, dir)?;
+    let path = dir.join("authorized_keys");
+    let write = OFlags::RDWR | OFlags::APPEND | nofollow;
+    let new = OFlags::CREATE | OFlags::EXCL;
+    let (keys, created) = match openat(&ssh, "authorized_keys", write | new, Mode::from(0o600)) {
+        Ok(keys) => (keys, true),
+        Err(rustix::io::Errno::EXIST) => (
+            openat(&ssh, "authorized_keys", write, Mode::empty())
+                .with_context(|| unlinked(&path))?,
+            false,
+        ),
+        Err(e) => return Err(e).with_context(|| format!("cannot write {}", path.display())),
+    };
+    let keys = fs::File::from(keys);
+    if created {
+        fchown(&keys, Some(uid), Some(gid))
+            .with_context(|| format!("cannot hand over {}", path.display()))?;
+    }
+    theirs(&keys, uid, &path)?;
+    Ok(keys)
+}
+
+#[cfg(unix)]
+fn theirs(file: &fs::File, uid: u32, path: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = file
+        .metadata()
+        .with_context(|| format!("cannot read {}", path.display()))?;
+    if meta.uid() != uid || (meta.is_file() && meta.nlink() != 1) {
+        bail!(
+            "{} is not the user's own, or has other names: not writing to it",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn owned_keys(_: &Path, _: (u32, u32)) -> anyhow::Result<fs::File> {
+    bail!("--user works on Unix only")
 }
 
 fn ends_a_line(file: &mut fs::File) -> std::io::Result<bool> {
@@ -460,20 +545,6 @@ fn private_file(options: &mut OpenOptions) {
 
 #[cfg(not(unix))]
 fn private_file(_: &mut OpenOptions) {}
-
-#[cfg(unix)]
-fn give(path: &Path, owner: Option<(u32, u32)>) -> anyhow::Result<()> {
-    if let Some((uid, gid)) = owner {
-        std::os::unix::fs::chown(path, Some(uid), Some(gid))
-            .with_context(|| format!("cannot hand over {}", path.display()))?;
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn give(_: &Path, _: Option<(u32, u32)>) -> anyhow::Result<()> {
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
