@@ -11,7 +11,7 @@ use wyrmyon_wormhole::{Code, Config, Wormhole};
 
 use crate::protocol::{self, Answer, AppMessage, Offer};
 use crate::receive::refuse;
-use crate::{CODE_LENGTH, Global, mood_for, send, shim, show_welcome};
+use crate::{CODE_LENGTH, Global, home, mood_for, send, show_welcome};
 
 pub const APPID: &str = "lothar.com/wormhole/ssh-add";
 
@@ -81,7 +81,7 @@ pub async fn run(global: &Global, args: SshArgs) -> anyhow::Result<()> {
     let appid = args.appid.unwrap_or_else(|| APPID.to_owned());
     match args.action {
         Action::Invite(invite_args) => {
-            let target = Target::of(invite_args.user.as_deref(), shim::home())?;
+            let target = Target::of(invite_args.user.as_deref(), home())?;
             invite(
                 global,
                 appid,
@@ -113,13 +113,10 @@ fn hint(code: &Code, as_wormhole: bool) -> String {
 async fn asked(key_file: Option<PathBuf>, yes: bool) -> anyhow::Result<PublicKey> {
     let (answered, answer) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
-        let choice = Choice {
-            key_file: key_file.as_deref(),
-            yes,
-            home: shim::home(),
-        };
         let _ = answered.send(chosen_key(
-            choice,
+            key_file.as_deref(),
+            yes,
+            home(),
             &mut std::io::stdin().lock(),
             &mut std::io::stdout(),
         ));
@@ -197,18 +194,14 @@ async fn accept(global: &Global, appid: String, code: Code, key: &PublicKey) -> 
     Ok(())
 }
 
-struct Choice<'a> {
-    pub key_file: Option<&'a Path>,
-    pub yes: bool,
-    pub home: Option<PathBuf>,
-}
-
 fn chosen_key(
-    choice: Choice,
+    key_file: Option<&Path>,
+    yes: bool,
+    home: Option<PathBuf>,
     input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> anyhow::Result<PublicKey> {
-    let path = find_key(choice.key_file, choice.home, input, output)?;
+    let path = find_key(key_file, home, input, output)?;
     let text =
         fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
     let key = PublicKey::parse(&text).with_context(|| format!("cannot send {}", path.display()))?;
@@ -218,7 +211,7 @@ fn chosen_key(
         key.kind,
         key.id()
     )?;
-    if !choice.yes {
+    if !yes {
         write!(output, "Really send public key '{}' ? [y/N]: ", key.id())?;
         output.flush()?;
         let mut answer = String::new();
@@ -240,7 +233,7 @@ fn find_key(
         Some(file) if !file.is_dir() => return Ok(file.to_owned()),
         Some(dir) => dir.to_owned(),
         None => home
-            .context("no absolute HOME to look for ~/.ssh in; use --key-file")?
+            .context("no absolute HOME to find ~/.ssh in; use --key-file")?
             .join(".ssh"),
     };
     let mut keys: Vec<PathBuf> = fs::read_dir(&dir)
@@ -282,7 +275,7 @@ fn pick(
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct PublicKey {
+struct PublicKey {
     kind: String,
     blob: String,
     comment: String,
@@ -339,7 +332,7 @@ fn named_kind(blob: &[u8]) -> Option<&[u8]> {
 }
 
 #[derive(Debug)]
-pub struct Target {
+struct Target {
     dir: PathBuf,
     owner: Option<(u32, u32)>,
 }
@@ -349,7 +342,7 @@ impl Target {
         match user {
             None => Ok(Self {
                 dir: home
-                    .context("no absolute HOME to find ~/.ssh in")?
+                    .context("no absolute HOME to find ~/.ssh in; use --user")?
                     .join(".ssh"),
                 owner: None,
             }),
@@ -515,12 +508,13 @@ mod tests {
         typed: &str,
     ) -> (anyhow::Result<PublicKey>, String) {
         let mut said = Vec::new();
-        let choice = Choice {
+        let key = chosen_key(
             key_file,
             yes,
-            home: Some(home.to_owned()),
-        };
-        let key = chosen_key(choice, &mut typed.as_bytes(), &mut said);
+            Some(home.to_owned()),
+            &mut typed.as_bytes(),
+            &mut said,
+        );
         (key, String::from_utf8(said).unwrap())
     }
 
@@ -624,14 +618,14 @@ mod tests {
 
         let file = tempfile::tempdir().unwrap();
         fs::write(file.path().join(".ssh"), "").unwrap();
-        let blocked = super::Target {
+        let blocked = Target {
             dir: file.path().join(".ssh"),
             owner: None,
         };
         let err = blocked.check(&mut Vec::new()).unwrap_err();
         assert!(format!("{err}").contains("cannot read"), "{err}");
 
-        let nowhere = super::Target {
+        let nowhere = Target {
             dir: file.path().join(".ssh/deeper"),
             owner: None,
         };
@@ -645,7 +639,7 @@ mod tests {
         use std::os::unix::fs::MetadataExt;
         let home = tempfile::tempdir().unwrap();
         let meta = fs::metadata(home.path()).unwrap();
-        let target = super::Target {
+        let target = Target {
             dir: home.path().join(".ssh"),
             owner: Some((meta.uid(), meta.gid())),
         };
@@ -743,12 +737,7 @@ mod tests {
         fs::create_dir(home.path().join(".ssh/dir.pub")).unwrap();
         let (found, _) = choose(home.path(), None, true, "");
         assert!(found.unwrap_err().to_string().contains("no public keys"));
-        let choice = Choice {
-            key_file: None,
-            yes: true,
-            home: None,
-        };
-        let none = chosen_key(choice, &mut &b""[..], &mut Vec::new()).unwrap_err();
+        let none = chosen_key(None, true, None, &mut &b""[..], &mut Vec::new()).unwrap_err();
         assert!(none.to_string().contains("HOME"));
     }
 }

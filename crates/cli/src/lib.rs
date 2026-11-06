@@ -260,6 +260,10 @@ fn show_welcome(welcome: &Welcome) {
     }
 }
 
+fn home() -> Option<std::path::PathBuf> {
+    absolute(cache_env().1)
+}
+
 fn cache_dir() -> anyhow::Result<std::path::PathBuf> {
     let (xdg, home) = cache_env();
     cache_dir_from(std::env::var_os("WYRMYON_CACHE_DIR"), xdg, home)

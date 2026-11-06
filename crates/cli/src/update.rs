@@ -65,7 +65,7 @@ pub(crate) fn run(hide_progress: bool) -> anyhow::Result<String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let us = crate::shim::Us::current().ok();
     let shims = us.as_ref().map_or_else(Vec::new, |us| {
-        crate::shim::hard_links(us, crate::shim::home().as_deref())
+        crate::shim::hard_links(us, crate::home().as_deref())
     });
     let applied = selvedge::update::apply(&WYRMYON, &unread.path().join("update.json"))?;
     let warnings = match &us {

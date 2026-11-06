@@ -101,10 +101,6 @@ fn dangling_ours(path: &Path) -> bool {
         })
 }
 
-pub fn home() -> Option<PathBuf> {
-    crate::absolute(crate::cache_env().1)
-}
-
 pub fn run(args: ShimArgs) -> anyhow::Result<()> {
     if Path::new("shim").symlink_metadata().is_ok() {
         bail!(
@@ -112,7 +108,7 @@ pub fn run(args: ShimArgs) -> anyhow::Result<()> {
         );
     }
     let us = Us::current()?;
-    let home = home();
+    let home = crate::home();
     let said = if args.remove {
         let dirs = args
             .dir
