@@ -839,9 +839,11 @@ mod tests {
         assert_eq!(passwd_entry(passwd, "odd"), None);
         let err = Target::of(Some("no-such-user-here"), None).unwrap_err();
         assert!(format!("{err}").contains("no-such-user-here"), "{err}");
-        let me = Target::of_user("me", passwd).unwrap();
-        assert_eq!(me.keys(), Path::new("/home/me/.ssh/authorized_keys"));
-        assert_eq!(me.owner, Some((1000, 100)));
+        if cfg!(unix) {
+            let me = Target::of_user("me", passwd).unwrap();
+            assert_eq!(me.keys(), Path::new("/home/me/.ssh/authorized_keys"));
+            assert_eq!(me.owner, Some((1000, 100)));
+        }
         let err = Target::of_user("rel", "rel:x:5:5::home/rel:/bin/false").unwrap_err();
         assert!(err.to_string().contains("no absolute home"), "{err}");
     }
