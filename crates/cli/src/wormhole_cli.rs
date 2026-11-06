@@ -82,6 +82,29 @@ struct SshArgs {
 }
 
 #[derive(Args)]
+struct TorArgs {
+    /// use Tor when connecting; not supported
+    #[arg(long)]
+    tor: bool,
+    /// launch Tor, rather than use existing control/socks port; not supported
+    #[arg(long)]
+    launch_tor: bool,
+    /// endpoint descriptor for Tor control port; not supported
+    #[arg(long, value_name = "ENDPOINT")]
+    tor_control_port: Option<String>,
+}
+
+impl TorArgs {
+    fn refused(&self) -> anyhow::Result<()> {
+        refuse(&[
+            ("--tor", self.tor),
+            ("--launch-tor", self.launch_tor),
+            ("--tor-control-port", self.tor_control_port.is_some()),
+        ])
+    }
+}
+
+#[derive(Args)]
 struct Common {
     /// enable no-code anything-goes mode; not supported
     #[arg(short = '0')]
@@ -106,15 +129,8 @@ struct Common {
     /// (debug) don't open a listening socket for Transit
     #[arg(long, overrides_with = "listen")]
     no_listen: bool,
-    /// use Tor when connecting; not supported
-    #[arg(long)]
-    tor: bool,
-    /// launch Tor, rather than use existing control/socks port; not supported
-    #[arg(long)]
-    launch_tor: bool,
-    /// endpoint descriptor for Tor control port; not supported
-    #[arg(long, value_name = "ENDPOINT")]
-    tor_control_port: Option<String>,
+    #[command(flatten)]
+    tor: TorArgs,
     /// debug state-machine transitions; not supported
     #[arg(long, value_name = "MACHINES", num_args = 0..=1, default_missing_value = "all")]
     debug_state: Option<String>,
@@ -249,11 +265,9 @@ fn checked(common: &Common) -> anyhow::Result<(bool, bool)> {
     refuse(&[
         ("-0", common.zeromode),
         ("--verify", common.verify),
-        ("--tor", common.tor),
-        ("--launch-tor", common.launch_tor),
-        ("--tor-control-port", common.tor_control_port.is_some()),
         ("--debug-state", common.debug_state.is_some()),
     ])?;
+    common.tor.refused()?;
     Ok((common.no_listen, common.hide_progress))
 }
 

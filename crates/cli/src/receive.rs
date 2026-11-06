@@ -167,7 +167,7 @@ async fn receive_text(wormhole: &mut Wormhole, text: &str) -> anyhow::Result<()>
     .await
 }
 
-async fn refuse<T>(wormhole: &mut Wormhole, why: &str) -> anyhow::Result<T> {
+pub(crate) async fn refuse<T>(wormhole: &mut Wormhole, why: &str) -> anyhow::Result<T> {
     protocol::send_error(wormhole, why).await?;
     bail!("{why}")
 }

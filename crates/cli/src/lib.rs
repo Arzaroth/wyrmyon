@@ -328,9 +328,9 @@ fn usable_name(name: &str, windows: bool) -> bool {
             .any(|c| c.is_control() || r#"<>:"/\|?*"#.contains(c))
 }
 
-fn mood_for(result: &anyhow::Result<()>) -> Mood {
+fn mood_for<T>(result: &anyhow::Result<T>) -> Mood {
     match result {
-        Ok(()) => Mood::Happy,
+        Ok(_) => Mood::Happy,
         Err(e) => e
             .downcast_ref::<wyrmyon_wormhole::Error>()
             .map_or(Mood::Happy, wyrmyon_wormhole::Error::mood),

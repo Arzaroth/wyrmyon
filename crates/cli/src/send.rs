@@ -505,11 +505,16 @@ pub fn display_name(path: &Path) -> anyhow::Result<String> {
 }
 
 async fn send_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> {
+    offer_text(wormhole, text).await?;
+    eprintln!("text message sent");
+    Ok(())
+}
+
+pub(crate) async fn offer_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> {
     protocol::send(wormhole, &AppMessage::Offer(Offer::Message(text))).await?;
     loop {
         if let AppMessage::Answer(answer) = protocol::next(wormhole, "receiver").await? {
             if answer == Answer::MessageAck("ok".into()) {
-                eprintln!("text message sent");
                 return Ok(());
             }
             bail!("unexpected answer from the receiver: {answer:?}");
