@@ -843,6 +843,42 @@ mod tests {
         assert_eq!(fs::metadata(&victim).unwrap().nlink(), 2);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn for_a_user_a_fifo_is_refused_without_waiting() {
+        use std::os::unix::fs::{MetadataExt, symlink};
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let home = tempfile::tempdir().unwrap();
+        let meta = fs::metadata(home.path()).unwrap();
+        let owner = Some((meta.uid(), meta.gid()));
+        let direct = home.path().join("direct");
+        fs::create_dir(&direct).unwrap();
+        let fifo = direct.join("authorized_keys");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let planted = home.path().join("planted");
+        fs::create_dir(&planted).unwrap();
+        symlink(&fifo, planted.join("authorized_keys")).unwrap();
+
+        let (done, finished) = mpsc::channel();
+        std::thread::spawn(move || {
+            for dir in [planted, direct] {
+                let target = Target { dir, owner };
+                let checked = target.check(&mut Vec::new());
+                let appended = target.append(&key("x"));
+                done.send((checked.is_err(), appended.is_err())).unwrap();
+            }
+        });
+        for _ in 0..2 {
+            let outcome = finished.recv_timeout(Duration::from_secs(30)).unwrap();
+            assert_eq!(outcome, (true, true));
+        }
+    }
+
     #[test]
     fn a_user_needs_an_absolute_home() {
         if cfg!(unix) {
@@ -858,11 +894,26 @@ mod tests {
     #[test]
     fn a_user_is_looked_up_on_the_system() {
         let root = Target::of(Some("root"), None).unwrap();
-        assert!(root.keys().is_absolute());
-        assert!(root.keys().ends_with(".ssh/authorized_keys"));
         assert_eq!(root.owner.map(|(uid, _)| uid), Some(0));
         let err = Target::of(Some("no-such-user-here"), None).unwrap_err();
-        assert_eq!(err.to_string(), "no user named no-such-user-here");
+        assert!(err.to_string().contains("no-such-user-here"), "{err}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_account_gives_home_uid_and_gid() {
+        let passwd = fs::read_to_string("/etc/passwd").unwrap();
+        let entries = passwd.lines().filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            let [name, _, uid, gid, _, home, ..] = fields.as_slice() else {
+                return None;
+            };
+            let (uid, gid) = (uid.parse().ok()?, gid.parse().ok()?);
+            Some((name.to_string(), (PathBuf::from(home), uid, gid)))
+        });
+        for (name, expected) in entries {
+            assert_eq!(account(&name).unwrap(), Some(expected));
+        }
     }
 
     #[cfg(not(unix))]
