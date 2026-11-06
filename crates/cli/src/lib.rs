@@ -80,8 +80,10 @@ struct Global {
 #[derive(Subcommand)]
 enum Command {
     /// Send text, a file, a directory, or several paths as one bundle
+    #[command(visible_alias = "tx")]
     Send(send::SendArgs),
     /// Receive what the other side sends
+    #[command(visible_alias = "rx")]
     Receive(receive::ReceiveArgs),
     /// Check how this network lets iroh connect: public address, NAT, port mapping, relays
     Netcheck,
