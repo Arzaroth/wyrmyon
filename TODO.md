@@ -26,6 +26,8 @@ done.
       refused` from its mailbox. It passes alone and touches nothing the
       branches around it changed; find out whether the mailbox server is
       still starting.
+- [ ] On Windows, `ssh invite` without a usable home says `use --user`, which
+      works on Unix only. Drop that advice there.
 - [ ] `scripts/coverage.sh --lcov` fails: it writes to `target/llvm-cov/`
       without creating it.
 - [ ] `a_closed_stdout_is_reported_to_the_sender` in `tests/peers.rs` hangs

@@ -51,10 +51,10 @@ under `wormhole`, hidden from its help.
 - `ssh invite` creates a missing `~/.ssh`. Python announces it will, then
   stops at `Can't read`. It also exits 1 on a destination it cannot write,
   where Python prints the reason and exits 0.
-- `ssh invite --user` asks the system for the account, but the static musl
-  Linux binaries have no NSS: they read `/etc/passwd` and otherwise only ask a
-  running `nscd`, so they generally miss LDAP users. macOS and glibc builds
-  find them. `--user` refuses to run on Windows.
+- `ssh invite --user` asks the system for the account, but the released Linux
+  builds are static musl, with no NSS: they read `/etc/passwd` and otherwise
+  only ask a running `nscd`, so they generally miss LDAP users. macOS and
+  source builds on glibc find them. `--user` refuses to run on Windows.
 - `ssh accept -F` takes a file as well as a directory; Python's fails on a
   file.
 
@@ -82,8 +82,10 @@ goes to that user, since sshd reads the file as them. What it creates is mode 07
 link (`owned_keys`): `.ssh` and `authorized_keys` are opened with
 `O_NOFOLLOW`, the file relative to the directory's descriptor, and what it
 creates is handed over with `fchown` on those descriptors, before anything
-is written. It refuses a `.ssh` or `authorized_keys` that the user does not
-own, and an `authorized_keys` with other hard links. Without `--user` links
+is written. The check before the code opens with `O_NOFOLLOW` too, and
+`O_NONBLOCK`, so a planted FIFO cannot hang it. It refuses a `.ssh` or
+`authorized_keys` that the user does not own, and an `authorized_keys` that
+is not a plain file or has other hard links. Without `--user` links
 are followed, so a `~/.ssh` kept in a dotfiles repository still works.
 
 The invite trusts whoever holds the code with a login, so what it writes is

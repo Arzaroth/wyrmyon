@@ -33,6 +33,9 @@ everywhere except:
   ([features/resume.md](../features/resume.md)).
 - Received names: on Windows a file or zip entry name Windows cannot hold is
   refused ([features/files.md](../features/files.md)).
+- `ssh invite --user` is refused off Unix, and the musl binaries' lookup
+  generally misses LDAP accounts
+  ([features/wormhole-shim.md](../features/wormhole-shim.md)).
 - Tests that need a pty, Unix permissions, symlinks or the Python servers
   (the interop suite) run on Unix only ([testing.md](testing.md)).
 
