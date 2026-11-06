@@ -3,7 +3,7 @@ mod support;
 use std::process::Command;
 
 use serde_json::json;
-use support::{finish, read_code, read_code_keeping, read_hint, wyrm};
+use support::{SSH_KEY, finish, read_code, read_code_keeping, read_hint, read_ssh_code, wyrm};
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transport_classic::{Role, Transit};
 use wyrmyon_wormhole::{Config, Mood};
@@ -1383,12 +1383,8 @@ async fn tx_and_rx_stand_for_send_and_receive() {
     );
 }
 
-const SSH_KEY: &str =
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH";
-
 #[tokio::test(flavor = "multi_thread")]
 async fn wyrm_ssh_hands_a_key_over() {
-    use tokio::io::{AsyncBufReadExt, BufReader};
     let server = MailboxServer::start().await;
     let (theirs, ours) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let key = ours.path().join("id.pub");
@@ -1399,27 +1395,7 @@ async fn wyrm_ssh_hands_a_key_over() {
         .env("USERPROFILE", theirs.path())
         .spawn()
         .unwrap();
-    let mut lines = BufReader::new(invite.stdout.take().unwrap()).lines();
-    let (mut code, mut seen) = (None, String::new());
-    while let Some(line) = tokio::time::timeout(support::TIMEOUT, lines.next_line())
-        .await
-        .unwrap()
-        .unwrap()
-    {
-        seen.push_str(&line);
-        seen.push('\n');
-        if let Some(c) = line.strip_prefix("wyrm ssh accept ") {
-            code = Some(c.to_owned());
-        }
-        if line.starts_with("(or:") {
-            break;
-        }
-    }
-    let code = code.expect("the invite never printed a code");
-    assert!(
-        seen.contains(&format!("(or: wormhole ssh accept {code})")),
-        "{seen}"
-    );
+    let (code, said) = read_ssh_code(invite.stdout.take().unwrap(), "wyrm").await;
     let (ok, stdout, stderr) = finish(
         wyrm(&server.url())
             .args(["ssh", "accept", "--yes", "-F", key.to_str().unwrap(), &code])
@@ -1430,6 +1406,15 @@ async fn wyrm_ssh_hands_a_key_over() {
     assert!(ok && stdout.contains("Key sent."), "{stdout}{stderr}");
     let (ok, _, stderr) = finish(invite).await;
     assert!(ok, "{stderr}");
+    let said = said.await.unwrap();
+    assert!(
+        said.contains(&format!("(or: wormhole ssh accept {code})")),
+        "{said}"
+    );
+    assert!(
+        said.contains("Appended key type='ssh-ed25519' id='me'"),
+        "{said}"
+    );
     assert_eq!(
         std::fs::read_to_string(theirs.path().join(".ssh/authorized_keys")).unwrap(),
         format!("{SSH_KEY} me\n")
@@ -1437,23 +1422,21 @@ async fn wyrm_ssh_hands_a_key_over() {
 }
 
 #[test]
-fn wyrm_ssh_refuses_a_bad_code_and_a_file_named_ssh() {
+fn wyrm_ssh_refuses_a_bad_code_before_choosing_a_key() {
     let dir = tempfile::tempdir().unwrap();
     let key = dir.path().join("id.pub");
     std::fs::write(&key, SSH_KEY).unwrap();
-    let run = |cwd: &std::path::Path| {
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_wyrm"))
-            .args(["--relay-url", "ws://127.0.0.1:9/v1", "ssh", "accept", "-y"])
-            .args(["-F", key.to_str().unwrap(), "no-code"])
-            .current_dir(cwd)
-            .output()
-            .unwrap();
-        assert!(!out.status.success());
-        String::from_utf8_lossy(&out.stderr).into_owned()
-    };
-    let said = run(dir.path());
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .args(["--relay-url", "ws://127.0.0.1:9/v1", "ssh", "accept", "-y"])
+        .args(["-F", key.to_str().unwrap(), "no-code"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
     assert!(
-        !said.contains("Sending public key") && !said.contains("127.0.0.1"),
-        "{said}"
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
     );
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(!said.contains("127.0.0.1"), "{said}");
 }

@@ -650,6 +650,9 @@ mod tests {
             format!("ssh-ed25519 {}", STANDARD.encode([0, 0])),
             format!("ssh-ed25519 {}", STANDARD.encode([0, 0, 0, 99, 1])),
             format!("{good}\u{1b}[2J"),
+            format!("{good} admin\u{202e}tsoh@"),
+            format!("{good} a\u{2028}b"),
+            format!("{good} {}", "x".repeat(MAX_LINE)),
         ] {
             assert!(PublicKey::parse(&bad).is_err(), "{bad}");
         }
@@ -736,7 +739,93 @@ mod tests {
             owner: Some((meta.uid(), meta.gid())),
         };
         target.append(&key("one")).unwrap();
+        target.append(&key("two")).unwrap();
         assert_eq!(fs::metadata(target.keys()).unwrap().uid(), meta.uid());
+        assert_eq!(
+            fs::read_to_string(target.keys()).unwrap(),
+            format!("{}\n{}\n", key_text("one"), key_text("two"))
+        );
+        let stranger = Target {
+            dir: target.dir.clone(),
+            owner: Some((meta.uid() + 1, meta.gid())),
+        };
+        let err = stranger.append(&key("x")).unwrap_err();
+        assert!(err.to_string().contains("not the user's own"), "{err}");
+        let elsewhere = Target {
+            dir: home.path().join("other"),
+            owner: Some((meta.uid() + 1, meta.gid())),
+        };
+        let err = elsewhere.append(&key("x")).unwrap_err();
+        assert!(err.to_string().contains("cannot hand over"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_that_cannot_take_the_file_is_found_first() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = tempfile::tempdir().unwrap();
+        let target = target(home.path());
+        let locked = |path: &Path, mode| {
+            fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+        };
+        locked(home.path(), 0o500);
+        let missing_dir = target.check(&mut Vec::new());
+        locked(home.path(), 0o700);
+        fs::create_dir(&target.dir).unwrap();
+        locked(&target.dir, 0o500);
+        let missing_file = target.check(&mut Vec::new());
+        locked(&target.dir, 0o700);
+        if writable_anyway(home.path()) {
+            return;
+        }
+        for err in [missing_dir.unwrap_err(), missing_file.unwrap_err()] {
+            assert!(err.to_string().contains("no write permission"), "{err}");
+        }
+    }
+
+    #[cfg(unix)]
+    fn writable_anyway(dir: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        let probe = dir.join("probe");
+        fs::create_dir(&probe).unwrap();
+        fs::set_permissions(&probe, fs::Permissions::from_mode(0o500)).unwrap();
+        let root = writable(&probe);
+        fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+        root
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn for_a_user_no_link_is_followed() {
+        use std::os::unix::fs::{MetadataExt, symlink};
+        let home = tempfile::tempdir().unwrap();
+        let meta = fs::metadata(home.path()).unwrap();
+        let owner = Some((meta.uid(), meta.gid()));
+        let victim = home.path().join("victim");
+        let refused = |dir: PathBuf| {
+            let target = Target { dir, owner };
+            format!("{:#}", target.append(&key("x")).unwrap_err())
+        };
+
+        let ssh = home.path().join("a");
+        fs::create_dir(&ssh).unwrap();
+        symlink(&victim, ssh.join("authorized_keys")).unwrap();
+        assert!(refused(ssh.clone()).contains("without following a link"));
+        assert!(!victim.exists());
+
+        fs::write(&victim, "kept\n").unwrap();
+        assert!(refused(ssh).contains("without following a link"));
+        let linked = home.path().join("b");
+        symlink(home.path().join("c"), &linked).unwrap();
+        fs::create_dir(home.path().join("c")).unwrap();
+        assert!(refused(linked).contains("without following a link"));
+
+        let named_twice = home.path().join("d");
+        fs::create_dir(&named_twice).unwrap();
+        fs::hard_link(&victim, named_twice.join("authorized_keys")).unwrap();
+        assert!(refused(named_twice).contains("other names"));
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "kept\n");
+        assert_eq!(fs::metadata(&victim).unwrap().nlink(), 2);
     }
 
     #[test]
@@ -750,6 +839,11 @@ mod tests {
         assert_eq!(passwd_entry(passwd, "odd"), None);
         let err = Target::of(Some("no-such-user-here"), None).unwrap_err();
         assert!(format!("{err}").contains("no-such-user-here"), "{err}");
+        let me = Target::of_user("me", passwd).unwrap();
+        assert_eq!(me.keys(), Path::new("/home/me/.ssh/authorized_keys"));
+        assert_eq!(me.owner, Some((1000, 100)));
+        let err = Target::of_user("rel", "rel:x:5:5::home/rel:/bin/false").unwrap_err();
+        assert!(err.to_string().contains("no absolute home"), "{err}");
     }
 
     #[test]

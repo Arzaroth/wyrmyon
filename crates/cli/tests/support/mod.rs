@@ -112,3 +112,33 @@ pub fn cache_dir() -> std::path::PathBuf {
         .join("cache")
         .join(format!("{}-{n}", std::process::id()))
 }
+
+pub const SSH_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH";
+
+pub async fn read_ssh_code(
+    stream: impl AsyncRead + Unpin + Send + 'static,
+    command: &str,
+) -> (String, tokio::task::JoinHandle<String>) {
+    let mut lines = BufReader::new(stream).lines();
+    let prefix = format!("{command} ssh accept ");
+    let code = loop {
+        let line = tokio::time::timeout(TIMEOUT, lines.next_line())
+            .await
+            .expect("the invite never printed a code")
+            .unwrap()
+            .expect("the invite exited without printing a code");
+        if let Some(code) = line.strip_prefix(&prefix) {
+            break code.to_owned();
+        }
+    };
+    let rest = tokio::spawn(async move {
+        let mut all = String::new();
+        while let Ok(Some(line)) = lines.next_line().await {
+            all.push_str(&line);
+            all.push('\n');
+        }
+        all
+    });
+    (code, rest)
+}

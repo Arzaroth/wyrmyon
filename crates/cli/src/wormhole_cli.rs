@@ -627,6 +627,17 @@ mod tests {
             appid_of(&["--appid", APPID, "ssh", "invite"]).as_deref(),
             Some(APPID)
         );
+        let Command::Ssh(ssh::SshArgs {
+            action: ssh::Action::Invite(invite),
+            ..
+        }) = parsed(&["ssh", "invite", "-c", "3", "-u", "me"]).unwrap().1
+        else {
+            panic!("not an invite")
+        };
+        assert_eq!(
+            (invite.code_length, invite.user.as_deref()),
+            (3, Some("me"))
+        );
         let said = refusal(&["--appid", "example.com/other", "ssh", "invite"]);
         assert!(said.contains("example.com/other"), "{said}");
         let said = refusal(&["--appid", ssh::APPID, "rx"]);
