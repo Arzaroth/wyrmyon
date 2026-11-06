@@ -1357,3 +1357,28 @@ async fn a_marker_in_a_kept_path_says_where_it_starts() {
     assert_eq!(std::fs::read(to.path().join("x/y.conf")).unwrap(), b"conf");
     assert!(!to.path().join("etc").exists());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tx_and_rx_stand_for_send_and_receive() {
+    let server = MailboxServer::start().await;
+    let mut sender = wyrm(&server.url())
+        .args(["tx", "--text", "by alias"])
+        .spawn()
+        .unwrap();
+    let code = read_code(sender.stderr.take().unwrap()).await;
+    let (ok, stdout, stderr) =
+        finish(wyrm(&server.url()).args(["rx", &code]).spawn().unwrap()).await;
+    assert!(ok, "{stderr}");
+    assert_eq!(stdout, "by alias\n");
+    assert!(finish(sender).await.0);
+
+    let help = std::process::Command::new(env!("CARGO_BIN_EXE_wyrm"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    let help = String::from_utf8_lossy(&help.stdout).into_owned();
+    assert!(
+        help.contains("[alias: tx]") && help.contains("[alias: rx]"),
+        "{help}"
+    );
+}
