@@ -60,24 +60,35 @@ under `wormhole`, hidden from its help.
 
 `ssh` works under both names, with the same options and code
 (`ssh::SshArgs`); `wormhole ssh` adds Tor's options, only to refuse them.
-`wyrm ssh` refuses to run when the current directory holds a file named
-`ssh`, as `wyrm shim` does for `shim`: `wyrm ./ssh` sends it. Like the Python
+wyrm's transport options (`--force-iroh`, `--iroh-relays`, `--no-listen`...)
+change nothing here, as the key travels inside the mailbox. Like the Python
 client, it meets on the appid `lothar.com/wormhole/ssh-add`
 (or the one `--appid` gives) and sends one text offer, answered by a
 `message_ack`. It advertises nothing in `app_versions`, since no file data
 moves.
 
 `ssh invite` takes `-c/--code-length` and `-u/--user`. It checks that it can
-write `authorized_keys` before it allocates a code, then prints
+write `authorized_keys`, or create it (and `.ssh`), before it allocates a
+code, then prints
 `wormhole ssh accept CODE` on stdout, with the `wyrm` form after it (under
 `wyrm`, the other way round). `--user` reads the home, uid and gid
-from `/etc/passwd`, and what it creates goes to that user, since sshd reads
-the file as them. What it creates is mode 0700 (`.ssh`) or 0600
-(`authorized_keys`).
+from `/etc/passwd` (an absolute home only), and what it creates goes to that
+user, since sshd reads the file as them. What it creates is mode 0700
+(`.ssh`) or 0600 (`authorized_keys`).
+
+`--user` usually runs as root on files the user controls, so it follows no
+link (`owned_keys`): `.ssh` and `authorized_keys` are opened with
+`O_NOFOLLOW`, the file relative to the directory's descriptor, and what it
+creates is handed over with `fchown` on those descriptors, before anything
+is written. It refuses a `.ssh` or `authorized_keys` that the user does not
+own, and an `authorized_keys` with other hard links. Without `--user` links
+are followed, so a `~/.ssh` kept in a dotfiles repository still works.
 
 The invite trusts whoever holds the code with a login, so what it writes is
 held to one shape (`PublicKey::parse`): a known key type, base64 data that
-names the same type, and an optional comment, on one line. Anything else is
+names the same type, and an optional comment, on one line of at most 16 KiB,
+with no control or invisible format characters (bidi overrides, zero-width
+spaces), which could disguise the comment. Anything else is
 refused with an error to the sender, which keeps out `authorized_keys`
 options such as `command=` and a second key on another line. The line written
 is rebuilt from those fields, on a line of its own even when the file did not

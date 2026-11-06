@@ -257,3 +257,10 @@ appid and nothing about it is ours. The Python invite appends any text to
 `authorized_keys`, so a `command=` option or a second line would go in
 unnoticed. wyrmyon parses the key first and refuses the rest, at no cost to
 interop, since a real public key always passes.
+
+`--user` follows no link, but the default does. As root on another user's
+files, a link that user planted could redirect the key into root's
+`authorized_keys`, or have root create and hand over a file anywhere, so
+`--user` works through `O_NOFOLLOW` descriptors and `fchown`. A user's own
+`~/.ssh` is often a link into a dotfiles repository, and following it there
+crosses no privilege boundary.
