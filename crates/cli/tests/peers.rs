@@ -46,7 +46,11 @@ async fn wyrm_receives(
         .current_dir(dir)
         .spawn()
         .unwrap();
-    (pending.pair().await.unwrap(), child)
+    let wormhole = tokio::time::timeout(support::TIMEOUT, pending.pair())
+        .await
+        .expect("the receiving wyrm never paired")
+        .unwrap();
+    (wormhole, child)
 }
 
 async fn wyrm_sends(
@@ -65,18 +69,22 @@ async fn wyrm_sends(
         .await
         .parse()
         .unwrap();
-    let wormhole = wyrmyon_wormhole::join(&config(server, iroh), code)
+    let pending = wyrmyon_wormhole::join(&config(server, iroh), code)
         .await
-        .unwrap()
-        .pair()
+        .unwrap();
+    let wormhole = tokio::time::timeout(support::TIMEOUT, pending.pair())
         .await
+        .expect("the sending wyrm never paired")
         .unwrap();
     (wormhole, child)
 }
 
 async fn until(wormhole: &mut Wormhole, key: &str) -> Value {
     loop {
-        let msg = wormhole.receive_json().await.unwrap();
+        let msg = tokio::time::timeout(support::TIMEOUT, wormhole.receive_json())
+            .await
+            .unwrap_or_else(|_| panic!("the wyrm never sent {key}"))
+            .unwrap();
         if let Some(value) = msg.get(key) {
             return value.clone();
         }

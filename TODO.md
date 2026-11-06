@@ -28,9 +28,10 @@ done.
       still starting.
 - [ ] `scripts/coverage.sh --lcov` fails: it writes to `target/llvm-cov/`
       without creating it.
-- [ ] `tests/peers.rs` once hung for hours in a full `cargo test`, waiting
-      on a `wyrm` child that had already exited (left defunct); it passes
-      alone in seconds. Find the test and put a timeout on its wait.
+- [ ] `a_closed_stdout_is_reported_to_the_sender` in `tests/peers.rs` hangs
+      now and then (once for 35 minutes on macOS CI), waiting on a `wyrm`
+      child that seems to have exited; it passes alone in seconds. Its waits
+      now time out after 30 s, so it fails instead of hanging. Find out why.
 - [ ] A directory from Linux holding names that differ only by case
       (`Makefile`, `makefile`) or Unicode normalization is refused whole on
       macOS and Windows (`create_new` fails on the second one); say which
