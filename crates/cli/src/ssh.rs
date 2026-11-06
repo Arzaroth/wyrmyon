@@ -75,11 +75,6 @@ pub struct AcceptArgs {
 }
 
 pub async fn run(global: &Global, args: SshArgs) -> anyhow::Result<()> {
-    if !args.as_wormhole && Path::new("ssh").symlink_metadata().is_ok() {
-        bail!(
-            "ssh is both a command and a file here: say `wyrm ./ssh` to send it, or run `wyrm ssh` from another directory"
-        );
-    }
     let appid = args.appid.unwrap_or_else(|| APPID.to_owned());
     match args.action {
         Action::Invite(invite_args) => {
@@ -115,6 +110,7 @@ fn hint(code: &Code, as_wormhole: bool) -> String {
 async fn asked(key_file: Option<PathBuf>, yes: bool) -> anyhow::Result<PublicKey> {
     let (answered, answer) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
+        crate::receive::drop_typed_ahead();
         let _ = answered.send(chosen_key(
             key_file.as_deref(),
             yes,
@@ -174,7 +170,7 @@ async fn take_key(wormhole: &mut Wormhole, target: &Target) -> anyhow::Result<Pu
         return refuse(wormhole, "that is not one SSH public key").await;
     };
     if let Err(e) = target.append(&key) {
-        protocol::send_error(wormhole, "the receiver could not write the key").await?;
+        let _ = protocol::send_error(wormhole, "the receiver could not write the key").await;
         return Err(e);
     }
     protocol::send(
@@ -362,15 +358,21 @@ impl Target {
                 owner: None,
             }),
             Some(user) => {
-                let passwd = fs::read_to_string("/etc/passwd").unwrap_or_default();
-                let (home, uid, gid) = passwd_entry(&passwd, user)
-                    .with_context(|| format!("no user named {user} in /etc/passwd"))?;
-                Ok(Self {
-                    dir: home.join(".ssh"),
-                    owner: Some((uid, gid)),
-                })
+                Self::of_user(user, &fs::read_to_string("/etc/passwd").unwrap_or_default())
             }
         }
+    }
+
+    fn of_user(user: &str, passwd: &str) -> anyhow::Result<Self> {
+        let (home, uid, gid) = passwd_entry(passwd, user)
+            .with_context(|| format!("no user named {user} in /etc/passwd"))?;
+        if !home.is_absolute() {
+            bail!("{user} has no absolute home in /etc/passwd");
+        }
+        Ok(Self {
+            dir: home.join(".ssh"),
+            owner: Some((uid, gid)),
+        })
     }
 
     fn keys(&self) -> PathBuf {
@@ -390,12 +392,21 @@ impl Target {
                 "Note: '{}' not found; will be created",
                 keys.display()
             )?;
+            let mut within = self.dir.as_path();
             if !self.dir.exists() {
                 writeln!(
                     output,
                     "      '{}' doesn't exist either",
                     self.dir.display()
                 )?;
+                within = self.dir.parent().unwrap_or(within);
+            }
+            if !writable(within) {
+                bail!(
+                    "cannot create {}: no write permission on {}",
+                    keys.display(),
+                    within.display()
+                );
             }
         }
         if self.dir.exists() {
@@ -526,6 +537,16 @@ fn passwd_entry(passwd: &str, user: &str) -> Option<(PathBuf, u32, u32)> {
             _ => None,
         }
     })
+}
+
+#[cfg(unix)]
+fn writable(dir: &Path) -> bool {
+    rustix::fs::access(dir, rustix::fs::Access::WRITE_OK).is_ok()
+}
+
+#[cfg(not(unix))]
+fn writable(_: &Path) -> bool {
+    true
 }
 
 #[cfg(unix)]

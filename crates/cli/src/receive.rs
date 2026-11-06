@@ -773,12 +773,12 @@ async fn confirm(question: &str) -> anyhow::Result<bool> {
 }
 
 #[cfg(unix)]
-fn drop_typed_ahead() {
+pub(crate) fn drop_typed_ahead() {
     let _ = rustix::termios::tcflush(std::io::stdin(), rustix::termios::QueueSelector::IFlush);
 }
 
 #[cfg(not(unix))]
-fn drop_typed_ahead() {}
+pub(crate) fn drop_typed_ahead() {}
 
 fn consents(answer: &str) -> bool {
     let answer = answer.trim();

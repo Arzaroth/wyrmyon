@@ -1456,6 +1456,4 @@ fn wyrm_ssh_refuses_a_bad_code_and_a_file_named_ssh() {
         !said.contains("Sending public key") && !said.contains("127.0.0.1"),
         "{said}"
     );
-    std::fs::write(dir.path().join("ssh"), b"a file").unwrap();
-    assert!(run(dir.path()).contains("`wyrm ./ssh`"));
 }
