@@ -5,7 +5,7 @@ use std::process::Stdio;
 use std::sync::OnceLock;
 
 use support::{finish, read_code, read_hint, wyrm};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use wyrmyon_testkit::MailboxServer;
 
@@ -460,4 +460,183 @@ fn wyrm_shim_beside_a_file_named_shim_refuses() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("`wyrm ./shim`"));
     assert!(!root.path().join("elsewhere").exists());
+}
+
+const SSH_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH";
+
+fn at_home(mut cmd: Command, home: &Path) -> Command {
+    cmd.env("HOME", home).env("USERPROFILE", home);
+    cmd
+}
+
+async fn invited(
+    server: &MailboxServer,
+    home: &Path,
+    args: &[&str],
+) -> (
+    tokio::process::Child,
+    String,
+    tokio::task::JoinHandle<String>,
+) {
+    let mut invite = at_home(wormhole(&server.url()), home)
+        .args(args)
+        .args(["ssh", "invite"])
+        .spawn()
+        .unwrap();
+    let mut lines = tokio::io::BufReader::new(invite.stdout.take().unwrap()).lines();
+    let code = loop {
+        let line = tokio::time::timeout(support::TIMEOUT, lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .expect("the invite never printed a code");
+        if let Some(code) = line.strip_prefix("wormhole ssh accept ") {
+            break code.to_owned();
+        }
+    };
+    let rest = tokio::spawn(async move {
+        let mut all = String::new();
+        while let Ok(Some(line)) = lines.next_line().await {
+            all.push_str(&line);
+            all.push('\n');
+        }
+        all
+    });
+    (invite, code, rest)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ssh_key_travels_into_authorized_keys() {
+    let server = MailboxServer::start().await;
+    let (theirs, ours) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ssh = ours.path().join(".ssh");
+    std::fs::create_dir(&ssh).unwrap();
+    std::fs::write(ssh.join("id.pub"), format!("{SSH_KEY} me@here\n")).unwrap();
+
+    let (invite, code, said) = invited(&server, theirs.path(), &[]).await;
+    let (ok, stdout, stderr) = finish(
+        at_home(wormhole(&server.url()), ours.path())
+            .args(["ssh", "accept", "--yes", &code])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    assert!(
+        stdout.contains("keyid='me@here'") && stdout.contains("Key sent."),
+        "{stdout}"
+    );
+    let (ok, _, stderr) = finish(invite).await;
+    assert!(ok, "{stderr}");
+    let said = said.await.unwrap();
+    assert!(
+        said.contains("Appended key type='ssh-ed25519' id='me@here'"),
+        "{said}"
+    );
+    assert!(said.contains("Fingerprint: SHA256:"), "{said}");
+    assert_eq!(
+        std::fs::read_to_string(theirs.path().join(".ssh/authorized_keys")).unwrap(),
+        format!("{SSH_KEY} me@here\n")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ssh_accept_asks_which_key_and_whether_to_send_it() {
+    let server = MailboxServer::start().await;
+    let (theirs, ours) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let ssh = ours.path().join(".ssh");
+    std::fs::create_dir(&ssh).unwrap();
+    std::fs::write(ssh.join("a.pub"), format!("{SSH_KEY} a")).unwrap();
+    std::fs::write(ssh.join("b.pub"), format!("{SSH_KEY} b")).unwrap();
+
+    let (invite, code, _said) = invited(&server, theirs.path(), &[]).await;
+    let mut accept = at_home(wormhole(&server.url()), ours.path())
+        .args(["ssh", "accept", &code])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    accept
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"1\ny\n")
+        .await
+        .unwrap();
+    let (ok, stdout, stderr) = finish(accept).await;
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("Really send public key 'b' ?"), "{stdout}");
+    assert!(finish(invite).await.0);
+    assert_eq!(
+        std::fs::read_to_string(theirs.path().join(".ssh/authorized_keys")).unwrap(),
+        format!("{SSH_KEY} b\n")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ssh_invite_writes_nothing_but_one_public_key() {
+    let server = MailboxServer::start().await;
+    let standard = ["--appid", "lothar.com/wormhole/text-or-file-xfer"];
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("f.txt"), b"a file").unwrap();
+    let forged = format!("command=\"sh\" {SSH_KEY}");
+    let two = format!("{SSH_KEY} one\n{SSH_KEY} two");
+    for (what, said) in [
+        (vec!["--text", forged.as_str()], "not one SSH public key"),
+        (vec!["--text", two.as_str()], "not one SSH public key"),
+        (vec!["f.txt"], "an SSH public key only"),
+    ] {
+        let home = tempfile::tempdir().unwrap();
+        let (invite, code, _said) = invited(&server, home.path(), &standard).await;
+        let (ok, _, _) = finish(
+            wormhole(&server.url())
+                .args(["tx", "--no-qr", "--hide-progress", "--code", &code])
+                .args(&what)
+                .current_dir(dir.path())
+                .spawn()
+                .unwrap(),
+        )
+        .await;
+        assert!(!ok, "{what:?}");
+        let (ok, _, stderr) = finish(invite).await;
+        assert!(!ok && stderr.contains(said), "{what:?}: {stderr}");
+        assert!(!home.path().join(".ssh").exists(), "{what:?}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_key_that_cannot_be_written_is_reported_to_both_sides() {
+    let server = MailboxServer::start().await;
+    let (home, dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let key = dir.path().join("k.pub");
+    std::fs::write(&key, SSH_KEY).unwrap();
+    let (invite, code, _said) = invited(&server, home.path(), &[]).await;
+    std::fs::write(home.path().join(".ssh"), b"now a file").unwrap();
+    let (ok, _, stderr) = finish(
+        at_home(wormhole(&server.url()), dir.path())
+            .args(["ssh", "accept", "-y", "-F", key.to_str().unwrap(), &code])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        !ok && stderr.contains("could not write the key"),
+        "{stderr}"
+    );
+    let (ok, _, stderr) = finish(invite).await;
+    assert!(!ok && stderr.contains("cannot"), "{stderr}");
+}
+
+#[test]
+fn ssh_invite_finds_a_bad_destination_first() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join(".ssh"), b"a file").unwrap();
+    let out = std::process::Command::new(wormhole_bin())
+        .args(["--relay-url", "ws://127.0.0.1:9/v1", "ssh", "invite"])
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot read"));
 }

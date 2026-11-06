@@ -390,3 +390,99 @@ async fn python_sends_to_a_code_wyrm_allocated() {
         b"receiver first"
     );
 }
+
+fn as_wormhole(relay: &str, home: &std::path::Path) -> Command {
+    let mut named = Command::new(env!("CARGO_BIN_EXE_wyrmyon"));
+    named
+        .arg0("wormhole")
+        .args(["--relay-url", relay, "--transit-helper", "tcp:127.0.0.1:9"])
+        .env("HOME", home)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    named
+}
+
+const SSH_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH me@here";
+
+async fn accept_code(child: &mut Child) -> (String, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let code = loop {
+        let line = tokio::time::timeout(support::TIMEOUT, lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .expect("the invite never printed a code");
+        if let Some(code) = line.strip_prefix("wormhole ssh accept ") {
+            break code.to_owned();
+        }
+    };
+    let drain = tokio::spawn(async move { while let Ok(Some(_)) = lines.next_line().await {} });
+    (code, drain)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Python wormhole CLI and uvx"]
+async fn python_accepts_a_wormhole_ssh_invite() {
+    let mailbox = PythonMailbox::start().await;
+    let (theirs, ours) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir(ours.path().join(".ssh")).unwrap();
+    std::fs::write(ours.path().join(".ssh/id.pub"), format!("{SSH_KEY}\n")).unwrap();
+    let mut invite = as_wormhole(&mailbox.url, theirs.path())
+        .args(["ssh", "invite"])
+        .spawn()
+        .unwrap();
+    let (code, drain) = accept_code(&mut invite).await;
+    let (ok, stdout, stderr) = finish(
+        python(&mailbox.url)
+            .env("HOME", ours.path())
+            .args(["ssh", "accept", "--yes", &code])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stdout}{stderr}");
+    let (ok, _, stderr) = finish(invite).await;
+    assert!(ok, "{stderr}");
+    drain.await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(theirs.path().join(".ssh/authorized_keys")).unwrap(),
+        format!("{SSH_KEY}\n")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Python wormhole CLI and uvx"]
+async fn wormhole_ssh_accepts_a_python_invite() {
+    let mailbox = PythonMailbox::start().await;
+    let (theirs, ours) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir(theirs.path().join(".ssh")).unwrap();
+    std::fs::write(theirs.path().join(".ssh/authorized_keys"), "").unwrap();
+    std::fs::create_dir(ours.path().join(".ssh")).unwrap();
+    std::fs::write(ours.path().join(".ssh/id.pub"), format!("{SSH_KEY}\n")).unwrap();
+    let mut invite = python(&mailbox.url)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("HOME", theirs.path())
+        .args(["ssh", "invite"])
+        .spawn()
+        .unwrap();
+    let (code, drain) = accept_code(&mut invite).await;
+    let (ok, stdout, stderr) = finish(
+        as_wormhole(&mailbox.url, ours.path())
+            .args(["ssh", "accept", "--yes", &code])
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stdout}{stderr}");
+    let (ok, _, stderr) = finish(invite).await;
+    assert!(ok, "{stderr}");
+    drain.await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(theirs.path().join(".ssh/authorized_keys")).unwrap(),
+        format!("{SSH_KEY}\n")
+    );
+}
