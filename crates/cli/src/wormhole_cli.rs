@@ -9,7 +9,7 @@ use clap::{Args, Parser, Subcommand};
 use wyrmyon_transport_classic::DirectHint;
 use wyrmyon_wormhole::{APPID, PUBLIC_RELAY};
 
-use crate::{CODE_LENGTH, Command, Global, PUBLIC_TRANSIT_HELPER, receive, send};
+use crate::{CODE_LENGTH, Command, Global, PUBLIC_TRANSIT_HELPER, receive, send, ssh};
 
 pub const NAME: &str = "wormhole";
 
@@ -70,15 +70,33 @@ enum Sub {
     /// Receive a text message, file, or directory (from 'wormhole send')
     #[command(visible_alias = "rx", aliases = ["recv", "recieve"])]
     Receive(ReceiveArgs),
-    /// Facilitate sending/receiving SSH public keys; not supported
-    #[command(disable_help_flag = true)]
-    Ssh(SshArgs),
+    /// Facilitate sending/receiving SSH public keys
+    #[command(subcommand)]
+    Ssh(Ssh),
+}
+
+#[derive(Subcommand)]
+enum Ssh {
+    /// Add a public-key to an `authorized_keys` file
+    Invite(WormholeInvite),
+    /// Send your SSH public-key, in response to a 'wormhole ssh invite'
+    Accept(WormholeAccept),
 }
 
 #[derive(Args)]
-struct SshArgs {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
-    args: Vec<String>,
+struct WormholeInvite {
+    #[command(flatten)]
+    ssh: ssh::InviteArgs,
+    #[command(flatten)]
+    tor: TorArgs,
+}
+
+#[derive(Args)]
+struct WormholeAccept {
+    #[command(flatten)]
+    ssh: ssh::AcceptArgs,
+    #[command(flatten)]
+    tor: TorArgs,
 }
 
 #[derive(Args)]
@@ -208,8 +226,10 @@ fn translate(
     ask: &mut dyn FnMut() -> anyhow::Result<String>,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> anyhow::Result<(Global, Command)> {
+    let for_ssh = matches!(cli.command, Sub::Ssh(_));
     if let Some(appid) = &cli.appid
         && appid != APPID
+        && !(for_ssh && appid == ssh::APPID)
     {
         bail!("wyrmyon only speaks the standard appid {APPID}, not {appid}");
     }
@@ -217,7 +237,10 @@ fn translate(
     let ((no_listen, hide_progress), command) = match cli.command {
         Sub::Send(args) => (checked(&args.common)?, Command::Send(send_args(args, ask)?)),
         Sub::Receive(args) => (checked(&args.common)?, Command::Receive(receive_args(args))),
-        Sub::Ssh(_) => bail!("`wormhole ssh` is not supported by wyrmyon"),
+        Sub::Ssh(args) => (
+            (false, false),
+            Command::Ssh(ssh_args(args, cli.appid.clone())?),
+        ),
     };
     let relay_url = cli
         .relay_url
@@ -297,6 +320,24 @@ fn send_args(
         code: args.code,
         qr: args.qr && !args.no_qr,
         times: 1,
+        as_wormhole: true,
+    })
+}
+
+fn ssh_args(args: Ssh, appid: Option<String>) -> anyhow::Result<ssh::SshArgs> {
+    let action = match args {
+        Ssh::Invite(args) => {
+            args.tor.refused()?;
+            ssh::Action::Invite(args.ssh)
+        }
+        Ssh::Accept(args) => {
+            args.tor.refused()?;
+            ssh::Action::Accept(args.ssh)
+        }
+    };
+    Ok(ssh::SshArgs {
+        action,
+        appid,
         as_wormhole: true,
     })
 }
@@ -565,17 +606,53 @@ mod tests {
     }
 
     #[test]
-    fn python_spellings_of_receive_and_ssh_are_known() {
+    fn python_spellings_of_receive_are_known() {
         for name in ["receive", "rx", "recv", "recieve"] {
             assert_eq!(received(&[name, "7-a-b"]).code.as_deref(), Some("7-a-b"));
         }
-        for args in [
-            &["ssh"][..],
-            &["ssh", "invite", "-c", "3"],
-            &["ssh", "accept", "--help"],
+    }
+
+    #[test]
+    fn ssh_meets_on_its_own_appid_unless_told_the_standard_one() {
+        let appid_of = |args: &[&str]| match parsed(args).unwrap().1 {
+            Command::Ssh(ssh) if ssh.as_wormhole => ssh.appid,
+            _ => panic!("not ssh"),
+        };
+        assert_eq!(appid_of(&["ssh", "invite"]), None);
+        assert_eq!(
+            appid_of(&["--appid", ssh::APPID, "ssh", "invite", "-c", "3"]).as_deref(),
+            Some(ssh::APPID)
+        );
+        assert_eq!(
+            appid_of(&["--appid", APPID, "ssh", "invite"]).as_deref(),
+            Some(APPID)
+        );
+        let said = refusal(&["--appid", "example.com/other", "ssh", "invite"]);
+        assert!(said.contains("example.com/other"), "{said}");
+        let said = refusal(&["--appid", ssh::APPID, "rx"]);
+        assert!(said.contains(ssh::APPID), "{said}");
+    }
+
+    #[test]
+    fn ssh_takes_a_key_file_and_refuses_tor() {
+        let (global, command) = parsed(&["ssh", "accept", "-y", "-F", "k.pub", "7-a-b"]).unwrap();
+        let Command::Ssh(ssh::SshArgs {
+            action: ssh::Action::Accept(args),
+            ..
+        }) = command
+        else {
+            panic!("not an accept")
+        };
+        assert_eq!(args.key_file, Some(PathBuf::from("k.pub")));
+        assert!(args.yes && args.code == "7-a-b");
+        assert!(!global.no_listen && !global.hide_progress);
+        for (args, flag) in [
+            (&["ssh", "invite", "--tor"][..], "--tor"),
+            (&["ssh", "accept", "--launch-tor", "7-a-b"], "--launch-tor"),
         ] {
-            assert_eq!(refusal(args), "`wormhole ssh` is not supported by wyrmyon");
+            assert_eq!(refusal(args), format!("{flag} is not supported by wyrmyon"));
         }
+        assert!(cli_of(&["ssh"]).is_err() && cli_of(&["ssh", "accept"]).is_err());
     }
 
     #[test]

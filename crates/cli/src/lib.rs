@@ -5,6 +5,7 @@ mod qr;
 mod receive;
 mod send;
 mod shim;
+mod ssh;
 mod transfer;
 mod update;
 mod wormhole_cli;
@@ -89,6 +90,8 @@ enum Command {
     Netcheck,
     /// Link `wormhole` to wyrmyon, so what calls the Python client runs this one
     Shim(shim::ShimArgs),
+    /// Hand an SSH public key over, into the other side's `authorized_keys`
+    Ssh(ssh::SshArgs),
 }
 
 pub(crate) fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
@@ -188,6 +191,7 @@ fn run(global: &Global, command: anyhow::Result<Command>) -> ExitCode {
                 Ok(Command::Receive(args)) => receive::run(global, args).await,
                 Ok(Command::Netcheck) => netcheck::run(global).await,
                 Ok(Command::Shim(args)) => shim::run(args),
+                Ok(Command::Ssh(args)) => ssh::run(global, args).await,
                 Err(e) => Err(e),
             }
         };

@@ -316,12 +316,11 @@ fn usage_errors_exit_2_and_the_rest_1() {
     );
     let (code, stderr) = exit_of(&["rx", "7-a-b"], &[("WORMHOLE_TRANSIT_HELPER", "bogus")]);
     assert_eq!(code, Some(2), "{stderr}");
-    let (code, stderr) = exit_of(&["ssh", "invite", "-c", "3"], &[]);
+    let (code, stderr) = exit_of(&["ssh", "invite", "--tor"], &[]);
     assert_eq!(code, Some(1));
-    assert!(
-        stderr.contains("`wormhole ssh` is not supported by wyrmyon"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("--tor is not supported"), "{stderr}");
+    let (code, _) = exit_of(&["ssh"], &[]);
+    assert_eq!(code, Some(2));
 }
 
 #[tokio::test(flavor = "multi_thread")]
