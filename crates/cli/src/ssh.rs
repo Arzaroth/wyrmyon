@@ -57,7 +57,7 @@ pub struct InviteArgs {
         value_parser = clap::value_parser!(u8).range(1..=8)
     )]
     pub(crate) code_length: u8,
-    /// Add to the `authorized_keys` of USER
+    /// Add to the `authorized_keys` of USER (Unix only)
     #[arg(short, long, value_name = "USER")]
     pub(crate) user: Option<String>,
 }
@@ -382,8 +382,12 @@ impl Target {
     fn check(&self, output: &mut dyn Write) -> anyhow::Result<()> {
         let keys = self.keys();
         if keys.exists() {
-            OpenOptions::new()
-                .append(true)
+            let mut options = OpenOptions::new();
+            options.append(true);
+            if self.owner.is_some() {
+                no_link_no_wait(&mut options);
+            }
+            options
                 .open(&keys)
                 .with_context(|| format!("no write permission on {}", keys.display()))?;
         } else {
@@ -503,9 +507,10 @@ fn theirs(file: &fs::File, uid: u32, path: &Path) -> anyhow::Result<()> {
     let meta = file
         .metadata()
         .with_context(|| format!("cannot read {}", path.display()))?;
-    if meta.uid() != uid || (meta.is_file() && meta.nlink() != 1) {
+    let plain = meta.is_dir() || (meta.is_file() && meta.nlink() == 1);
+    if meta.uid() != uid || !plain {
         bail!(
-            "{} is not the user's own, or has other names: not writing to it",
+            "{} is not the user's own plain file, or has other names: not writing to it",
             path.display()
         );
     }
@@ -538,6 +543,16 @@ fn account(user: &str) -> anyhow::Result<Option<(PathBuf, u32, u32)>> {
 fn account(_: &str) -> anyhow::Result<Option<(PathBuf, u32, u32)>> {
     bail!("--user works on Unix only")
 }
+
+#[cfg(unix)]
+fn no_link_no_wait(options: &mut OpenOptions) {
+    use rustix::fs::OFlags;
+    use std::os::unix::fs::OpenOptionsExt;
+    options.custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed());
+}
+
+#[cfg(not(unix))]
+fn no_link_no_wait(_: &mut OpenOptions) {}
 
 #[cfg(unix)]
 fn writable(dir: &Path) -> bool {
