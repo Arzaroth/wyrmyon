@@ -51,8 +51,10 @@ under `wormhole`, hidden from its help.
 - `ssh invite` creates a missing `~/.ssh`. Python announces it will, then
   stops at `Can't read`. It also exits 1 on a destination it cannot write,
   where Python prints the reason and exits 0.
-- `ssh invite --user` finds users in `/etc/passwd` only, so not those from
-  LDAP or macOS Directory Services, nor any on Windows.
+- `ssh invite --user` asks the system for the account, but the static musl
+  Linux binaries have no NSS: they read `/etc/passwd` and otherwise only ask a
+  running `nscd`, so they generally miss LDAP users. macOS and glibc builds
+  find them. `--user` refuses to run on Windows.
 - `ssh accept -F` takes a file as well as a directory; Python's fails on a
   file.
 
@@ -71,9 +73,9 @@ moves.
 write `authorized_keys`, or create it (and `.ssh`), before it allocates a
 code, then prints
 `wormhole ssh accept CODE` on stdout, with the `wyrm` form after it (under
-`wyrm`, the other way round). `--user` reads the home, uid and gid
-from `/etc/passwd` (an absolute home only), and what it creates goes to that
-user, since sshd reads the file as them. What it creates is mode 0700
+`wyrm`, the other way round). `--user` gets the home, uid and gid
+from `getpwnam_r` through `nix` (an absolute home only), and what it creates
+goes to that user, since sshd reads the file as them. What it creates is mode 0700
 (`.ssh`) or 0600 (`authorized_keys`).
 
 `--user` usually runs as root on files the user controls, so it follows no

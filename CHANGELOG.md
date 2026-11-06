@@ -11,7 +11,9 @@
   SSH public key over and add it to `~/.ssh/authorized_keys`, with the Python
   client on either side. Unlike the Python client, the invite writes only a
   single well-formed public key: no `authorized_keys` options, no second
-  line. With `--user` it follows no symlink the user may have planted.
+  line. With `--user` it follows no symlink the user may have planted. The
+  static Linux binaries generally find `--user` accounts only in `/etc/passwd`,
+  so not LDAP ones; macOS and glibc builds ask the system's directory.
 
 ## [0.5.1] - 2026-11-02
 
