@@ -358,16 +358,16 @@ impl Target {
                 owner: None,
             }),
             Some(user) => {
-                Self::of_user(user, &fs::read_to_string("/etc/passwd").unwrap_or_default())
+                let (home, uid, gid) =
+                    account(user)?.with_context(|| format!("no user named {user}"))?;
+                Self::of_account(user, &home, uid, gid)
             }
         }
     }
 
-    fn of_user(user: &str, passwd: &str) -> anyhow::Result<Self> {
-        let (home, uid, gid) = passwd_entry(passwd, user)
-            .with_context(|| format!("no user named {user} in /etc/passwd"))?;
+    fn of_account(user: &str, home: &Path, uid: u32, gid: u32) -> anyhow::Result<Self> {
         if !home.is_absolute() {
-            bail!("{user} has no absolute home in /etc/passwd");
+            bail!("{user} has no absolute home");
         }
         Ok(Self {
             dir: home.join(".ssh"),
@@ -527,16 +527,16 @@ fn ends_a_line(file: &mut fs::File) -> std::io::Result<bool> {
     Ok(last == *b"\n")
 }
 
-fn passwd_entry(passwd: &str, user: &str) -> Option<(PathBuf, u32, u32)> {
-    passwd.lines().find_map(|line| {
-        let fields: Vec<&str> = line.split(':').collect();
-        match fields.as_slice() {
-            [name, _, uid, gid, _, home, ..] if *name == user => {
-                Some((PathBuf::from(home), uid.parse().ok()?, gid.parse().ok()?))
-            }
-            _ => None,
-        }
-    })
+#[cfg(unix)]
+fn account(user: &str) -> anyhow::Result<Option<(PathBuf, u32, u32)>> {
+    let found =
+        nix::unistd::User::from_name(user).with_context(|| format!("cannot look up {user}"))?;
+    Ok(found.map(|user| (user.dir, user.uid.as_raw(), user.gid.as_raw())))
+}
+
+#[cfg(not(unix))]
+fn account(_: &str) -> anyhow::Result<Option<(PathBuf, u32, u32)>> {
+    bail!("--user works on Unix only")
 }
 
 #[cfg(unix)]
@@ -829,23 +829,32 @@ mod tests {
     }
 
     #[test]
-    fn a_user_is_looked_up_in_passwd() {
-        let passwd = "root:x:0:0:root:/root:/bin/sh\nbad\nodd:x:u:g::/odd:\nme:x:1000:100::/home/me:/bin/zsh\n";
-        assert_eq!(
-            passwd_entry(passwd, "me"),
-            Some((PathBuf::from("/home/me"), 1000, 100))
-        );
-        assert_eq!(passwd_entry(passwd, "nobody"), None);
-        assert_eq!(passwd_entry(passwd, "odd"), None);
-        let err = Target::of(Some("no-such-user-here"), None).unwrap_err();
-        assert!(format!("{err}").contains("no-such-user-here"), "{err}");
+    fn a_user_needs_an_absolute_home() {
         if cfg!(unix) {
-            let me = Target::of_user("me", passwd).unwrap();
+            let me = Target::of_account("me", Path::new("/home/me"), 1000, 100).unwrap();
             assert_eq!(me.keys(), Path::new("/home/me/.ssh/authorized_keys"));
             assert_eq!(me.owner, Some((1000, 100)));
         }
-        let err = Target::of_user("rel", "rel:x:5:5::home/rel:/bin/false").unwrap_err();
+        let err = Target::of_account("rel", Path::new("home/rel"), 5, 5).unwrap_err();
         assert!(err.to_string().contains("no absolute home"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_user_is_looked_up_on_the_system() {
+        let root = Target::of(Some("root"), None).unwrap();
+        assert!(root.keys().is_absolute());
+        assert!(root.keys().ends_with(".ssh/authorized_keys"));
+        assert_eq!(root.owner.map(|(uid, _)| uid), Some(0));
+        let err = Target::of(Some("no-such-user-here"), None).unwrap_err();
+        assert_eq!(err.to_string(), "no user named no-such-user-here");
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn a_user_is_refused_off_unix() {
+        let err = Target::of(Some("me"), None).unwrap_err();
+        assert!(err.to_string().contains("Unix only"), "{err}");
     }
 
     #[test]
