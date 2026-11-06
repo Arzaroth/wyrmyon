@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `wyrm tx` and `wyrm rx` stand for `wyrm send` and `wyrm receive`, as they
+  already did under the `wormhole` name.
+- `wyrm ssh invite` and `wyrm ssh accept` (also `wormhole ssh ...`) hand an
+  SSH public key over and add it to `~/.ssh/authorized_keys`, with the Python
+  client on either side. Unlike the Python client, the invite writes only a single well-formed
+  public key: no `authorized_keys` options, no second line.
+
 ## [0.5.1] - 2026-11-02
 
 ### Fixed

@@ -27,7 +27,8 @@ message (`WrongCode`, `Tampered`, `Protocol`), `errory` for server and
 connection errors. Nothing is left claimed on the shared server.
 
 `Config` carries the relay URL (`PUBLIC_RELAY` by default), the appid (`APPID`,
-`lothar.com/wormhole/text-or-file-xfer`) and our `app_versions`.
+`lothar.com/wormhole/text-or-file-xfer`, unless the caller sets another, as
+`wormhole ssh` does) and our `app_versions`.
 
 ## Wire format
 

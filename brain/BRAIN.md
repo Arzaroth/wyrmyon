@@ -45,6 +45,7 @@ wyrmyon.
 | Why does `wyrm --update` refuse a .deb or MSI install? | [features/update.md](features/update.md) |
 | Why would a transfer go through a relay here? | [features/netcheck.md](features/netcheck.md) |
 | Which `wormhole` options work when wyrmyon answers to that name? | [features/wormhole-shim.md](features/wormhole-shim.md) |
+| What may `wyrm ssh` / `wormhole ssh` write to `authorized_keys`? | [features/wormhole-shim.md](features/wormhole-shim.md) |
 | How do tests avoid the public servers? | [architecture/testing.md](architecture/testing.md) |
 | Why `wyrmyon` and `wyrm`? | [decisions.md](decisions.md) |
 

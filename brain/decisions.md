@@ -246,3 +246,14 @@ has released, and the sender joins again as soon as a turn has paired so
 that it always holds the nameplate: two receivers on a free nameplate would
 pair with each other. Serving them at once is in the roadmap. The cost of
 reuse: anyone who sees the code can take a turn until the N are used up.
+
+## `wormhole ssh` leaves the standard appid, and writes only a well-formed key
+
+The mailbox rules pin the file-transfer appid so that legacy clients can read
+our codes. The Python client's `wormhole ssh` meets on
+`lothar.com/wormhole/ssh-add`, so the same goal asks for that appid here: on
+the other one, the two would never meet. It is that client's own standard
+appid and nothing about it is ours. The Python invite appends any text to
+`authorized_keys`, so a `command=` option or a second line would go in
+unnoticed. wyrmyon parses the key first and refuses the rest, at no cost to
+interop, since a real public key always passes.

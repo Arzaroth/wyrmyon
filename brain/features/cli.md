@@ -8,6 +8,8 @@ wyrm 7-guitarist-revenge     # a code: receive
 wyrm receive --new           # receiver first: allocate a code, wait
 
 wyrm send ... / wyrm receive ...   # explicit forms, with every option
+wyrm tx ... / wyrm rx ...           # the same two, shorter
+wyrm ssh invite / wyrm ssh accept CODE   # hand an SSH public key over
 ```
 
 ## Bare arguments
@@ -24,6 +26,10 @@ Without a subcommand, `bare()` in `lib.rs` picks one from what was given:
 Global options (`--relay-url`, `--force-classic`, `--hide-progress`...) work in
 either form; the subcommands' own options (`--accept-file`, `-o`, `--code`)
 need the explicit form. A bare receive still asks before accepting a file.
+A subcommand's name wins over a file called the same: `wyrm ./rx` sends a file
+named `rx`. `wyrm ssh`, like `wyrm shim`, refuses outright beside a file of
+its name. `ssh` is described with the `wormhole` options
+([wormhole-shim.md](wormhole-shim.md)).
 
 ## The code prompt
 

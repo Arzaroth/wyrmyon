@@ -25,7 +25,9 @@ wyrmyon uses the community's rendezvous server, and its codes must stay
 readable by every other client. These rules follow:
 
 - Use the official appid `lothar.com/wormhole/text-or-file-xfer` and the
-  standard nameplate and code format.
+  standard nameplate and code format. The one exception is `wormhole ssh`,
+  which uses the Python client's `lothar.com/wormhole/ssh-add`, or it would
+  never meet that client.
 - Send nothing nonstandard on the mailbox until the peer's encrypted version
   message advertises `iroh-v1`. Legacy clients must never see a message they do
   not understand.

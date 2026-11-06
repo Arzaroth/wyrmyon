@@ -17,7 +17,8 @@ they need no discovery.
 The mailbox is a community service; the rules are in [CLAUDE.md](../../CLAUDE.md):
 
 - The official appid `lothar.com/wormhole/text-or-file-xfer`, so nameplates are
-  visible to legacy clients.
+  visible to legacy clients. `wormhole ssh` alone uses the Python client's
+  `lothar.com/wormhole/ssh-add`, and advertises nothing on it.
 - Nothing nonstandard until the peer's version message advertises `iroh-v1`.
 - Small traffic: file data never goes through the mailbox.
 - The server's welcome message (MOTD, errors) reaches the user.
@@ -25,4 +26,5 @@ The mailbox is a community service; the rules are in [CLAUDE.md](../../CLAUDE.md
 ## Sources
 
 - [crates/wormhole-core/src/lib.rs](../../crates/wormhole-core/src/lib.rs) (`PUBLIC_RELAY`, `APPID`)
+- [crates/cli/src/ssh.rs](../../crates/cli/src/ssh.rs) (`APPID`)
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`--relay-url`, MOTD display)

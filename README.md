@@ -34,6 +34,7 @@ wyrm send --code CODE FILE   # use a code the receiver allocated
 wyrm send --times 3 FILE     # one code, three receivers in turn
 wyrm send -R /etc/x/y.conf   # keep the path: `wyrm receive -o / CODE` puts it back at /etc/x/y.conf
 wyrm netcheck                # how this network lets peers connect directly
+wyrm ssh invite              # add the SSH public key `wyrm ssh accept CODE` sends to authorized_keys
 ```
 
 `wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,
@@ -46,8 +47,10 @@ QR code for a phone to scan.
 Run as `wormhole`, wyrmyon takes the Python client's command line
 (`wormhole send --text hi`, `wormhole rx CODE`, the QR code on by default),
 so the common sends and receives a script makes still work. A few options
-are refused by name instead (`--verify`, `-0`, Tor, `ssh`), and the output is
-wyrm's, not the Python client's word for word. `wyrm shim` links `wormhole` to
+are refused by name instead (`--verify`, `-0`, Tor), and the output is
+wyrm's, not the Python client's word for word. `wormhole ssh invite` and
+`wormhole ssh accept CODE` (or `wyrm ssh ...`) hand over an SSH public key,
+with either client on the other side. `wyrm shim` links `wormhole` to
 wyrmyon when no other `wormhole` is on PATH, and `wyrm shim --remove` takes
 that link back.
 
