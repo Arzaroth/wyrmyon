@@ -192,8 +192,8 @@ and 0.6.0 were built on an Ubuntu 26.04 runner whose C toolchain targets
 x86-64-v3, and ring's X25519 died with SIGILL on an Ivy Bridge Xeon the
 moment a peer connected. Every package is installed on a matching system
 before the release job (all but the aarch64 Arch package, for want of an
-arm64 Arch image), and the release job runs last, so a broken package never reaches a published
-release.
+arm64 Arch image), and the release job runs last, so a broken package never
+reaches a published release.
 
 ## `--update` leaves packages to their package managers
 

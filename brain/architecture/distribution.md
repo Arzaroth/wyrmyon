@@ -24,8 +24,8 @@ GitHub Actions; Forgejo Actions is off for this repository.
 Releases target x86_64 and aarch64 on Linux (static musl), macOS and Windows.
 The Linux binaries are statically linked against musl, so one binary runs on
 any distribution, old glibc ones and Alpine included. The x86_64 one runs on
-any x86-64 CPU: Rust targets the x86-64 baseline, and the C that ring builds
-is held to it too (see the release workflow below). The code is the same
+any x86-64 CPU: Rust targets the x86-64 baseline, and the C its dependencies
+build (ring, blake3) is held to it too (see the release workflow below). The code is the same
 everywhere except:
 
 - File modes: Unix keeps the permission bits of sent files and applies the
@@ -137,8 +137,9 @@ for an existing tag):
    runs `scripts/package.sh`, then WiX on Windows. On x86_64 Linux the C
    code is compiled with `-march=x86-64` (`CFLAGS_x86_64_unknown_linux_musl`),
    since the Ubuntu 26.04 runner (amd64v3 packages) builds C for x86-64-v3,
-   and the tests run in release mode under `qemu-x86_64 -cpu qemu64`, so an
-   instruction past the baseline fails them with SIGILL.
+   and the tests and the `--version` check run in release mode under
+   `qemu-x86_64 -cpu qemu64`, a near-baseline CPU, so an instruction past it
+   on a tested path fails them with SIGILL.
 2. **arch**, in an `archlinux` container: `scripts/arch.sh bin` and
    `scripts/arch.sh source` against GitHub's tarball of the tag.
 3. **checksums**: `SHA256SUMS` over everything.

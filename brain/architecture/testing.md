@@ -77,7 +77,8 @@ job runs the rest.
 ## Packages
 
 The release workflow tests packaging on every pull request that touches it:
-it builds and tests the six release targets, then installs each package on a
+it builds and tests the six release targets (x86_64 Linux in release mode
+under qemu's near-baseline `qemu64` CPU), then installs each package on a
 matching system and runs it ([distribution.md](distribution.md)).
 
 ## Interop with the Python client
