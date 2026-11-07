@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-07
+
 ### Added
 
 - `wyrm tx` and `wyrm rx` stand for `wyrm send` and `wyrm receive`, as they
