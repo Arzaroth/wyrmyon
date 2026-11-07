@@ -35,6 +35,7 @@ env:
   NFPM_VERSION: 2.47.0
   WIX_VERSION: 5.0.2
   SIGNING_KEY: D399CF355EE4767B49F8C76E76B59B8342D88151
+  CFLAGS_x86_64_unknown_linux_musl: -march=x86-64 -mtune=generic
 
 jobs:
   build:
