@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-07
+
 ### Fixed
 
 - The x86_64 Linux binaries and packages of 0.5.1 and 0.6.0 crashed with
