@@ -62,6 +62,6 @@ wyrmyon.
 | Several paths and kept paths (`-R`), merged into the receiver's directories | [features/bundles.md](features/bundles.md) |
 | Updating itself | [features/update.md](features/update.md) |
 | Checking the network | [features/netcheck.md](features/netcheck.md) |
-| Answering to `wormhole`, and `wyrm shim` | [features/wormhole-shim.md](features/wormhole-shim.md) |
+| Answering to `wormhole`, `wyrm shim` and `wyrm ssh` | [features/wormhole-shim.md](features/wormhole-shim.md) |
 
 What comes next is in [ROADMAP.md](../ROADMAP.md).

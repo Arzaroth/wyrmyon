@@ -14,4 +14,4 @@ is in [ROADMAP.md](../../ROADMAP.md).
 | One code for several receivers in turn, `wyrm send --times N` | [several-receivers.md](several-receivers.md) |
 | `wyrm --update`, and the installs it leaves to a package manager | [update.md](update.md) |
 | `wyrm netcheck`: public address, NAT, port mapping, relays | [netcheck.md](netcheck.md) |
-| Answering to `wormhole` with the Python client's options; `wyrm shim` | [wormhole-shim.md](wormhole-shim.md) |
+| Answering to `wormhole` with the Python client's options; `wyrm shim`; `wyrm ssh` | [wormhole-shim.md](wormhole-shim.md) |
