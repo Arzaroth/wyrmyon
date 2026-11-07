@@ -187,9 +187,12 @@ real symlink, which cargo-generate-rpm cannot do; makepkg builds the Arch
 packages from the PKGBUILDs the AUR will get, so they are tested by the same
 run. The Linux binaries are static musl: one binary per architecture for
 every package format and distribution, with no glibc floor, as fd and atuin
-ship. Every package is installed on a matching system before the release
-job (all but the aarch64 Arch package, for want of an arm64 Arch image), and
-the release job runs last, so a broken package never reaches a published
+ship. The x86_64 binary keeps to the x86-64 baseline, C included: 0.5.1
+and 0.6.0 were built on an Ubuntu 26.04 runner whose C toolchain targets
+x86-64-v3, and ring's X25519 died with SIGILL on an Ivy Bridge Xeon the
+moment a peer connected. Every package is installed on a matching system
+before the release job (all but the aarch64 Arch package, for want of an
+arm64 Arch image), and the release job runs last, so a broken package never reaches a published
 release.
 
 ## `--update` leaves packages to their package managers

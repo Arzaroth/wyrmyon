@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The x86_64 Linux binaries and packages of 0.5.1 and 0.6.0 crashed with
+  "illegal hardware instruction" as soon as the peer connected, on CPUs
+  without AVX2 (Intel before Haswell, AMD before Excavator). The C code in
+  their crypto was compiled for x86-64-v3; it now targets the x86-64
+  baseline, and the release tests run on an emulated baseline CPU.
+
 ## [0.6.0] - 2026-11-07
 
 ### Added
