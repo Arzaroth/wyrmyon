@@ -46,6 +46,7 @@ jobs:
           - target: x86_64-unknown-linux-musl
             runs-on: ubuntu-latest
             nfpm: amd64 3f1cf344bd0b57373ca55636a78c08b0491f7293d609a456a9ac3b0b150fda97
+            qemu: qemu64
           - target: aarch64-unknown-linux-musl
             runs-on: ubuntu-24.04-arm
             nfpm: arm64 27419eb382695a7942be8ad52259f3ec1854fad001b3ae4baed34ce39a223b97
@@ -86,6 +87,10 @@ jobs:
           echo "$sum  $deb" | sha256sum -c -
           sudo dpkg -i "$deb"
 
+      - name: qemu
+        if: matrix.qemu
+        run: sudo apt-get install -qq -y qemu-user
+
       - name: Version
         run: |
           crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
@@ -99,7 +104,14 @@ jobs:
           echo "VERSION=$crate" >>"$GITHUB_ENV"
 
       - name: Test
-        run: cargo test --locked --target ${{ matrix.target }}
+        run: |
+          if [[ -n "${{ matrix.qemu }}" ]]; then
+            runner="CARGO_TARGET_$(tr a-z- A-Z_ <<<"${{ matrix.target }}")_RUNNER"
+            export "$runner=qemu-x86_64 -cpu ${{ matrix.qemu }}"
+            cargo test --locked --release --target ${{ matrix.target }}
+          else
+            cargo test --locked --target ${{ matrix.target }}
+          fi
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
