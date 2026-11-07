@@ -11,7 +11,7 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: 0.6.0.** Text, files,
+**Status: 0.6.1.** Text, files,
 directories and several paths at once work with any magic-wormhole client,
 directly or through the transit relay, and over iroh between two wyrms,
 verified chunk by chunk and resumable after an interruption, on Linux, macOS
