@@ -89,7 +89,9 @@ jobs:
 
       - name: qemu
         if: matrix.qemu
-        run: sudo apt-get install -qq -y qemu-user
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y qemu-user
 
       - name: Version
         run: |
@@ -118,7 +120,9 @@ jobs:
 
       - name: The binary reports the version
         run: |
-          printed=$(target/${{ matrix.target }}/release/wyrmyon --version)
+          run=()
+          [[ -n "${{ matrix.qemu }}" ]] && run=(qemu-x86_64 -cpu "${{ matrix.qemu }}")
+          printed=$("${run[@]}" target/${{ matrix.target }}/release/wyrmyon --version)
           echo "$printed"
           [[ $printed == "wyrmyon $VERSION" ]]
 
