@@ -10,6 +10,7 @@ use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{IrohTransport, Manifest, Offered, Role as IrohRole, Source};
 use wyrmyon_wormhole::{Code, Wormhole};
 
+use crate::discard::Sources;
 use crate::protocol::{
     self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
 };
@@ -60,6 +61,17 @@ receiver, the Python client included, gets them inside a directory named files."
     /// Serve this many receivers with the same code, one after another
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
     pub(crate) times: u32,
+    /// Delete the paths once every receiver has confirmed it got them
+    #[arg(
+        long,
+        conflicts_with = "text",
+        long_help = "Delete the paths once every receiver has confirmed it got them. \
+A refused, failed or interrupted transfer deletes nothing, and with --times \
+one failed receiver keeps everything. A path that changed during the transfer \
+is kept. A link goes, not what it points at. The current directory, the home \
+directory and their parents are refused."
+    )]
+    pub(crate) delete_source: bool,
     #[arg(skip)]
     pub(crate) literal_text: bool,
     #[arg(skip)]
@@ -248,6 +260,7 @@ impl SendArgs {
             code: None,
             qr: false,
             times: 1,
+            delete_source: false,
             literal_text: false,
             as_wormhole: false,
         }
@@ -262,6 +275,7 @@ impl SendArgs {
             code: None,
             qr: false,
             times: 1,
+            delete_source: false,
             literal_text: false,
             as_wormhole: false,
         }
@@ -270,6 +284,11 @@ impl SendArgs {
 
 pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
+    let sources = if args.delete_source {
+        Some(Sources::take(&args.paths)?)
+    } else {
+        None
+    };
     let payload = match args.text {
         Some(text) if text == "-" && !args.literal_text => Payload::Text(stdin_text().await?),
         Some(text) => Payload::Text(text),
@@ -300,6 +319,9 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     show_welcome(pending.welcome());
     if times > 1 {
         eprintln!("This code serves {times} receivers, one after another. A wrong code ends it.");
+    }
+    if let Some(sources) = &sources {
+        sources.announce(times);
     }
 
     let code = pending.code().clone();
@@ -349,7 +371,18 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
         eprintln!("Waiting for receiver {round} of {times}..");
     };
     staged.close().await;
-    outcome
+    match (outcome, sources) {
+        (Ok(()), Some(sources)) => sources.discard().await,
+        (Err(e), Some(_)) => {
+            if times > 1 {
+                eprintln!("Nothing deleted: not every receiver confirmed");
+            } else {
+                eprintln!("Nothing deleted: the transfer did not go through");
+            }
+            Err(e)
+        }
+        (outcome, None) => outcome,
+    }
 }
 
 async fn deliver(

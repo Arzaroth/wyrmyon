@@ -320,6 +320,7 @@ fn send_args(
         code: args.code,
         qr: args.qr && !args.no_qr,
         times: 1,
+        delete_source: false,
         as_wormhole: true,
     })
 }

@@ -1,3 +1,4 @@
+mod discard;
 mod merge;
 mod netcheck;
 mod protocol;
