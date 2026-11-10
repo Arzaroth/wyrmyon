@@ -1440,3 +1440,145 @@ fn wyrm_ssh_refuses_a_bad_code_before_choosing_a_key() {
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(!said.contains("127.0.0.1"), "{said}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_source_deletes_what_the_receiver_confirmed() {
+    let server = MailboxServer::start().await;
+    let (from, to) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(from.path().join("a.txt"), "a").unwrap();
+    std::fs::create_dir(from.path().join("d")).unwrap();
+    std::fs::write(from.path().join("d/b.txt"), "b").unwrap();
+    std::fs::write(from.path().join("stays.txt"), "s").unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--delete-source", "a.txt", "d"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    let (ok, _, _) = finish(sender).await;
+    let said = collected.await.unwrap();
+    assert!(ok, "{said}");
+    assert!(
+        said.contains("Once the receiver confirms, this deletes: a.txt, d"),
+        "{said}"
+    );
+    assert!(
+        said.contains("Deleted a.txt") && said.contains("Deleted d"),
+        "{said}"
+    );
+    assert_eq!(std::fs::read(to.path().join("d/b.txt")).unwrap(), b"b");
+    let left: Vec<_> = std::fs::read_dir(from.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, ["stays.txt"]);
+}
+
+async fn refuse_the_offer(server: &MailboxServer, code: &str) {
+    let config = Config {
+        relay_url: server.url(),
+        ..Config::default()
+    };
+    let mut refusing = wyrmyon_wormhole::join(&config, code.parse().unwrap())
+        .await
+        .unwrap()
+        .pair()
+        .await
+        .unwrap();
+    while refusing
+        .receive_json()
+        .await
+        .unwrap()
+        .get("offer")
+        .is_none()
+    {}
+    refusing
+        .send_json(&json!({"error": "transfer rejected"}))
+        .await
+        .unwrap();
+    refusing.close(Mood::Happy).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_source_keeps_everything_when_a_receiver_fails() {
+    let server = MailboxServer::start().await;
+    let from = tempfile::tempdir().unwrap();
+    std::fs::write(from.path().join("a.txt"), "a").unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--times", "2", "--delete-source", "a.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    refuse_the_offer(&server, &code).await;
+    let to = tempfile::tempdir().unwrap();
+    let (ok, _, stderr) = finish(
+        wyrm(&server.url())
+            .args(["receive", "--accept-file", &code])
+            .current_dir(to.path())
+            .spawn()
+            .unwrap(),
+    )
+    .await;
+    assert!(ok, "{stderr}");
+    let (ok, _, _) = finish(sender).await;
+    let said = collected.await.unwrap();
+    assert!(!ok, "{said}");
+    assert!(
+        said.contains("Once all 2 receivers confirm, this deletes: a.txt"),
+        "{said}"
+    );
+    assert!(
+        said.contains("Nothing deleted: not every receiver confirmed"),
+        "{said}"
+    );
+    assert!(from.path().join("a.txt").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_source_says_nothing_went_when_the_transfer_fails() {
+    let server = MailboxServer::start().await;
+    let from = tempfile::tempdir().unwrap();
+    std::fs::write(from.path().join("a.txt"), "a").unwrap();
+    let mut sender = wyrm(&server.url())
+        .args(["send", "--delete-source", "a.txt"])
+        .current_dir(from.path())
+        .spawn()
+        .unwrap();
+    let (code, collected) = read_code_keeping(sender.stderr.take().unwrap()).await;
+    refuse_the_offer(&server, &code).await;
+    let (ok, _, _) = finish(sender).await;
+    let said = collected.await.unwrap();
+    assert!(!ok, "{said}");
+    assert!(
+        said.contains("Nothing deleted: the transfer did not go through"),
+        "{said}"
+    );
+    assert!(from.path().join("a.txt").exists());
+}
+
+#[test]
+fn delete_source_refuses_text_and_the_current_directory_before_connecting() {
+    let refused = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_wyrm"))
+            .args(args)
+            .env("WYRMYON_RELAY_URL", "ws://127.0.0.1:9/v1")
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let said = refused(&["send", "--delete-source", "--text", "hi"]);
+    assert!(said.contains("cannot be used with"), "{said}");
+    let said = refused(&["send", "--delete-source", "."]);
+    assert!(said.contains("current directory"), "{said}");
+}
