@@ -26,17 +26,17 @@ over, with the Python client on either side.
 The package installs two identical binaries, `wyrmyon` and the short `wyrm`.
 
 ```
-wyrm report.pdf photos/      # paths: send (several go as one bundle), prints a code
-echo "hello" | wyrm          # piped stdin: send text
-wyrm                         # no arguments: prompt for a code (Tab completes), receive
-wyrm 7-guitarist-revenge     # a code: receive
-wyrm receive --new           # receiver first: allocate a code and wait
-wyrm send --code CODE FILE   # use a code the receiver allocated
-wyrm send --times 3 FILE     # one code, three receivers in turn
-wyrm send --delete-source F  # delete F once the receiver confirms it got it
-wyrm send -R /etc/x/y.conf   # keep the path: `wyrm receive -o / CODE` puts it back at /etc/x/y.conf
-wyrm netcheck                # how this network lets peers connect directly
-wyrm ssh invite              # add the SSH public key `wyrm ssh accept CODE` sends to authorized_keys
+wyrm report.pdf photos/        # paths: send (several go as one bundle), prints a code
+echo "hello" | wyrm            # piped stdin: send text
+wyrm                           # no arguments: prompt for a code (Tab completes), receive
+wyrm 7-guitarist-revenge       # a code: receive
+wyrm receive --new             # receiver first: allocate a code and wait
+wyrm send --code CODE FILE     # use a code the receiver allocated
+wyrm send --times 3 FILE       # one code, three receivers in turn
+wyrm send --delete-source FILE # delete FILE once the receiver confirms it got it
+wyrm send -R /etc/x/y.conf     # keep the path: `wyrm receive -o / CODE` puts it back at /etc/x/y.conf
+wyrm netcheck                  # how this network lets peers connect directly
+wyrm ssh invite                # add the SSH public key `wyrm ssh accept CODE` sends to authorized_keys
 ```
 
 `wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,

@@ -8,7 +8,8 @@
   confirms it got them, or every receiver with `--times`. A failed or refused
   transfer deletes nothing, a path that changed during the transfer is kept,
   a link goes but not what it points at, and the current and home
-  directories are refused. The paths to delete are listed next to the code.
+  directories, overlapping paths and trees holding a socket, FIFO or device
+  are refused. The paths to delete are listed next to the code.
 
 ## [0.6.1] - 2026-11-07
 
