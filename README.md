@@ -33,6 +33,7 @@ wyrm 7-guitarist-revenge     # a code: receive
 wyrm receive --new           # receiver first: allocate a code and wait
 wyrm send --code CODE FILE   # use a code the receiver allocated
 wyrm send --times 3 FILE     # one code, three receivers in turn
+wyrm send --delete-source F  # delete F once the receiver confirms it got it
 wyrm send -R /etc/x/y.conf   # keep the path: `wyrm receive -o / CODE` puts it back at /etc/x/y.conf
 wyrm netcheck                # how this network lets peers connect directly
 wyrm ssh invite              # add the SSH public key `wyrm ssh accept CODE` sends to authorized_keys
