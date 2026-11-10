@@ -16,6 +16,7 @@ enum Seen {
 }
 
 struct Source {
+    name: String,
     path: PathBuf,
     seen: Vec<(PathBuf, Seen)>,
 }
@@ -33,16 +34,16 @@ impl Sources {
         let home = home.and_then(|home| fs::canonicalize(home).ok());
         let mut sources = Vec::with_capacity(paths.len());
         for typed in paths {
-            let path = target(typed);
-            let real =
-                located(&path).with_context(|| format!("cannot send {}", typed.display()))?;
-            if cwd.starts_with(&real) {
+            let typed: PathBuf = typed.components().collect();
+            let path =
+                located(&typed).with_context(|| format!("cannot send {}", typed.display()))?;
+            if cwd.starts_with(&path) {
                 bail!(
                     "--delete-source refuses {}: it is or holds the current directory",
                     typed.display()
                 );
             }
-            if home.as_ref().is_some_and(|home| home.starts_with(&real)) {
+            if home.as_ref().is_some_and(|home| home.starts_with(&path)) {
                 bail!(
                     "--delete-source refuses {}: it is or holds the home directory",
                     typed.display()
@@ -50,7 +51,26 @@ impl Sources {
             }
             let seen =
                 snapshot(&path).with_context(|| format!("cannot send {}", typed.display()))?;
-            sources.push(Source { path, seen });
+            if let Some((rel, _)) = seen.iter().find(|(_, kind)| *kind == Seen::Other) {
+                bail!(
+                    "--delete-source refuses {}: {} is not a regular file, so it would not be sent",
+                    typed.display(),
+                    path.join(rel).display()
+                );
+            }
+            let name = printable(&typed.display().to_string());
+            sources.push(Source { name, path, seen });
+        }
+        for (i, one) in sources.iter().enumerate() {
+            if let Some(other) = sources[i + 1..].iter().find(|other| {
+                one.path.starts_with(&other.path) || other.path.starts_with(&one.path)
+            }) {
+                bail!(
+                    "--delete-source refuses {} and {}: one holds the other",
+                    one.name,
+                    other.name
+                );
+            }
         }
         Ok(Self(sources))
     }
@@ -59,7 +79,7 @@ impl Sources {
         let names = self
             .0
             .iter()
-            .map(|source| printable(&source.path.display().to_string()))
+            .map(|source| source.name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
         if times > 1 {
@@ -78,14 +98,13 @@ impl Sources {
     fn discard_now(self) -> anyhow::Result<()> {
         let total = self.0.len();
         let mut kept = 0;
-        for source in self.0 {
-            let name = printable(&source.path.display().to_string());
-            match snapshot(&source.path) {
-                Ok(now) if now == source.seen => match remove(&source.path) {
+        for Source { name, path, seen } in self.0 {
+            match snapshot(&path) {
+                Ok(now) if now == seen => match remove(&path) {
                     Ok(()) => eprintln!("Deleted {name}"),
                     Err(e) => {
                         kept += 1;
-                        eprintln!("Could not delete {name}: {e}");
+                        eprintln!("Could not delete all of {name}: {e}");
                     }
                 },
                 Ok(_) => {
@@ -99,16 +118,11 @@ impl Sources {
             }
         }
         if kept > 0 {
-            bail!("the transfer went through, but {kept} of {total} paths were not deleted");
+            bail!(
+                "the transfer went through, but {kept} of {total} paths are still there, whole or in part"
+            );
         }
         Ok(())
-    }
-}
-
-fn target(typed: &Path) -> PathBuf {
-    match (typed.parent(), typed.file_name()) {
-        (Some(parent), Some(name)) => parent.join(name),
-        _ => typed.to_owned(),
     }
 }
 
