@@ -191,13 +191,9 @@ mod tests {
         fs::write(dir.path().join("a.txt"), "a").unwrap();
         fs::create_dir_all(dir.path().join("d/e")).unwrap();
         fs::write(dir.path().join("d/e/f.txt"), "f").unwrap();
-        let elsewhere = tempfile::tempdir().unwrap();
-        let sources = Sources::take_from(
-            &[dir.path().join("a.txt"), dir.path().join("d/./")],
-            elsewhere.path(),
-            None,
-        )
-        .unwrap();
+        fs::create_dir_all(dir.path().join("p/x")).unwrap();
+        fs::write(dir.path().join("p/f.txt"), "f").unwrap();
+        let sources = taken(dir.path(), &["a.txt", "d/./", "p/x/.."]).unwrap();
         sources.announce(1);
         sources.announce(2);
         sources.discard_now().unwrap();
@@ -231,7 +227,7 @@ mod tests {
             inner.clone(),
             dir.path().to_owned(),
             inner.join(".."),
-            "/".into(),
+            inner.ancestors().last().unwrap().to_owned(),
         ] {
             let refused = Sources::take_from(std::slice::from_ref(&typed), &inner, None)
                 .err()
@@ -297,12 +293,32 @@ mod tests {
         assert!(locked.join("f.txt").exists());
     }
 
+    #[test]
+    fn paths_where_one_holds_the_other_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("d/e")).unwrap();
+        fs::write(dir.path().join("d/e/f.txt"), "f").unwrap();
+        for names in [["d", "d/e/f.txt"], ["d/e/f.txt", "d"], ["d", "d/e/.."]] {
+            let refused = taken(dir.path(), &names).err().unwrap().to_string();
+            assert!(
+                refused.contains("one holds the other"),
+                "{names:?}: {refused}"
+            );
+        }
+    }
+
     #[cfg(unix)]
     #[test]
-    fn a_device_is_seen_as_something_else() {
-        assert_eq!(
-            snapshot(Path::new("/dev/null")).unwrap(),
-            [(PathBuf::new(), Seen::Other)]
+    fn a_tree_holding_something_that_would_not_be_sent_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("d")).unwrap();
+        let _listening =
+            std::os::unix::net::UnixListener::bind(dir.path().join("d/app.sock")).unwrap();
+        let refused = taken(dir.path(), &["d"]).err().unwrap().to_string();
+        assert!(
+            refused.contains("app.sock is not a regular file"),
+            "{refused}"
         );
+        assert!(dir.path().join("d/app.sock").exists());
     }
 }
