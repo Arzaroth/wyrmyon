@@ -145,7 +145,7 @@ async fn receive_offer(
             }
             receive_text(wormhole, &text).await
         }
-        Offer::Other(_) => {
+        Offer::Forward(_) | Offer::Other(_) => {
             if let Some(connection) = connection {
                 connection.close().await;
             }
@@ -785,7 +785,7 @@ fn consents(answer: &str) -> bool {
     answer.is_empty() || answer.starts_with(['y', 'Y'])
 }
 
-async fn prompt_code(words: usize) -> anyhow::Result<Code> {
+pub(crate) async fn prompt_code(words: usize) -> anyhow::Result<Code> {
     const PROMPT: &str = "Enter receive wormhole code: ";
     if !std::io::stdin().is_terminal() {
         eprint!("{PROMPT}");

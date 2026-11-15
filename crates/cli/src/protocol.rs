@@ -6,6 +6,7 @@ use wyrmyon_transport_iroh::IrohInfo;
 use wyrmyon_wormhole::Wormhole;
 
 pub const COLLECTION: &str = "collection-v1";
+pub const FORWARD: &str = "forward-v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -26,6 +27,8 @@ pub enum Offer {
     Directory(DirectoryOffer),
     #[serde(rename = "wyrmyon-collection-v1")]
     Collection(CollectionOffer),
+    #[serde(rename = "wyrmyon-forward-v1")]
+    Forward(ForwardOffer),
     #[serde(untagged)]
     Other(Value),
 }
@@ -61,10 +64,16 @@ pub struct CollectionOffer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForwardOffer {
+    pub ports: Vec<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     MessageAck(String),
     FileAck(String),
+    ForwardAck(String),
     #[serde(untagged)]
     Other(Value),
 }
@@ -141,6 +150,22 @@ mod tests {
         assert_eq!(value["names"], json!(["etc/"]));
         let back: DirectoryOffer = serde_json::from_value(value).unwrap();
         assert!(back.bundle);
+    }
+
+    #[test]
+    fn a_forward_offer_and_its_answer_have_their_own_names() {
+        let offer = AppMessage::Offer(Offer::Forward(ForwardOffer {
+            ports: vec![8080, 22],
+        }));
+        assert_eq!(
+            serde_json::to_value(&offer).unwrap(),
+            json!({"offer": {"wyrmyon-forward-v1": {"ports": [8080, 22]}}})
+        );
+        let answer = AppMessage::Answer(Answer::ForwardAck("ok".into()));
+        assert_eq!(
+            serde_json::to_value(&answer).unwrap(),
+            json!({"answer": {"forward_ack": "ok"}})
+        );
     }
 
     #[test]

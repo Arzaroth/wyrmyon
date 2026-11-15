@@ -1,4 +1,5 @@
 mod discard;
+mod forward;
 mod merge;
 mod netcheck;
 mod protocol;
@@ -93,6 +94,8 @@ enum Command {
     Shim(shim::ShimArgs),
     /// Hand an SSH public key over, into the other side's `authorized_keys`
     Ssh(ssh::SshArgs),
+    /// Forward TCP ports from one wyrm to another, over iroh
+    Forward(forward::ForwardArgs),
 }
 
 pub(crate) fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
@@ -103,12 +106,20 @@ pub(crate) fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
 
 impl Global {
     fn config(&self) -> Config {
+        self.config_offering(&[protocol::COLLECTION])
+    }
+
+    fn forward_config(&self) -> Config {
+        self.config_offering(&[protocol::FORWARD])
+    }
+
+    fn config_offering(&self, offers: &[&str]) -> Config {
         let app_versions = if self.force_classic {
             serde_json::json!({})
         } else {
             serde_json::json!({"wyrmyon": {
                 "transports": [wyrmyon_transport_iroh::TRANSPORT],
-                "offers": [protocol::COLLECTION],
+                "offers": offers,
             }})
         };
         Config {
@@ -185,6 +196,9 @@ pub fn main() -> ExitCode {
 
 fn run(global: &Global, command: anyhow::Result<Command>) -> ExitCode {
     let runtime = tokio::runtime::Runtime::new().expect("start the async runtime");
+    if let Ok(Command::Forward(args)) = command {
+        return exit_code(runtime.block_on(forward::run(global, args)));
+    }
     let result = runtime.block_on(async {
         let work = async {
             match command {
@@ -193,6 +207,7 @@ fn run(global: &Global, command: anyhow::Result<Command>) -> ExitCode {
                 Ok(Command::Netcheck) => netcheck::run(global).await,
                 Ok(Command::Shim(args)) => shim::run(args),
                 Ok(Command::Ssh(args)) => ssh::run(global, args).await,
+                Ok(Command::Forward(_)) => unreachable!("forward handles its own Ctrl-C"),
                 Err(e) => Err(e),
             }
         };
