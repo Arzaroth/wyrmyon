@@ -72,7 +72,11 @@ never touch n0's iroh relays: `tests/support` disables them.
   `wyrmyon-iroh-v1` and its `IrohInfo` fields, the ALPN `wyrmyon/1`, the
   HKDF label `wyrmyon/iroh-v1/confirm`, the binding tag info
   `<role>:<sender id>:<receiver id>`, and what follows the tags on the
-  control stream: the 32-byte BLAKE3 hash, then the ack.
+  control stream: the 32-byte BLAKE3 hash, then the ack. For `wyrm forward`:
+  the `offers` entry `forward-v1`, the offer `wyrmyon-forward-v1` and its
+  `ports` list, the answer `forward_ack`, and on each forwarded stream the
+  2-byte big-endian port, then the status byte (`0` connected, `1` not
+  shared, `2` unreachable).
 - Never put an `iroh-blobs` ALPN on the endpoint: blobs are served only on the
   bound connection.
 - Close iroh endpoints, never just drop them (see `brain/decisions.md`).

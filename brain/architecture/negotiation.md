@@ -16,10 +16,12 @@ the same for every client; only the data transport differs.
    ```
 
    `transports` picks the transport; `offers` lists the kinds of offer beyond
-   the standard ones this side can receive. Today that is only
+   the standard ones this side can receive. `send` and `receive` advertise
    `collection-v1`, a directory as a collection of blobs
    ([features/directories.md](../features/directories.md)); a wyrmyon older
-   than it advertises no `offers` and gets a zip. The advert is also what
+   than it advertises no `offers` and gets a zip. The taking side of
+   `wyrm forward` advertises `forward-v1` instead, and only that
+   ([features/forward.md](../features/forward.md)). The advert is also what
    lets a sender mark a zip offer as a bundle ([features/bundles.md](../features/bundles.md)):
    the flag only goes to a peer that advertises `iroh-v1`.
 
@@ -59,6 +61,6 @@ on the same wormhole ([decisions.md](../decisions.md)).
 
 ## Sources
 
-- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`config`, `use_iroh`)
+- [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`config`, `forward_config`, `use_iroh`)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)

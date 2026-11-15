@@ -38,6 +38,8 @@ wyrm send --delete-source FILE # delete FILE once the receiver confirms it got i
 wyrm send -R /etc/x/y.conf     # keep the path: `wyrm receive -o / CODE` puts it back at /etc/x/y.conf
 wyrm netcheck                  # how this network lets peers connect directly
 wyrm ssh invite                # add the SSH public key `wyrm ssh accept CODE` sends to authorized_keys
+wyrm forward 8080              # share localhost:8080 with another wyrm, prints a code
+wyrm forward CODE 18080:8080   # listen on 18080 here for their port 8080, until Ctrl-C
 ```
 
 `wyrm send` and `wyrm receive` take every option (`--accept-file`, `-o`,

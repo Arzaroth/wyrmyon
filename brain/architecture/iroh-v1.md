@@ -16,6 +16,8 @@ exchanged through the PAKE channel and bound to the code by a MAC exchange.
 | `IrohTransport::connect(&their_info, wormhole_key)` | Both sides dial and accept; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s (a failed dial is reported then, if nothing reached us meanwhile) |
 | `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` / `abort` | Raw bytes on the stream; the last message finishes it; `finish` closes in order, `abort` closes at once with an error code |
 | `IrohTransport::close()` | Closes an endpoint that never connected, e.g. when the receiver refuses the offer |
+| `IrohPipe::serve_ports(targets)` / `forward_ports(listeners)` | Turn a bound pipe into a `Forwarding`: the sender serves forwarded streams to its targets, the receiver opens one per accepted TCP connection ([features/forward.md](../features/forward.md)) |
+| `Forwarding::next` / `close` | The next `ForwardEvent`, or how the connection ended (a close with code 0 is a clean end); `close` closes with code 0 and closes the endpoint |
 
 ## Wire format
 
@@ -67,6 +69,10 @@ On the connection:
    ([features/directories.md](../features/directories.md)). The receiver then writes
    `{"ack": "ok"}` on the first stream and finishes its side; the sender reads
    it to the end (at most 4 KiB).
+   For `wyrm forward` there is no hash and no blob: the first stream stays
+   idle, and each forwarded TCP connection is a new bidirectional stream the
+   receiver opens, starting with the 2-byte big-endian port and answered by
+   one status byte ([features/forward.md](../features/forward.md)).
 4. The sender closes the connection; the receiver waits up to 5 s for that
    close before closing its endpoint, so the ack is never lost to an early
    exit. Every failed `connect` closes its endpoint, and any error after the
@@ -108,6 +114,7 @@ store cannot be reached by anyone who has not passed the pin and the binding.
 - [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs)
 - [crates/transport-iroh/src/blobs.rs](../../crates/transport-iroh/src/blobs.rs)
 - [crates/transport-iroh/src/collection.rs](../../crates/transport-iroh/src/collection.rs)
+- [crates/transport-iroh/src/forward.rs](../../crates/transport-iroh/src/forward.rs)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
 - [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)

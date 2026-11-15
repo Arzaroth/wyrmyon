@@ -13,6 +13,7 @@ is in [ROADMAP.md](../../ROADMAP.md).
 | Several paths, and paths kept as typed with `-R`, merging into the receiver's directories | [bundles.md](bundles.md) |
 | One code for several receivers in turn, `wyrm send --times N` | [several-receivers.md](several-receivers.md) |
 | Deleting the sent paths once received, `wyrm send --delete-source` | [delete-source.md](delete-source.md) |
+| Forwarding TCP ports between two wyrms, `wyrm forward` | [forward.md](forward.md) |
 | `wyrm --update`, and the installs it leaves to a package manager | [update.md](update.md) |
 | `wyrm netcheck`: public address, NAT, port mapping, relays | [netcheck.md](netcheck.md) |
 | Answering to `wormhole` with the Python client's options; `wyrm shim`; `wyrm ssh` | [wormhole-shim.md](wormhole-shim.md) |

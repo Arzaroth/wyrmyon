@@ -53,6 +53,12 @@ destination, a legacy client unpacks the `files` directory.
 iroh-blobs hash sequence: our manifest first, then one blob per file. Offered
 as `wyrmyon-collection-v1`, only to a peer advertising `collection-v1`.
 
+**Forward**: `wyrm forward`, TCP connections carried between two wyrms over
+iroh, one QUIC stream each. The **sharing** side names the ports and their
+targets and gets the code; the **taking** side gives the code and listens on
+them. Offered as `wyrmyon-forward-v1`, only to a peer advertising
+`forward-v1`.
+
 **Manifest**: the JSON list of a collection's files (path, size, permission
 bits) and empty directories, checked against the offer before any file data
 is fetched.

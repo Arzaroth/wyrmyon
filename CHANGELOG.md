@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `wyrm forward` forwards TCP ports from one wyrm to another over iroh.
+  `wyrm forward 8080` shares `localhost:8080` (or `host:port`) and prints a
+  code; `wyrm forward CODE` listens on the shared ports on `127.0.0.1`, or
+  `wyrm forward CODE 18080:8080` maps them to other ports. Each connection
+  is its own QUIC stream, direct when hole-punching allows. It lasts until
+  either side presses Ctrl-C. Both sides must run wyrmyon.
+
 ## [0.7.0] - 2026-11-10
 
 ### Added

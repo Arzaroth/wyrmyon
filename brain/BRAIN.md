@@ -41,6 +41,7 @@ wyrmyon.
 | Can a transfer replace a file the receiver already has? | [features/bundles.md](features/bundles.md), [features/files.md](features/files.md) |
 | Can one code serve several receivers? | [features/several-receivers.md](features/several-receivers.md) |
 | When does `send --delete-source` delete, and what does it refuse? | [features/delete-source.md](features/delete-source.md) |
+| How does `wyrm forward` carry a TCP connection, and what can the taker reach? | [features/forward.md](features/forward.md) |
 | How is the iroh connection authenticated? | [architecture/iroh-v1.md](architecture/iroh-v1.md) |
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |
 | Why does `wyrm --update` refuse a .deb or MSI install? | [features/update.md](features/update.md) |
@@ -60,6 +61,7 @@ wyrmyon.
 | Verified, resumable transfers | [features/resume.md](features/resume.md) |
 | One code for several receivers in turn | [features/several-receivers.md](features/several-receivers.md) |
 | Deleting the sent paths once received | [features/delete-source.md](features/delete-source.md) |
+| Forwarding TCP ports between two wyrms | [features/forward.md](features/forward.md) |
 | The command line: bare arguments, the code prompt and hint, the QR code, the progress bar | [features/cli.md](features/cli.md) |
 | Several paths and kept paths (`-R`), merged into the receiver's directories | [features/bundles.md](features/bundles.md) |
 | Updating itself | [features/update.md](features/update.md) |

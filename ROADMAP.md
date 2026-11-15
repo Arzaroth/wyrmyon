@@ -111,6 +111,13 @@ free; the iroh path is then a pure upgrade on top of it.
       fresh mailbox connection per receiver; the payload staged once; a
       wrong code ends the run so the code allows one guess.
 
+## M10 - Port forwarding
+
+- [x] `wyrm forward PORT...` shares local ports, `wyrm forward CODE [LOCAL:]PORT...`
+      listens on them, over iroh only. Decided: the taker names ports, never
+      hosts; one QUIC stream per TCP connection with a port header and a
+      status byte; the mailbox closed once connected.
+
 ## Later
 
 - [ ] `--times` receivers served at once rather than in turn: one

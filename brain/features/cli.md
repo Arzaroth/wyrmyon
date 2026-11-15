@@ -10,6 +10,7 @@ wyrm receive --new           # receiver first: allocate a code, wait
 wyrm send ... / wyrm receive ...   # explicit forms, with every option
 wyrm tx ... / wyrm rx ...           # the same two, shorter
 wyrm ssh invite / wyrm ssh accept CODE   # hand an SSH public key over
+wyrm forward 8080 / wyrm forward CODE    # forward TCP ports between two wyrms
 ```
 
 ## Bare arguments
@@ -27,10 +28,13 @@ Global options (`--relay-url`, `--force-classic`, `--hide-progress`...) work in
 either form; the subcommands' own options (`--accept-file`, `-o`, `--code`)
 need the explicit form. A bare receive still asks before accepting a file.
 A subcommand's name wins over a file called the same: `wyrm ./rx` sends a file
-named `rx`, and `wyrm ./ssh` one named `ssh`. `wyrm shim` alone refuses
+named `rx`, `wyrm ./ssh` one named `ssh`, and `wyrm ./forward` one named
+`forward`. `wyrm shim` alone refuses
 outright beside a file of its name, since `wyrm shim` is a whole command;
 `wyrm ssh` needs `invite` or `accept` after it. `ssh` is described with the
-`wormhole` options ([wormhole-shim.md](wormhole-shim.md)).
+`wormhole` options ([wormhole-shim.md](wormhole-shim.md)). `wyrm forward`
+picks its own role from its first argument the same way: a code takes,
+ports share ([forward.md](forward.md)).
 
 ## The code prompt
 
