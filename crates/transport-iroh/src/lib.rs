@@ -1,5 +1,6 @@
 mod blobs;
 mod collection;
+mod forward;
 mod netcheck;
 
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ pub use blobs::{Fetched, Offered};
 pub use collection::{
     Collection, MAX_FILES, MAX_MANIFEST, Manifest, ManifestFile, Placement, Source, Under,
 };
+pub use forward::{Event as ForwardEvent, Forwarding, Next as ForwardNext};
 pub use netcheck::{NetCheck, PortMapping, netcheck};
 
 pub const TRANSPORT: &str = "iroh-v1";
