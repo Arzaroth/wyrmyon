@@ -46,6 +46,8 @@ pub struct ForwardArgs {
     bind: IpAddr,
 }
 
+const MOST_PORTS: usize = 32;
+
 #[cfg_attr(test, derive(Debug, PartialEq))]
 enum Mode {
     Share(BTreeMap<u16, String>),
@@ -72,6 +74,9 @@ fn mode(targets: &[String], code: Option<&str>) -> anyhow::Result<Mode> {
                     bail!("port {port} is shared twice");
                 }
             }
+            if ports.len() > MOST_PORTS {
+                bail!("a forward shares {MOST_PORTS} ports at most");
+            }
             Ok(Mode::Share(ports))
         }
     }
@@ -87,6 +92,9 @@ fn port(s: &str, what: &str) -> anyhow::Result<u16> {
 fn share(spec: &str) -> anyhow::Result<(u16, String)> {
     match spec.rsplit_once(':') {
         None => Ok((port(spec, "a shared port")?, format!("localhost:{spec}"))),
+        Some((host, _)) if host.parse::<u16>().is_ok() => bail!(
+            "`{spec}` maps a port, but a sharing side names hosts: to take a forward, give the code first (`wyrm forward CODE {spec}`)"
+        ),
         Some((host, p)) if !host.is_empty() => Ok((port(p, spec)?, spec.to_owned())),
         Some(_) => bail!("`{spec}` names no host before its port"),
     }
@@ -113,10 +121,7 @@ pub async fn run(global: &Global, args: ForwardArgs) -> anyhow::Result<()> {
     }
     let mode = mode(&args.targets, args.code.as_deref())?;
     let mut interrupted = std::pin::pin!(tokio::signal::ctrl_c());
-    let (mut forwarding, targets) = tokio::select! {
-        pipe = negotiate(global, &args, mode) => pipe?,
-        _ = &mut interrupted => bail!("interrupted"),
-    };
+    let (mut forwarding, targets) = negotiate(global, &args, mode, &mut interrupted).await?;
     eprintln!(
         "Forwarding ({}) until Ctrl-C or the other side stops",
         forwarding.pipe().describe()
@@ -170,39 +175,57 @@ async fn negotiate(
     global: &Global,
     args: &ForwardArgs,
     mode: Mode,
+    interrupted: &mut (impl Future + Unpin),
 ) -> anyhow::Result<(Forwarding, HashMap<u16, String>)> {
-    let config = global.forward_config();
-    let (pending, sharing) = match mode {
-        Mode::Share(ports) => {
-            let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
-            let qr = args.qr.then_some(global.ascii);
-            let pending = if let Some(code) = code {
-                show_code(&code, qr, &other_side(&code));
-                wyrmyon_wormhole::join(&config, code).await?
-            } else {
-                let pending =
-                    wyrmyon_wormhole::create(&config, usize::from(args.code_length)).await?;
-                show_code(pending.code(), qr, &other_side(pending.code()));
-                pending
-            };
-            (pending, Ok(ports))
-        }
-        Mode::Connect(code, maps) => {
-            let code = match code {
-                Some(code) => code,
-                None => crate::receive::prompt_code(usize::from(args.code_length)).await?,
-            };
-            (wyrmyon_wormhole::join(&config, code).await?, Err(maps))
-        }
+    let paired = async {
+        let (pending, sharing) = match mode {
+            Mode::Share(ports) => {
+                let config = global.config_offering(&[]);
+                let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
+                let qr = args.qr.then_some(global.ascii);
+                let pending = if let Some(code) = code {
+                    show_code(&code, qr, &other_side(&code));
+                    wyrmyon_wormhole::join(&config, code).await?
+                } else {
+                    let pending =
+                        wyrmyon_wormhole::create(&config, usize::from(args.code_length)).await?;
+                    show_code(pending.code(), qr, &other_side(pending.code()));
+                    pending
+                };
+                (pending, Ok(ports))
+            }
+            Mode::Connect(code, maps) => {
+                let code = match code {
+                    Some(code) => code,
+                    None => crate::receive::prompt_code(usize::from(args.code_length)).await?,
+                };
+                (
+                    wyrmyon_wormhole::join(&global.forward_config(), code).await?,
+                    Err(maps),
+                )
+            }
+        };
+        show_welcome(pending.welcome());
+        anyhow::Ok((pending.pair().await?, sharing))
     };
-    show_welcome(pending.welcome());
-    let mut wormhole = pending.pair().await?;
+    let (mut wormhole, sharing) = tokio::select! {
+        paired = paired => paired?,
+        _ = &mut *interrupted => bail!("interrupted"),
+    };
     let result = match sharing {
-        Ok(ports) => offer(&mut wormhole, global, ports).await,
-        Err(maps) => take(&mut wormhole, global, args.bind, &maps).await,
+        Ok(ports) => offer(&mut wormhole, global, ports, interrupted).await,
+        Err(maps) => take(&mut wormhole, global, args.bind, &maps, interrupted).await,
     };
-    wormhole.close(mood_for(&result)).await;
-    result
+    let mood = mood_for(&result);
+    tokio::select! {
+        () = wormhole.close(mood) => result,
+        _ = &mut *interrupted => {
+            if let Ok((forwarding, _)) = result {
+                forwarding.close().await;
+            }
+            bail!("interrupted")
+        }
+    }
 }
 
 fn other_side(code: &Code) -> String {
@@ -220,6 +243,7 @@ async fn offer(
     wormhole: &mut Wormhole,
     global: &Global,
     ports: BTreeMap<u16, String>,
+    interrupted: &mut (impl Future + Unpin),
 ) -> anyhow::Result<(Forwarding, HashMap<u16, String>)> {
     if !wants_forward(wormhole) {
         protocol::send_error(
@@ -227,6 +251,13 @@ async fn offer(
             "this code shares ports: take it with `wyrm forward CODE`",
         )
         .await?;
+        if crate::speaks_iroh(wormhole)
+            && wormhole.their_app_versions()["wyrmyon"]["offers"]
+                .as_array()
+                .is_some_and(Vec::is_empty)
+        {
+            bail!("both sides share ports: the other side takes them with `wyrm forward CODE`");
+        }
         bail!("the other side is not running `wyrm forward`");
     }
     let iroh = global.iroh_or_tell(wormhole, IrohRole::Sender).await?;
@@ -249,8 +280,11 @@ async fn offer(
             }
         }
         theirs.context("the other side accepted without an iroh address")
-    }
-    .await;
+    };
+    let sent = tokio::select! {
+        sent = sent => sent,
+        _ = &mut *interrupted => Err(anyhow::anyhow!("interrupted")),
+    };
     let theirs = match sent {
         Ok(theirs) => theirs,
         Err(e) => {
@@ -258,7 +292,10 @@ async fn offer(
             return Err(e);
         }
     };
-    let pipe = iroh.connect(&theirs, wormhole.key()).await?;
+    let pipe = iroh
+        .connect_unless(&theirs, wormhole.key(), interrupted)
+        .await
+        .context("interrupted")??;
     for (port, target) in &ports {
         eprintln!("Sharing {target} as port {port}");
     }
@@ -266,14 +303,33 @@ async fn offer(
     Ok((pipe.serve_ports(targets.clone()), targets))
 }
 
+fn taker_refusal(wormhole: &Wormhole) -> Option<&'static str> {
+    let offers = wormhole.their_app_versions()["wyrmyon"]["offers"].as_array();
+    if offers.is_some_and(|o| o.iter().any(|o| o == protocol::FORWARD)) {
+        Some("both sides wait to take a forward: one side shares ports with `wyrm forward PORT`")
+    } else if !crate::speaks_iroh(wormhole) || offers.is_some_and(|o| !o.is_empty()) {
+        Some("the other side is waiting for a port forward (`wyrm forward`), not a transfer")
+    } else {
+        None
+    }
+}
+
 async fn take(
     wormhole: &mut Wormhole,
     global: &Global,
     bind: IpAddr,
     maps: &[(u16, u16)],
+    interrupted: &mut (impl Future + Unpin),
 ) -> anyhow::Result<(Forwarding, HashMap<u16, String>)> {
+    if let Some(why) = taker_refusal(wormhole) {
+        return refuse(wormhole, why).await;
+    }
     let mut iroh = None;
-    let listeners = match take_offer(wormhole, global, bind, maps, &mut iroh).await {
+    let taken = tokio::select! {
+        taken = take_offer(wormhole, global, bind, maps, &mut iroh) => taken,
+        _ = &mut *interrupted => Err(anyhow::anyhow!("interrupted")),
+    };
+    let listeners = match taken {
         Ok(listeners) => listeners,
         Err(e) => {
             if let Some((iroh, _)) = iroh {
@@ -283,15 +339,22 @@ async fn take(
         }
     };
     let (iroh, theirs) = iroh.expect("a forward is only taken with an iroh address");
-    let pipe = iroh.connect(&theirs, wormhole.key()).await?;
     let mut targets = HashMap::new();
     for (listener, remote) in &listeners {
-        let here = listener
-            .local_addr()
-            .context("reading a listening address")?;
+        let here = match listener.local_addr() {
+            Ok(here) => here,
+            Err(e) => {
+                iroh.close().await;
+                return Err(e).context("reading a listening address");
+            }
+        };
         eprintln!("Listening on {here} for their port {remote}");
         targets.insert(*remote, here.to_string());
     }
+    let pipe = iroh
+        .connect_unless(&theirs, wormhole.key(), interrupted)
+        .await
+        .context("interrupted")??;
     Ok((pipe.forward_ports(listeners), targets))
 }
 
@@ -304,10 +367,11 @@ async fn take_offer(
 ) -> anyhow::Result<Vec<(TcpListener, u16)>> {
     let offered = loop {
         match protocol::next(wormhole, "other side").await? {
-            AppMessage::Iroh(info) if iroh.is_none() && crate::speaks_iroh(wormhole) => {
+            AppMessage::Iroh(info) if iroh.is_none() => {
                 let ours = global.iroh_or_tell(wormhole, IrohRole::Receiver).await?;
-                protocol::send(wormhole, &AppMessage::Iroh(ours.info().await)).await?;
+                let address = ours.info().await;
                 *iroh = Some((ours, info));
+                protocol::send(wormhole, &AppMessage::Iroh(address)).await?;
             }
             AppMessage::Offer(Offer::Forward(offered)) => break offered,
             AppMessage::Offer(_) => {
@@ -323,6 +387,10 @@ async fn take_offer(
     if iroh.is_none() {
         return refuse(wormhole, "a forward needs an iroh address").await;
     }
+    if let Err(e) = check_offered(&offered.ports) {
+        protocol::send_error(wormhole, "the other side cannot take this forward").await?;
+        return Err(e);
+    }
     match listen(bind, maps, &offered.ports).await {
         Ok(listeners) => {
             protocol::send(
@@ -337,6 +405,23 @@ async fn take_offer(
             Err(e)
         }
     }
+}
+
+fn check_offered(ports: &[u16]) -> anyhow::Result<()> {
+    if ports.len() > MOST_PORTS {
+        bail!(
+            "the other side shares {} ports, more than {MOST_PORTS}",
+            ports.len()
+        );
+    }
+    if ports.contains(&0) {
+        bail!("the other side shares port 0");
+    }
+    let mut seen = std::collections::HashSet::new();
+    if let Some(port) = ports.iter().find(|&&p| !seen.insert(p)) {
+        bail!("the other side shares port {port} twice");
+    }
+    Ok(())
 }
 
 async fn listen(
@@ -428,6 +513,9 @@ mod tests {
             assert!(mode(&args(bad), None).is_err(), "{bad:?}");
         }
         assert!(mode(&args(&["7-guitarist-revenge"]), Some("7-guitarist-revenge")).is_err());
+        let many: Vec<String> = (1..=33).map(|p: u16| p.to_string()).collect();
+        assert!(mode(&many, None).is_err());
+        assert!(mode(&many[..32], None).is_ok());
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use support::{TIMEOUT, wyrm};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::process::Child;
 use tokio::sync::mpsc;
 use wyrmyon_testkit::MailboxServer;
@@ -121,23 +121,25 @@ async fn echo() -> u16 {
 
 async fn round_trip(port: u16, data: &[u8]) -> Vec<u8> {
     let mut tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    tcp.write_all(data).await.unwrap();
-    tcp.shutdown().await.unwrap();
+    let _ = tcp.write_all(data).await;
+    let _ = tcp.shutdown().await;
     let mut back = Vec::new();
     let _ = tokio::time::timeout(TIMEOUT, tcp.read_to_end(&mut back)).await;
     back
 }
 
-async fn free_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    listener.local_addr().unwrap().port()
+fn refusing() -> (TcpSocket, u16) {
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let port = socket.local_addr().unwrap().port();
+    (socket, port)
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_shared_port_answers_on_the_other_side_until_it_stops() {
     let server = MailboxServer::start().await;
     let target = echo().await;
-    let dead = free_port().await;
+    let (_dead, dead) = refusing();
     let mut sharing = Wyrm::start(
         &server,
         &[&target.to_string(), &format!("127.0.0.1:{dead}")],
@@ -230,7 +232,10 @@ async fn without_maps_every_shared_port_listens_under_its_own_number() {
     tcp.write_all(b"level").await.unwrap();
     tcp.shutdown().await.unwrap();
     let mut back = Vec::new();
-    tcp.read_to_end(&mut back).await.unwrap();
+    tokio::time::timeout(TIMEOUT, tcp.read_to_end(&mut back))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(back, b"level");
     stop(taking, sharing).await;
 }
@@ -309,18 +314,33 @@ async fn forward_refuses_what_cannot_work() {
         (&["0"], "not a port number"),
         (&["22", "22"], "shared twice"),
         (&["--code", "3-a-b", "3-a-b"], "give the code once"),
+        (&["--code", "3-a-b", "18080:22"], "give the code first"),
     ] {
         let (ok, said) = Wyrm::start(&server, args).end().await;
         assert!(!ok && said.contains(why), "{args:?}: {said}");
     }
 }
 
-fn forward_config(server: &MailboxServer) -> Config {
+fn config(server: &MailboxServer, app_versions: Value) -> Config {
     Config {
         relay_url: server.url(),
-        app_versions: json!({"wyrmyon": {"transports": ["iroh-v1"], "offers": ["forward-v1"]}}),
+        app_versions,
         ..Config::default()
     }
+}
+
+fn forward_config(server: &MailboxServer) -> Config {
+    config(
+        server,
+        json!({"wyrmyon": {"transports": ["iroh-v1"], "offers": ["forward-v1"]}}),
+    )
+}
+
+fn sharing_config(server: &MailboxServer) -> Config {
+    config(
+        server,
+        json!({"wyrmyon": {"transports": ["iroh-v1"], "offers": []}}),
+    )
 }
 
 async fn until(wormhole: &mut Wormhole, key: &str) -> Value {
@@ -336,9 +356,11 @@ async fn until(wormhole: &mut Wormhole, key: &str) -> Value {
 }
 
 async fn taken_by_hand(server: &MailboxServer, args: &[&str]) -> (Wormhole, Wyrm) {
-    let pending = wyrmyon_wormhole::create(&forward_config(server), 2)
-        .await
-        .unwrap();
+    taken_by(server, &sharing_config(server), args).await
+}
+
+async fn taken_by(server: &MailboxServer, config: &Config, args: &[&str]) -> (Wormhole, Wyrm) {
+    let pending = wyrmyon_wormhole::create(config, 2).await.unwrap();
     let mut all = vec![pending.code().as_str()];
     all.extend_from_slice(args);
     let taking = Wyrm::start(server, &all);
@@ -388,6 +410,90 @@ async fn the_taking_side_refuses_a_forward_it_cannot_use() {
     assert!(!ok && said.contains("shares no port"), "{said}");
     iroh.close().await;
     peer.close(Mood::Happy).await;
+
+    let (mut peer, taking) = taken_by_hand(&server, &[]).await;
+    peer.send_json(&json!({"offer": {"message": "hi"}}))
+        .await
+        .unwrap();
+    assert!(
+        until(&mut peer, "error")
+            .await
+            .as_str()
+            .unwrap()
+            .contains("waiting for a port forward")
+    );
+    let (ok, said) = taking.end().await;
+    assert!(!ok && said.contains("not a transfer"), "{said}");
+    peer.close(Mood::Happy).await;
+
+    let too_many: Vec<u16> = (1..=33).collect();
+    for (ports, why) in [
+        (json!([22, 22]), "shares port 22 twice"),
+        (json!([0]), "shares port 0"),
+        (json!(too_many), "33 ports, more than 32"),
+    ] {
+        let (mut peer, taking) = taken_by_hand(&server, &[]).await;
+        let iroh = IrohTransport::bind(IrohRole::Sender, Relays::Disabled)
+            .await
+            .unwrap();
+        let info = serde_json::to_value(iroh.info().await).unwrap();
+        peer.send_json(&json!({"wyrmyon-iroh-v1": info}))
+            .await
+            .unwrap();
+        peer.send_json(&json!({"offer": {"wyrmyon-forward-v1": {"ports": ports}}}))
+            .await
+            .unwrap();
+        assert_eq!(
+            until(&mut peer, "error").await,
+            "the other side cannot take this forward"
+        );
+        let (ok, said) = taking.end().await;
+        assert!(!ok && said.contains(why), "{said}");
+        iroh.close().await;
+        peer.close(Mood::Happy).await;
+    }
+
+    for (app_versions, why) in [
+        (json!({}), "waiting for a port forward"),
+        (
+            json!({"wyrmyon": {"transports": ["iroh-v1"], "offers": ["collection-v1"]}}),
+            "waiting for a port forward",
+        ),
+    ] {
+        let (mut peer, taking) = taken_by(&server, &config(&server, app_versions), &[]).await;
+        assert!(
+            until(&mut peer, "error")
+                .await
+                .as_str()
+                .unwrap()
+                .contains(why)
+        );
+        let (ok, said) = taking.end().await;
+        assert!(!ok && said.contains(why), "{said}");
+        peer.close(Mood::Happy).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_sharers_or_two_takers_on_one_code_both_fail() {
+    let server = MailboxServer::start().await;
+    let mut first = Wyrm::start(&server, &["--code", "9-guitarist-revenge", "22"]);
+    first.code().await;
+    let second = Wyrm::start(&server, &["--code", "9-guitarist-revenge", "23"]);
+    for sharing in [second, first] {
+        let (ok, said) = sharing.end().await;
+        assert!(!ok && said.contains("both sides share ports"), "{said}");
+    }
+
+    let first = Wyrm::start(&server, &["--code", "10-guitarist-revenge"]);
+    let second = Wyrm::start(&server, &["--code", "10-guitarist-revenge"]);
+    for taking in [first, second] {
+        let (ok, said) = taking.end().await;
+        assert!(
+            !ok && said.contains("both sides wait to take a forward"),
+            "{said}"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -407,6 +513,9 @@ async fn the_sharing_side_wants_a_forward_ack() {
         json!({"wyrmyon-forward-v1": {"ports": [22]}})
     );
     peer.send_json(&json!({"chat": 1})).await.unwrap();
+    peer.send_json(&json!({"offer": {"message": "hi"}}))
+        .await
+        .unwrap();
     peer.send_json(&json!({"answer": {"file_ack": "ok"}}))
         .await
         .unwrap();
