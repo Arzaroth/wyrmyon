@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-16
+
 ### Added
 
 - `wyrm forward` forwards TCP ports from one wyrm to another over iroh.
