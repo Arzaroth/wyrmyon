@@ -19,8 +19,9 @@ and Windows. Between two wyrms, a directory travels file by file with no zip,
 either side dialling is enough, and the transfer says whether it went direct.
 Run as `wormhole` (`wyrm shim` links it), wyrmyon takes the Python client's
 command line, and the packages are signed. `wyrm ssh` hands an SSH public key
-over, with the Python client on either side, and `wyrm send --delete-source`
-deletes what was sent once the receiver confirms it.
+over, with the Python client on either side, `wyrm send --delete-source`
+deletes what was sent once the receiver confirms it, and `wyrm forward`
+carries TCP ports from one wyrm to another until either side stops it.
 
 ## Usage
 

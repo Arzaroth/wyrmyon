@@ -8,8 +8,13 @@
   `wyrm forward 8080` shares `localhost:8080` (or `host:port`) and prints a
   code; `wyrm forward CODE` listens on the shared ports on `127.0.0.1`, or
   `wyrm forward CODE 18080:8080` maps them to other ports. Each connection
-  is its own QUIC stream, direct when hole-punching allows. It lasts until
-  either side presses Ctrl-C. Both sides must run wyrmyon.
+  is its own QUIC stream, direct when hole-punching allows, and a reset on
+  one end resets the other. It lasts until either side presses Ctrl-C. Both
+  sides must run wyrmyon: any other client on the code, a `wyrm send` or
+  `wyrm receive`, or two sharers or two takers get a clear error instead.
+  `--bind` listens elsewhere than `127.0.0.1`; a forward shares 32 ports at
+  most. Sends and receives are unchanged, so older wyrmyon peers are not
+  affected.
 
 ## [0.7.0] - 2026-11-10
 
