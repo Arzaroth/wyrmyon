@@ -1,7 +1,6 @@
 mod support;
 
 use std::process::Stdio;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use support::{TIMEOUT, wyrm};
@@ -212,7 +211,7 @@ async fn the_sharing_side_can_stop_it_too_and_ctrl_c_before_pairing_fails() {
 
     let mut alone = Wyrm::start(&server, &["22"]);
     alone.code().await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     alone.interrupt();
     let (ok, said) = alone.end().await;
     assert!(!ok && said.contains("interrupted"), "{said}");
