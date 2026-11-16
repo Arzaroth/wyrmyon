@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use iroh::endpoint::{Connection, ConnectionError, RecvStream, SendStream};
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -14,6 +15,7 @@ pub const NOT_FORWARDED: u8 = 1;
 pub const UNREACHABLE: u8 = 2;
 
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+const EVENTS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -25,7 +27,7 @@ pub enum Event {
 pub struct Forwarding {
     pipe: IrohPipe,
     tasks: JoinSet<()>,
-    events: mpsc::UnboundedReceiver<Event>,
+    events: mpsc::Receiver<Event>,
 }
 
 pub enum Next {
@@ -36,7 +38,7 @@ pub enum Next {
 impl IrohPipe {
     #[must_use]
     pub fn serve_ports(self, targets: HashMap<u16, String>) -> Forwarding {
-        let (tell, events) = mpsc::unbounded_channel();
+        let (tell, events) = mpsc::channel(EVENTS);
         let mut tasks = JoinSet::new();
         tasks.spawn(serve(self.connection.clone(), Arc::new(targets), tell));
         Forwarding {
@@ -48,7 +50,7 @@ impl IrohPipe {
 
     #[must_use]
     pub fn forward_ports(self, listeners: Vec<(TcpListener, u16)>) -> Forwarding {
-        let (tell, events) = mpsc::unbounded_channel();
+        let (tell, events) = mpsc::channel(EVENTS);
         let mut tasks = JoinSet::new();
         for (listener, port) in listeners {
             tasks.spawn(listen(
@@ -99,7 +101,7 @@ fn ended(closed: ConnectionError) -> Result<(), Error> {
 async fn serve(
     connection: Connection,
     targets: Arc<HashMap<u16, String>>,
-    tell: mpsc::UnboundedSender<Event>,
+    tell: mpsc::Sender<Event>,
 ) {
     let mut streams = JoinSet::new();
     while let Ok((send, recv)) = connection.accept_bi().await {
@@ -112,7 +114,7 @@ async fn serve_one(
     mut send: SendStream,
     mut recv: RecvStream,
     targets: Arc<HashMap<u16, String>>,
-    tell: mpsc::UnboundedSender<Event>,
+    tell: mpsc::Sender<Event>,
 ) {
     let mut header = [0u8; 2];
     if recv.read_exact(&mut header).await.is_err() {
@@ -120,19 +122,19 @@ async fn serve_one(
     }
     let port = u16::from_be_bytes(header);
     let Some(target) = targets.get(&port) else {
-        let _ = tell.send(Event::NotForwarded { port });
+        let _ = tell.try_send(Event::NotForwarded { port });
         refuse(send, NOT_FORWARDED).await;
         return;
     };
     match TcpStream::connect(target.as_str()).await {
         Ok(tcp) => {
             if send.write_all(&[OPENED]).await.is_ok() {
-                let _ = tell.send(Event::Opened { port });
+                let _ = tell.try_send(Event::Opened { port });
                 splice(tcp, send, recv).await;
             }
         }
         Err(e) => {
-            let _ = tell.send(Event::Unreachable {
+            let _ = tell.try_send(Event::Unreachable {
                 port,
                 why: Some(e.to_string()),
             });
@@ -152,7 +154,7 @@ async fn listen(
     listener: TcpListener,
     port: u16,
     connection: Connection,
-    tell: mpsc::UnboundedSender<Event>,
+    tell: mpsc::Sender<Event>,
 ) {
     let mut streams = JoinSet::new();
     loop {
@@ -165,12 +167,7 @@ async fn listen(
     }
 }
 
-async fn forward_one(
-    tcp: TcpStream,
-    port: u16,
-    connection: Connection,
-    tell: mpsc::UnboundedSender<Event>,
-) {
+async fn forward_one(tcp: TcpStream, port: u16, connection: Connection, tell: mpsc::Sender<Event>) {
     let Ok((mut send, mut recv)) = connection.open_bi().await else {
         return;
     };
@@ -187,12 +184,26 @@ async fn forward_one(
         Ok(()) => Event::Unreachable { port, why: None },
         Err(_) => return,
     };
-    let _ = tell.send(event);
+    let _ = tell.try_send(event);
 }
 
-async fn splice(mut tcp: TcpStream, send: SendStream, recv: RecvStream) {
-    let mut quic = tokio::io::join(recv, send);
-    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut quic).await;
+async fn splice(tcp: TcpStream, mut send: SendStream, mut recv: RecvStream) {
+    let (mut tcp_in, mut tcp_out) = tcp.into_split();
+    let up = async {
+        tokio::io::copy(&mut tcp_in, &mut send).await?;
+        send.finish().map_err(std::io::Error::other)
+    };
+    let down = async {
+        tokio::io::copy(&mut recv, &mut tcp_out).await?;
+        tcp_out.shutdown().await
+    };
+    if tokio::try_join!(up, down).is_err() {
+        let _ = send.reset(0u8.into());
+        let _ = recv.stop(0u8.into());
+        if let Ok(tcp) = tcp_in.reunite(tcp_out) {
+            let _ = tcp.set_zero_linger();
+        }
+    }
 }
 
 #[cfg(test)]

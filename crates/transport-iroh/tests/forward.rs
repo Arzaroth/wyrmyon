@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use wyrmyon_transport_iroh::{
     ForwardEvent, ForwardNext, Forwarding, IrohPipe, IrohTransport, Relays, Role,
 };
@@ -56,6 +56,13 @@ async fn local() -> (TcpListener, u16) {
     (listener, port)
 }
 
+fn refusing() -> (TcpSocket, u16) {
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let port = socket.local_addr().unwrap().port();
+    (socket, port)
+}
+
 async fn event(forwarding: &mut Forwarding) -> ForwardEvent {
     match within(forwarding.next()).await {
         ForwardNext::Event(event) => event,
@@ -65,8 +72,8 @@ async fn event(forwarding: &mut Forwarding) -> ForwardEvent {
 
 async fn round_trip(port: u16, data: &[u8]) -> Vec<u8> {
     let mut tcp = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    tcp.write_all(data).await.unwrap();
-    tcp.shutdown().await.unwrap();
+    let _ = tcp.write_all(data).await;
+    let _ = tcp.shutdown().await;
     let mut back = Vec::new();
     let _ = within(tcp.read_to_end(&mut back)).await;
     back
@@ -107,8 +114,7 @@ async fn connections_reach_the_served_port_and_half_close_carries_through() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_port_not_served_and_a_dead_target_are_reported_on_both_sides() {
-    let (dead, dead_port) = local().await;
-    drop(dead);
+    let (_dead, dead_port) = refusing();
     let (sharing, client) = pipes().await;
     let mut served = sharing.serve_ports(HashMap::from([(
         dead_port,
@@ -149,4 +155,48 @@ async fn a_port_not_served_and_a_dead_target_are_reported_on_both_sides() {
     ));
     assert_eq!(round_trip(here, b"after").await, b"");
     forwarding.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reset_on_one_end_resets_the_other() {
+    let (target, port) = local().await;
+    tokio::spawn(async move {
+        let (tcp, _) = target.accept().await.unwrap();
+        let mut got = [0u8; 1];
+        let mut tcp = tcp;
+        tcp.read_exact(&mut got).await.unwrap();
+        tcp.set_zero_linger().unwrap();
+    });
+    let (sharing, client) = pipes().await;
+    let served = sharing.serve_ports(HashMap::from([(port, format!("127.0.0.1:{port}"))]));
+    let (listener, here) = local().await;
+    let forwarding = client.forward_ports(vec![(listener, port)]);
+
+    let mut tcp = TcpStream::connect(("127.0.0.1", here)).await.unwrap();
+    tcp.write_all(b"x").await.unwrap();
+    let mut back = Vec::new();
+    let read = within(tcp.read_to_end(&mut back)).await;
+    assert!(read.is_err(), "{read:?} {back:?}");
+
+    forwarding.close().await;
+    served.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connection_can_be_given_up_before_it_is_up() {
+    let key = Key::from_bytes([5; 32]);
+    let waiting = IrohTransport::bind(Role::Sender, Relays::Disabled)
+        .await
+        .unwrap();
+    let other = IrohTransport::bind(Role::Receiver, Relays::Disabled)
+        .await
+        .unwrap();
+    let theirs = other.info().await;
+    assert!(
+        waiting
+            .connect_unless(&theirs, &key, async {})
+            .await
+            .is_none()
+    );
+    other.close().await;
 }

@@ -263,7 +263,25 @@ impl IrohTransport {
     }
 
     pub async fn connect(self, theirs: &IrohInfo, wormhole_key: &Key) -> Result<IrohPipe, Error> {
-        match self.establish(theirs, wormhole_key).await {
+        self.connect_unless(theirs, wormhole_key, std::future::pending::<()>())
+            .await
+            .expect("a pending future never stops a connection")
+    }
+
+    pub async fn connect_unless(
+        self,
+        theirs: &IrohInfo,
+        wormhole_key: &Key,
+        stop: impl Future,
+    ) -> Option<Result<IrohPipe, Error>> {
+        let established = tokio::select! {
+            established = self.establish(theirs, wormhole_key) => established,
+            _ = stop => {
+                self.endpoint.close().await;
+                return None;
+            }
+        };
+        Some(match established {
             Ok((connection, send, recv)) => {
                 let events = connection.path_events();
                 let initial = selected_route(&connection);
@@ -300,7 +318,7 @@ impl IrohTransport {
                 self.endpoint.close().await;
                 Err(e)
             }
-        }
+        })
     }
 
     async fn establish(
