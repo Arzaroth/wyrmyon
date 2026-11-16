@@ -30,8 +30,10 @@ from `--code` or the prompt (stdin when it is not a terminal).
 | taking | `18080:8080` | listen on 18080 here for their 8080 |
 | taking | `0:8080` | listen on a port the system picks, printed |
 
-A port shared twice, port 0 on the sharing side, or a host with no port is
-refused before anything is sent. Without maps, the taking side listens on
+A port shared twice, port 0 on the sharing side, a host with no port, or
+more than 32 ports is refused before anything is sent. So is a share spec
+whose host is a port number: `wyrm forward --code CODE 18080:8080` looks
+like a taker's map, and the code has to come first to take. Without maps, the taking side listens on
 every shared port under its own number. It listens on `127.0.0.1` unless
 `--bind` says otherwise. `--code`, `--code-length` and `--qr` work as with
 `send`.
@@ -39,13 +41,21 @@ every shared port under its own number. It listens on `127.0.0.1` unless
 ## Negotiation
 
 The taking side advertises `offers: ["forward-v1"]` in its version message
-(`Global::forward_config`), and nothing else. A plain `wyrm receive` never
-advertises it. A legacy client advertises nothing at all.
+(`Global::forward_config`), and nothing else. The sharing side advertises
+`iroh-v1` with an empty `offers` list. `wyrm send` and `wyrm receive`
+advertise `collection-v1`, and a legacy client advertises nothing at all, so
+each side knows from the advert alone whether the peer is in the other role.
 
 1. The sharing side checks the peer's advert for `iroh-v1` and `forward-v1`
    (`wants_forward`). Without both, it sends the standard `error`
    (`this code shares ports: take it with wyrm forward CODE`) and fails, so
-   a `wyrm receive` or a Python client on that code learns why.
+   a `wyrm receive` or a Python client on that code learns why. Another
+   sharing side on the code fails with `both sides share ports`.
+   The taking side checks too (`taker_refusal`): a peer without `iroh-v1`,
+   or one that advertises any offer, gets an `error`
+   (`waiting for a port forward`); another taking side gets
+   `both sides wait to take a forward`. Nothing waits on a peer that will
+   never send what it waits for.
 2. It binds an iroh endpoint and sends `{"wyrmyon-iroh-v1": ...}`, then the
    offer:
 
@@ -57,10 +67,15 @@ advertises it. A legacy client advertises nothing at all.
    sends an `error` (`waiting for a port forward`) and fails, so a
    `wyrm send` on that code is turned away. An offer before any iroh address
    is refused the same way.
-4. The taking side binds a listener for each map. A map naming a port that
-   was not offered (`does not share port 80 (it shares 22)`), an empty offer,
-   or a port already in use fails here, before accepting: it sends `error`
+4. The taking side checks the offered ports (`check_offered`): port 0, a
+   port listed twice or more than 32 ports is refused. Then it binds a
+   listener for each map. A map naming a port that was not offered
+   (`does not share port 80 (it shares 22)`), an empty offer, or a port
+   already in use fails here, before accepting: it sends `error`
    (`the other side cannot take this forward`) and both sides fail.
+   Without maps, the sharing side picks which ports bind here, so the
+   checks keep that list small and sane; the listeners still bind only on
+   `--bind`, `127.0.0.1` by default.
 5. It answers `{"answer": {"forward_ack": "ok"}}`. Both sides connect
    (pinned and bound like a transfer) and close the mailbox. The forward
    then runs on iroh alone, so the mailbox carries only these few messages
@@ -78,9 +93,16 @@ bidirectional QUIC stream (`IrohPipe::forward_ports`):
    shares, and connects to that target. It writes one status byte: `0`
    connected, `1` that port is not shared, `2` the target could not be
    reached. On `1` or `2` it finishes the stream.
-3. On `0`, both sides copy bytes both ways (`copy_bidirectional`) until each
-   direction ends. An end of input on one side finishes that direction on the
-   other, so half-closed protocols work.
+3. On `0`, both sides copy bytes both ways (`splice`) until each direction
+   ends. An end of input on one side finishes that direction on the other,
+   so half-closed protocols work. A failure on either end (a TCP reset, a
+   reset stream) resets the QUIC stream and the TCP socket on the other
+   side (zero linger, so a TCP RST), so a cut upload never reaches the
+   target as a clean end of input.
+
+The events each side prints go through a channel of 64; past that they are
+dropped, so a taker opening refused streams in a loop cannot grow the
+sharing side's memory.
 
 The taking side reads the status before it forwards any byte, so a refused
 connection is closed at once and never half-sent. The port in the header is
@@ -106,7 +128,10 @@ Either side stops with Ctrl-C (`Stopped forwarding`). It closes the
 connection with code 0 and closes its endpoint. The other side sees that
 clean close, prints `The other side stopped forwarding` and exits 0. Any other
 end (an idle timeout, a reset, an error close) is an error exit. Ctrl-C
-before the connection is up exits with `interrupted`, like `send`. One code
+before the connection is up exits with `interrupted`, like `send`, and
+closes the iroh endpoint if one is bound, whatever step is pending (the
+answer, the connection through `IrohTransport::connect_unless`, the mailbox
+close). One code
 serves one taker: the code is spent once the two sides pair.
 
 The Ctrl-C handler is installed once for the whole run (`forward::run`),
@@ -119,5 +144,6 @@ just dropped ([decisions.md](../decisions.md)).
 - [crates/cli/src/protocol.rs](../../crates/cli/src/protocol.rs) (`FORWARD`, `ForwardOffer`, `Answer::ForwardAck`)
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`forward_config`, `run`)
 - [crates/transport-iroh/src/forward.rs](../../crates/transport-iroh/src/forward.rs)
+- [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs) (`connect_unless`)
 - [crates/cli/tests/forward.rs](../../crates/cli/tests/forward.rs)
 - [crates/transport-iroh/tests/forward.rs](../../crates/transport-iroh/tests/forward.rs)

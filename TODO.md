@@ -26,6 +26,13 @@ done.
       refused` from its mailbox. It passes alone and touches nothing the
       branches around it changed; find out whether the mailbox server is
       still starting.
+- [ ] `wyrm forward` holds one QUIC stream per TCP connection, and the
+      peer allows 100 at a time: the 100th open connection waits in
+      `open_bi` with nothing printed. Raise the limit or say so. A
+      listener whose `accept` keeps failing (out of descriptors) retries
+      every 100 ms without a word; report it once.
+- [ ] A `wyrm forward` side killed outright is only noticed after the
+      30 s idle timeout; no test covers that path end to end.
 - [ ] On Windows, `ssh invite` without a usable home says `use --user`, which
       works on Unix only. Drop that advice there.
 - [ ] `scripts/coverage.sh --lcov` fails: it writes to `target/llvm-cov/`

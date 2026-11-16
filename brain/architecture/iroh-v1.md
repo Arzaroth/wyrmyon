@@ -16,6 +16,7 @@ exchanged through the PAKE channel and bound to the code by a MAC exchange.
 | `IrohTransport::connect(&their_info, wormhole_key)` | Both sides dial and accept; pins the node ID; channel binding; returns an `IrohPipe` on one bidirectional stream, within 60 s (a failed dial is reported then, if nothing reached us meanwhile) |
 | `IrohPipe::send_chunk` / `receive_chunk` / `send_last` / `receive_last` / `finish` / `abort` | Raw bytes on the stream; the last message finishes it; `finish` closes in order, `abort` closes at once with an error code |
 | `IrohTransport::close()` | Closes an endpoint that never connected, e.g. when the receiver refuses the offer |
+| `IrohTransport::connect_unless(&their_info, wormhole_key, stop)` | The same, unless `stop` completes first: then it closes the endpoint and returns `None` (Ctrl-C during a forward's setup) |
 | `IrohPipe::serve_ports(targets)` / `forward_ports(listeners)` | Turn a bound pipe into a `Forwarding`: the sender serves forwarded streams to its targets, the receiver opens one per accepted TCP connection ([features/forward.md](../features/forward.md)) |
 | `Forwarding::next` / `close` | The next `ForwardEvent`, or how the connection ended (a close with code 0 is a clean end); `close` closes with code 0 and closes the endpoint |
 

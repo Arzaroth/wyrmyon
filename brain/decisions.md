@@ -276,7 +276,11 @@ the legacy side would need dilation to carry several. So it runs only over
 iroh-v1, and the Python client is turned away with a standard `error`
 instead of seeing an unknown offer. The taking side advertises `forward-v1`
 rather than the usual `collection-v1`, so a sharing side refuses a plain
-`wyrm receive` before sending anything nonstandard.
+`wyrm receive` before sending anything nonstandard. The sharing side
+advertises an empty list: if it advertised `forward-v1` as well, two sharers
+on one code would each take the other for a taker and wait for an answer
+forever. With one role per advert, every mismatch (two sharers, two takers,
+a send or receive on either side) ends in a standard `error` on both.
 
 The taker names only a port, never a host: the sharer's spec fixes where each
 port leads, so knowing the code reaches exactly what was shared, as a
