@@ -48,7 +48,8 @@ wyrm forward CODE 18080:8080   # listen on 18080 here for their port 8080, until
 side on another wyrm, merged into the directories already there; `wyrm --help` lists the global ones
 (`--relay-url`, `--transit-helper`, `--no-listen`, `--force-classic`,
 `--iroh-relays`, `--hide-progress`, `--ascii`...). `wyrm send --qr` also shows the code as a
-QR code for a phone to scan.
+QR code for a phone to scan, and `wyrm receive --new --qr` shows one that asks
+the phone to send.
 
 Run as `wormhole`, wyrmyon takes the Python client's command line
 (`wormhole send --text hi`, `wormhole rx CODE`, the QR code on by default),

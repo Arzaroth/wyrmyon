@@ -25,7 +25,8 @@ anything else whose size the sender cannot know are refused.
 `wyrm send --code CODE FILE`, or `wormhole send --code CODE FILE` with the
 Python client. `wyrm send --code` prints the code it was given and the hint
 too, as the Python client does; `wyrm send --qr` adds a QR code of it
-([cli.md](cli.md#the-code-and-the-hint)).
+([cli.md](cli.md#the-code-and-the-hint)). `wyrm receive --new --qr` draws the
+allocated code as a QR code that asks the phone scanning it to send.
 
 ## Sender
 

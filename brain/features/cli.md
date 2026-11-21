@@ -95,10 +95,14 @@ connected to the picture's edges turns transparent, the white is taken out
 of the colours along that edge so nothing pale rims it on a dark terminal,
 and the same Pillow gives the same files. `qr::grid` builds the
 module grid, emblem included, from the `qrcode` crate's; `qr::render` draws
-it. There is no
-`--qr` on `receive --new`: the URI's default role tells a scanning app to
-receive, and the Python client has none there either. The URI carries no
-`rendezvous`, as Python's does not, so a phone meets on its default mailbox.
+it.
+
+`wyrm receive --new --qr` draws `wormhole-transfer:CODE?role=leader`
+instead: the URI scheme's `role=leader` tells the scanning app to send, so a
+phone sends to a computer by scanning it too, and only the computer needs a
+screen and only the phone a camera. `--qr` needs `--new`; the Python client
+has no QR code on its receiver. The URI carries no `rendezvous`, as Python's
+does not, so a phone meets on its default mailbox.
 
 ## Progress
 

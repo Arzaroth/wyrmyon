@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `wyrm receive --new --qr` shows the allocated code as a QR code with
+  `role=leader`, the `wormhole-transfer:` URI that asks the phone scanning it
+  to send, so a phone sends to a computer by scanning its screen.
+
 ## [0.8.0] - 2026-11-16
 
 ### Added
