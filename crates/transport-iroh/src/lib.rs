@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use wyrmyon_wormhole::Key;
 
-pub use blobs::{Fetched, Offered};
+pub use blobs::{Fetched, Offered, Reader};
 pub use collection::{
     Collection, MAX_FILES, MAX_MANIFEST, Manifest, ManifestFile, Placement, Source, Under,
 };

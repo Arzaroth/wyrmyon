@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::StreamExt;
 use iroh_blobs::api::blobs::{
@@ -14,6 +15,7 @@ use iroh_blobs::provider::events::{
 };
 use iroh_blobs::store::fs::FsStore;
 use iroh_blobs::{BlobFormat, Hash};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use crate::{Error, IrohPipe};
 
@@ -53,24 +55,92 @@ pub(crate) async fn add_path(
         })
         .stream()
         .await;
-    follow_add(items, progress).await
+    follow_add(items, &mut |item| match item {
+        Added::Hashed(n) => progress(n),
+        Added::Copied(_) => ControlFlow::Continue(()),
+    })
+    .await
+}
+
+pub type Reader = Box<dyn AsyncRead + Send + Sync + Unpin>;
+
+pub(crate) async fn add_reader(
+    store: &FsStore,
+    reader: Reader,
+    size: u64,
+    progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
+) -> std::io::Result<TempTag> {
+    let read = Arc::new(AtomicU64::new(0));
+    let failure = Arc::new(std::sync::Mutex::new(None::<std::io::Error>));
+    let (counted, failed) = (Arc::clone(&read), Arc::clone(&failure));
+    let chunks =
+        tokio_util::io::ReaderStream::with_capacity(reader, 1 << 16).scan((), move |(), chunk| {
+            let next = match chunk {
+                Ok(chunk) => {
+                    let len = chunk.len() as u64;
+                    if counted.fetch_add(len, Ordering::Relaxed) + len > size {
+                        Err(std::io::Error::other(
+                            "the data grew while it was being read",
+                        ))
+                    } else {
+                        Ok(chunk)
+                    }
+                }
+                Err(e) => Err(e),
+            };
+            std::future::ready(match next {
+                Ok(chunk) => Some(Ok(chunk)),
+                Err(e) => {
+                    *failed.lock().expect("the failure lock is never poisoned") = Some(e);
+                    None
+                }
+            })
+        });
+    let items = store.blobs().add_stream(chunks).await.stream().await;
+    let (mut copied, mut hashed) = (0, 0);
+    let tag = follow_add(items, &mut |item| {
+        match item {
+            Added::Copied(n) => copied = n,
+            Added::Hashed(n) => hashed = n,
+        }
+        progress(copied / 2 + hashed / 2)
+    })
+    .await?;
+    if let Some(e) = failure
+        .lock()
+        .expect("the failure lock is never poisoned")
+        .take()
+    {
+        return Err(e);
+    }
+    if read.load(Ordering::Relaxed) != size {
+        return Err(std::io::Error::other(
+            "the data shrank while it was being read",
+        ));
+    }
+    Ok(tag)
+}
+
+enum Added {
+    Copied(u64),
+    Hashed(u64),
 }
 
 async fn follow_add(
     items: impl futures_util::Stream<Item = AddProgressItem>,
-    progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
+    progress: &mut (dyn FnMut(Added) -> ControlFlow<()> + Send),
 ) -> std::io::Result<TempTag> {
     let mut items = std::pin::pin!(items);
     while let Some(item) = items.next().await {
-        match item {
-            AddProgressItem::OutboardProgress(hashed) => {
-                if progress(hashed).is_break() {
-                    return Err(stopped());
-                }
-            }
+        let step = match item {
+            AddProgressItem::CopyProgress(copied) => Added::Copied(copied),
+            AddProgressItem::OutboardProgress(hashed) => Added::Hashed(hashed),
             AddProgressItem::Done(tag) => return Ok(tag),
             AddProgressItem::Error(e) => return Err(e),
-            _ => {}
+            _ => continue,
+        };
+        if progress(step).is_break() {
+            return Err(stopped());
         }
     }
     Err(std::io::Error::other(
@@ -93,6 +163,16 @@ impl Offered {
     ) -> Result<Self, Error> {
         let (dir, store) = throwaway_store().await?;
         let added = add_path(&store, path, progress).await;
+        Self::added(dir, store, added).await
+    }
+
+    pub async fn import_reader(
+        reader: Reader,
+        size: u64,
+        progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
+    ) -> Result<Self, Error> {
+        let (dir, store) = throwaway_store().await?;
+        let added = add_reader(&store, reader, size, progress).await;
         Self::added(dir, store, added).await
     }
 
@@ -162,6 +242,25 @@ impl Fetched {
                 Ok(())
             }
             Err(e) => Err(self.abandon(e).await),
+        }
+    }
+
+    pub async fn export_writer(
+        self,
+        writer: &mut (dyn AsyncWrite + Send + Unpin),
+    ) -> Result<(), Error> {
+        let copied = async {
+            let mut reader = self.store.blobs().reader(self.hash);
+            tokio::io::copy(&mut reader, writer).await?;
+            writer.flush().await
+        }
+        .await;
+        match copied {
+            Ok(()) => {
+                self.discard().await;
+                Ok(())
+            }
+            Err(e) => Err(self.keep(e).await),
         }
     }
 

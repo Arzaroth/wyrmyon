@@ -21,6 +21,7 @@ serde_json = "1.0.151"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.53.2", features = ["time", "rt-multi-thread", "sync", "macros", "net", "io-util"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
 wyrmyon-wormhole = { path = "../wormhole-core" }
 
 [dev-dependencies]

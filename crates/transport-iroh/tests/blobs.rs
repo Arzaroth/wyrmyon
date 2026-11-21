@@ -33,6 +33,17 @@ fn data(len: usize) -> Vec<u8> {
     (0..len).map(|i| u8::try_from(i % 249).unwrap()).collect()
 }
 
+struct Unreadable;
+impl tokio::io::AsyncRead for Unreadable {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+        _: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Err(std::io::Error::other("revoked")))
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_arrives_verified_and_the_cache_is_cleared() {
     let dir = tempfile::tempdir().unwrap();
@@ -192,4 +203,117 @@ async fn importing_a_file_counts_no_more_than_its_size() {
         .is_err()
     );
     assert_eq!(seen, Vec::<u64>::new());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_offers_the_file_s_hash_and_arrives_into_a_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.bin");
+    std::fs::write(&source, data(300_000)).unwrap();
+    let from_file = Offered::import(&source).await.unwrap();
+    let mut reported = Vec::new();
+    let streamed = Offered::import_reader(
+        Box::new(std::io::Cursor::new(data(300_000))),
+        300_000,
+        &mut |n| {
+            reported.push(n);
+            ControlFlow::Continue(())
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(streamed.hash(), from_file.hash());
+    assert!(reported.is_sorted() && reported.last() <= Some(&300_000));
+    from_file.close().await;
+
+    let cache = dir.path().join("cache");
+    let (mut upstream, mut downstream) = connected().await;
+    upstream.provide(&streamed).await.unwrap();
+    let fetched = within(downstream.fetch(&cache, 300_000, &mut |_| {}))
+        .await
+        .unwrap();
+    let mut written = Vec::new();
+    fetched.export_writer(&mut written).await.unwrap();
+    assert_eq!(written, data(300_000));
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
+    upstream.finish().await;
+    downstream.finish().await;
+    streamed.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_longer_or_shorter_than_its_size_or_stopped_is_not_offered() {
+    for (len, size, says) in [(10, 4, "grew"), (2, 4, "shrank")] {
+        let refused =
+            Offered::import_reader(Box::new(std::io::Cursor::new(data(len))), size, &mut |_| {
+                ControlFlow::Continue(())
+            })
+            .await;
+        let said = refused.err().expect("refused").to_string();
+        assert!(said.contains(says), "{said}");
+    }
+    let unreadable =
+        Offered::import_reader(Box::new(Unreadable), 4, &mut |_| ControlFlow::Continue(())).await;
+    let said = unreadable.err().expect("refused").to_string();
+    assert!(said.contains("revoked"), "{said}");
+    let stopped = Offered::import_reader(
+        Box::new(std::io::Cursor::new(data(1 << 20))),
+        1 << 20,
+        &mut |_| ControlFlow::Break(()),
+    )
+    .await;
+    assert!(stopped.is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writer_that_fails_keeps_what_arrived() {
+    struct Broken;
+    impl tokio::io::AsyncWrite for Broken {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            _: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::task::Poll::Ready(Err(std::io::Error::other("disk full")))
+        }
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    let offered = Offered::import_reader(
+        Box::new(std::io::Cursor::new(data(50_000))),
+        50_000,
+        &mut |_| ControlFlow::Continue(()),
+    )
+    .await
+    .unwrap();
+    let (mut upstream, mut downstream) = connected().await;
+    upstream.provide(&offered).await.unwrap();
+    let fetched = within(downstream.fetch(&cache, 50_000, &mut |_| {}))
+        .await
+        .unwrap();
+    let kept = fetched
+        .export_writer(&mut Broken)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        kept.contains("disk full") && kept.contains("kept in"),
+        "{kept}"
+    );
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 1);
+    upstream.abort().await;
+    downstream.abort().await;
+    offered.close().await;
 }
