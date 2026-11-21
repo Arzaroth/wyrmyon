@@ -1,0 +1,30 @@
+[package]
+name = "wyrmyon-mobile"
+description = "The Android app's Rust side: sending, receiving and progress, bridged to Dart"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+flutter_rust_bridge = "=2.13.0"
+tokio = { version = "1.53.2", features = ["fs", "io-util"] }
+wyrmyon-transfer = { path = "../transfer" }
+wyrmyon-wormhole = { path = "../wormhole-core" }
+
+[dev-dependencies]
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "sync", "time"] }
+wyrmyon-testkit = { path = "../testkit" }
+wyrmyon-transport-iroh = { path = "../transport-iroh" }

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Line coverage over the workspace, via cargo-llvm-cov. The CLI tests run the
 # built binaries, and their runs count too. crates/testkit is test
-# infrastructure and is left out.
+# infrastructure and is left out, as is the app's Dart glue in crates/mobile
+# (the generated bridge and the calls only Dart makes).
 #
 #   scripts/coverage.sh              summary, then the files with the most
 #                                    uncovered lines
@@ -15,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TOP="${WYRMYON_COVERAGE_TOP:-15}"
 FLOOR="${WYRMYON_COVERAGE_FLOOR:-98}"
-IGNORE='crates/testkit/'
+IGNORE='crates/testkit/|crates/mobile/src/(frb_generated|api/bridge)\.rs'
 
 if [[ -t 1 ]]; then B="\033[0;34m"; G="\033[0;32m"; Y="\033[0;33m"; R="\033[0;31m"; Z="\033[0m"; else B=""; G=""; Y=""; R=""; Z=""; fi
 info()    { printf '%b\n' "${B}$*${Z}"; }
@@ -32,7 +33,7 @@ while [[ $# -gt 0 ]]; do
   --lcov) MODE=lcov ;;
   --) shift; EXTRA=("$@"); break ;;
   -h | --help)
-    sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit 0
     ;;
   *)
