@@ -53,6 +53,13 @@ pub(crate) async fn add_path(
         })
         .stream()
         .await;
+    follow_add(items, progress).await
+}
+
+async fn follow_add(
+    items: impl futures_util::Stream<Item = AddProgressItem>,
+    progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
+) -> std::io::Result<TempTag> {
     let mut items = std::pin::pin!(items);
     while let Some(item) = items.next().await {
         match item {
@@ -86,6 +93,14 @@ impl Offered {
     ) -> Result<Self, Error> {
         let (dir, store) = throwaway_store().await?;
         let added = add_path(&store, path, progress).await;
+        Self::added(dir, store, added).await
+    }
+
+    async fn added(
+        dir: tempfile::TempDir,
+        store: FsStore,
+        added: std::io::Result<TempTag>,
+    ) -> Result<Self, Error> {
         let tag = match added {
             Ok(tag) => tag,
             Err(e) => {
