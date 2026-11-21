@@ -95,8 +95,8 @@ fn encode(data: &str) -> QrCode {
     }
 }
 
-fn grid(code: &str) -> Grid {
-    let qr = encode(&uri(code));
+fn grid(text: &str) -> Grid {
+    let qr = encode(text);
     let width = qr.width();
     let mut modules: Vec<Module> = qr
         .to_colors()
@@ -193,8 +193,8 @@ fn bright(pixel: u8) -> bool {
     luma > 128_000
 }
 
-pub fn render(code: &str, look: Look) -> String {
-    let grid = grid(code);
+pub fn render(text: &str, look: Look) -> String {
+    let grid = grid(text);
     let side = grid.width + 2 * QUIET;
     let at = |x: usize, y: usize| {
         let inside = |v: usize| (QUIET..grid.width + QUIET).contains(&v);
@@ -292,7 +292,7 @@ mod tests {
     }
 
     fn assert_scans(code: &str) {
-        let grid = grid(code);
+        let grid = grid(&uri(code));
         for shade in [in_ink, with_silhouette] {
             assert_eq!(scanned(&grid, shade), [uri(code)], "{code}");
         }
@@ -452,7 +452,7 @@ mod tests {
             let mut codes = vec![format!("4095-{}", longest.join("-"))];
             codes.extend((0..4).map(|n| format!("{}-{}", n * 37 + 1, choose_words(words))));
             for code in codes {
-                assert!(grid(&code).logo.is_some(), "{code}");
+                assert!(grid(&uri(&code)).logo.is_some(), "{code}");
                 assert_scans(&code);
             }
         }
@@ -462,13 +462,13 @@ mod tests {
     fn long_custom_codes_scan_and_the_longest_go_without_the_wyrm() {
         for len in [120, 300] {
             let code = format!("7-{}", "z".repeat(len));
-            assert!(grid(&code).logo.is_some());
+            assert!(grid(&uri(&code)).logo.is_some());
             assert_scans(&code);
         }
         let code = format!("7-{}", "z".repeat(1300));
-        assert_eq!(grid(&code).logo, None);
+        assert_eq!(grid(&uri(&code)).logo, None);
         assert_scans(&code);
-        assert!(!render(&code, Look::Picture).contains("\x1b_G"));
+        assert!(!render(&uri(&code), Look::Picture).contains("\x1b_G"));
     }
 
     #[test]
@@ -478,7 +478,7 @@ mod tests {
             let code = "z".repeat(len);
             let qr = encode(&uri(&code));
             let width = qr.width();
-            let grid = grid(&code);
+            let grid = grid(&uri(&code));
             let (left, top) = grid.logo.unwrap();
             let (w, h) = (logo::COLS, logo::ROWS * 2);
             assert!(w * h * 100 <= width * width * LOGO_BUDGET_PERCENT);
@@ -519,7 +519,7 @@ mod tests {
             let code = "z".repeat(len);
             let qr = encode(&uri(&code));
             let colors = qr.to_colors();
-            let grid = grid(&code);
+            let grid = grid(&uri(&code));
             let turned = |against: bool| Grid {
                 width: grid.width,
                 logo: grid.logo,

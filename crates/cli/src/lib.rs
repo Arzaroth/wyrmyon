@@ -265,7 +265,7 @@ fn show_qr(code: &wyrmyon_wormhole::Code, ascii: bool) {
     let look = qr::Look::choose(ascii, std::io::stderr().is_terminal(), |name| {
         std::env::var(name).ok()
     });
-    eprint!("{}", qr::render(&code.to_string(), look));
+    eprint!("{}", qr::render(&qr::uri(&code.to_string()), look));
 }
 
 fn show_welcome(welcome: &Welcome) {
