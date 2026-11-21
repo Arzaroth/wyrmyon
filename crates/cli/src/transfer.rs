@@ -1,9 +1,7 @@
 use indicatif::{ProgressBar, ProgressStyle};
-use tokio::io::AsyncWrite;
 use tokio::sync::watch;
 use wyrmyon_transfer::{Events, Settled};
 pub use wyrmyon_transfer::{Pipe, send_ack};
-use wyrmyon_transport_classic::RecordPipe;
 use wyrmyon_transport_iroh::{IrohPipe, Route, Traffic};
 
 use crate::wyrm::{Look, Paint, Wyrm};
@@ -202,18 +200,6 @@ pub async fn finale(bar: &ProgressBar) {
         tokio::time::sleep(FINALE).await;
     }
     bar.finish_and_clear();
-}
-
-pub async fn receive_stream(
-    pipe: &mut RecordPipe,
-    sink: &mut (dyn AsyncWrite + Unpin + Send),
-    size: u64,
-    bar: &ProgressBar,
-) -> anyhow::Result<[u8; 32]> {
-    let digest =
-        wyrmyon_transfer::receive_stream(pipe, sink, size, &|n| bar.set_position(n)).await?;
-    finale(bar).await;
-    Ok(digest)
 }
 
 #[cfg(test)]

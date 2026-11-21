@@ -17,9 +17,9 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use wyrmyon_transfer::protocol;
-use wyrmyon_transport_classic::{DirectHint, Role, Transit};
+use wyrmyon_transport_classic::DirectHint;
 use wyrmyon_transport_iroh::IrohTransport;
-use wyrmyon_wormhole::{Config, Key, Mood, PUBLIC_RELAY, Welcome};
+use wyrmyon_wormhole::{Config, Mood, PUBLIC_RELAY, Welcome};
 
 const PUBLIC_TRANSIT_HELPER: &str = "tcp:transit.magic-wormhole.io:4001";
 const CODE_LENGTH: u8 = 2;
@@ -124,10 +124,6 @@ impl Global {
         self.options().config_offering(offers)
     }
 
-    fn use_iroh(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
-        self.options().use_iroh(wormhole)
-    }
-
     fn use_collection(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
         self.options().use_collection(wormhole)
     }
@@ -138,10 +134,6 @@ impl Global {
         role: wyrmyon_transport_iroh::Role,
     ) -> anyhow::Result<IrohTransport> {
         self.options().iroh_or_tell(wormhole, role).await
-    }
-
-    async fn transit(&self, role: Role, key: Key) -> Transit {
-        self.options().transit(role, key).await
     }
 }
 
