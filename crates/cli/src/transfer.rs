@@ -1,13 +1,97 @@
 use indicatif::{ProgressBar, ProgressStyle};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::AsyncWrite;
 use tokio::sync::watch;
-pub use wyrmyon_transfer::{Pipe, await_ack, send_ack};
+use wyrmyon_transfer::{Events, Settled};
+pub use wyrmyon_transfer::{Pipe, send_ack};
 use wyrmyon_transport_classic::RecordPipe;
 use wyrmyon_transport_iroh::{IrohPipe, Route, Traffic};
 
 use crate::wyrm::{Look, Paint, Wyrm};
 
 const FINALE: std::time::Duration = std::time::Duration::from_millis(800);
+
+struct Terminal {
+    verb: &'static str,
+    hidden: bool,
+    ascii: bool,
+    bar: std::sync::Mutex<Option<ProgressBar>>,
+}
+
+pub fn terminal(global: &crate::Global, verb: &'static str) -> std::sync::Arc<dyn Events> {
+    std::sync::Arc::new(Terminal {
+        verb,
+        hidden: global.hide_progress,
+        ascii: global.ascii,
+        bar: std::sync::Mutex::new(None),
+    })
+}
+
+impl Terminal {
+    fn bar(&self) -> Option<ProgressBar> {
+        self.bar
+            .lock()
+            .expect("the bar lock is never poisoned")
+            .clone()
+    }
+
+    fn show(&self, bar: ProgressBar) {
+        *self.bar.lock().expect("the bar lock is never poisoned") = Some(bar);
+    }
+}
+
+impl Events for Terminal {
+    fn hashing(&self, total: u64) {
+        eprintln!("Hashing..");
+        self.show(progress(total, self.hidden, self.ascii, false));
+    }
+
+    fn hashed(&self, bytes: u64) {
+        if let Some(bar) = self.bar() {
+            bar.set_position(bytes);
+        }
+    }
+
+    fn hashing_done(&self) {
+        self.stopped();
+    }
+
+    fn connected(&self, pipe: &Pipe, size: u64) {
+        eprintln!("{} ({})..", self.verb, pipe.describe());
+        let bar = progress(size, self.hidden, self.ascii, pipe.through_wormhole());
+        follow_pipe(pipe, &bar);
+        self.show(bar);
+    }
+
+    fn moved(&self, bytes: u64) {
+        if let Some(bar) = self.bar() {
+            bar.set_position(bytes);
+        }
+    }
+
+    fn settle(&self) -> Settled<'_> {
+        let bar = self.bar();
+        Box::pin(async move {
+            if let Some(bar) = bar {
+                finale(&bar).await;
+            }
+        })
+    }
+
+    fn awaiting_ack(&self) {
+        eprintln!("Waiting for the receiver to confirm..");
+    }
+
+    fn stopped(&self) {
+        if let Some(bar) = self
+            .bar
+            .lock()
+            .expect("the bar lock is never poisoned")
+            .take()
+        {
+            bar.finish_and_clear();
+        }
+    }
+}
 
 pub fn follow_pipe(pipe: &Pipe, bar: &ProgressBar) {
     if let Pipe::Iroh(pipe) = pipe {
@@ -21,17 +105,6 @@ pub fn went_by(pipe: &Pipe) -> Option<String> {
 
 pub fn follow_route(pipe: &IrohPipe, bar: &ProgressBar) {
     announce_routes(pipe.route(), pipe.first_route(), bar.clone());
-}
-
-pub fn follow_sent(pipe: &IrohPipe, bar: &ProgressBar) {
-    let mut sent = pipe.sent();
-    let bar = bar.clone();
-    tokio::spawn(async move {
-        while sent.changed().await.is_ok() {
-            let n = *sent.borrow_and_update();
-            bar.set_position(bar.length().map_or(n, |total| n.min(total)));
-        }
-    });
 }
 
 fn announce_routes(
@@ -58,7 +131,7 @@ fn route_change(before: Option<Route>, now: Option<Route>) -> Option<&'static st
     }
 }
 
-fn went(traffic: Traffic) -> Option<String> {
+pub fn went(traffic: Traffic) -> Option<String> {
     let Traffic { direct, relay } = traffic;
     match (direct, relay) {
         (0, 0) => None,
@@ -129,18 +202,6 @@ pub async fn finale(bar: &ProgressBar) {
         tokio::time::sleep(FINALE).await;
     }
     bar.finish_and_clear();
-}
-
-pub async fn send_stream(
-    pipe: &mut RecordPipe,
-    source: &mut (dyn AsyncRead + Unpin + Send),
-    size: u64,
-    bar: &ProgressBar,
-) -> anyhow::Result<[u8; 32]> {
-    let digest =
-        wyrmyon_transfer::send_stream(pipe, source, size, &|n| bar.set_position(n)).await?;
-    finale(bar).await;
-    Ok(digest)
 }
 
 pub async fn receive_stream(

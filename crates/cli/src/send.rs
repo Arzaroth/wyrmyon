@@ -1,20 +1,18 @@
-use std::ops::ControlFlow;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use anyhow::{Context, anyhow, bail};
 use clap::Args;
 use tokio::io::AsyncReadExt;
-use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
-use wyrmyon_transport_iroh::{IrohTransport, Manifest, Offered, Role as IrohRole, Source};
+pub(crate) use wyrmyon_transfer::offer_text;
+use wyrmyon_transfer::{
+    Events, FileSource, Hashing, Source, Staged, require_iroh, send_data, send_over,
+};
+use wyrmyon_transport_iroh::{Manifest, Offered, Source as Member, Traffic};
 use wyrmyon_wormhole::{Code, Wormhole};
 
 use crate::discard::Sources;
-use crate::protocol::{
-    self, Answer, AppMessage, CollectionOffer, DirectoryOffer, FileOffer, Offer,
-};
-use crate::transfer::Pipe;
+use crate::protocol::{self, CollectionOffer, DirectoryOffer, FileOffer, Offer};
 use crate::{CODE_LENGTH, Global, mood_for, printable, show_code, show_welcome, transfer, zipdir};
 
 #[derive(Args)]
@@ -80,175 +78,56 @@ directory and their parents are refused."
 
 enum Payload {
     Text(String),
-    File(PathBuf, FileOffer),
+    File(Arc<dyn Source>, FileOffer),
     Tree(String, Arc<Vec<zipdir::Entry>>, bool),
 }
 
-#[derive(Default)]
-struct Staged {
-    zip: Option<zipdir::Built>,
-    blob: Option<Offered>,
-    collection: Option<(Offered, CollectionOffer)>,
-    blob_ahead: Option<Hashing<Offered>>,
-    collection_ahead: Option<Hashing<(Offered, Manifest)>>,
-    several: bool,
+fn staged_for(payload: &Payload, times: u32, force_classic: bool) -> Staged {
+    let mut staged = Staged {
+        several: times > 1,
+        ..Staged::default()
+    };
+    if !force_classic {
+        hash_ahead(&mut staged, payload);
+    }
+    staged
 }
 
-impl Staged {
-    fn hash_ahead(&mut self, payload: &Payload) {
-        match payload {
-            Payload::Text(_) => {}
-            Payload::File(path, offer) => {
-                self.blob_ahead = Some(Hashing::blob(path.clone(), offer.filesize));
+fn hash_ahead(staged: &mut Staged, payload: &Payload) {
+    match payload {
+        Payload::Text(_) => {}
+        Payload::File(source, _) => {
+            staged.blob_ahead = Some(Hashing::blob(Arc::clone(source)));
+        }
+        Payload::Tree(_, entries, _) => {
+            staged.collection_ahead = Some(collection_hashing(entries));
+        }
+    }
+}
+
+fn collection_hashing(entries: &[zipdir::Entry]) -> Hashing<(Offered, Manifest)> {
+    let (mut members, mut dirs, mut total) = (Vec::new(), Vec::new(), 0);
+    for entry in entries {
+        match entry {
+            zipdir::Entry::File {
+                source,
+                name,
+                mode,
+                size,
+            } => {
+                total += size;
+                members.push(Member {
+                    path: source.clone(),
+                    name: name.clone(),
+                    mode: *mode,
+                });
             }
-            Payload::Tree(_, entries, _) => {
-                self.collection_ahead = Some(Hashing::collection(entries));
-            }
+            zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
+            zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
         }
     }
-
-    async fn drop_blob_ahead(&mut self) {
-        if self.several {
-            return;
-        }
-        if let Some(ahead) = self.blob_ahead.take()
-            && let Some(offered) = ahead.stop().await
-        {
-            offered.close().await;
-        }
-    }
-
-    async fn drop_collection_ahead(&mut self) {
-        if self.several {
-            return;
-        }
-        if let Some(ahead) = self.collection_ahead.take()
-            && let Some((offered, _)) = ahead.stop().await
-        {
-            offered.close().await;
-        }
-    }
-
-    async fn close(mut self) {
-        self.several = false;
-        self.drop_blob_ahead().await;
-        self.drop_collection_ahead().await;
-        if let Some(blob) = self.blob {
-            blob.close().await;
-        }
-        if let Some((offered, _)) = self.collection {
-            offered.close().await;
-        }
-    }
+    Hashing::collection(members, dirs, total)
 }
-
-struct Hashing<T> {
-    hashed: Arc<AtomicU64>,
-    stop: Arc<AtomicBool>,
-    total: u64,
-    task: Option<tokio::task::JoinHandle<Result<T, wyrmyon_transport_iroh::Error>>>,
-}
-
-impl<T: Send + 'static> Hashing<T> {
-    fn start<F>(total: u64, import: impl FnOnce(Progress) -> F) -> Self
-    where
-        F: Future<Output = Result<T, wyrmyon_transport_iroh::Error>> + Send + 'static,
-    {
-        let hashed = Arc::new(AtomicU64::new(0));
-        let stop = Arc::new(AtomicBool::new(false));
-        let (counter, stopped) = (Arc::clone(&hashed), Arc::clone(&stop));
-        let progress = Box::new(move |n| {
-            counter.store(n, Ordering::Relaxed);
-            if stopped.load(Ordering::Relaxed) {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        });
-        Self {
-            hashed,
-            stop,
-            total,
-            task: Some(tokio::spawn(import(progress))),
-        }
-    }
-
-    async fn finish(mut self, global: &Global) -> anyhow::Result<T> {
-        let mut task = self
-            .task
-            .take()
-            .expect("a hashing task runs until finished");
-        if !task.is_finished() {
-            eprintln!("Hashing..");
-            let bar = transfer::Cleared(transfer::progress(
-                self.total,
-                global.hide_progress,
-                global.ascii,
-                false,
-            ));
-            let mut tick = tokio::time::interval(std::time::Duration::from_millis(100));
-            let joined = loop {
-                tokio::select! {
-                    joined = &mut task => break joined,
-                    _ = tick.tick() => bar.0.set_position(self.hashed.load(Ordering::Relaxed)),
-                }
-            };
-            drop(bar);
-            return Ok(joined.context("hashing the data")??);
-        }
-        Ok(task.await.context("hashing the data")??)
-    }
-
-    async fn stop(mut self) -> Option<T> {
-        let task = self.task.take()?;
-        self.stop.store(true, Ordering::Relaxed);
-        task.await.ok()?.ok()
-    }
-}
-
-impl Hashing<Offered> {
-    fn blob(path: PathBuf, total: u64) -> Self {
-        Self::start(total, move |mut progress| async move {
-            Offered::import_with_progress(&path, &mut progress).await
-        })
-    }
-}
-
-impl Hashing<(Offered, Manifest)> {
-    fn collection(entries: &[zipdir::Entry]) -> Self {
-        let (mut sources, mut dirs, mut total) = (Vec::new(), Vec::new(), 0);
-        for entry in entries {
-            match entry {
-                zipdir::Entry::File {
-                    source,
-                    name,
-                    mode,
-                    size,
-                } => {
-                    total += size;
-                    sources.push(Source {
-                        path: source.clone(),
-                        name: name.clone(),
-                        mode: *mode,
-                    });
-                }
-                zipdir::Entry::EmptyDir(dir) if dir.is_empty() => {}
-                zipdir::Entry::EmptyDir(dir) => dirs.push(dir.clone()),
-            }
-        }
-        Self::start(total, move |mut progress| async move {
-            Offered::import_collection_with_progress(&sources, &dirs, &mut progress).await
-        })
-    }
-}
-
-impl<T> Drop for Hashing<T> {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-    }
-}
-
-type Progress = Box<dyn FnMut(u64) -> ControlFlow<()> + Send>;
 
 impl SendArgs {
     pub fn of_paths(paths: Vec<PathBuf>) -> Self {
@@ -325,13 +204,8 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
     }
 
     let code = pending.code().clone();
-    let mut staged = Staged {
-        several: times > 1,
-        ..Staged::default()
-    };
-    if !global.force_classic {
-        staged.hash_ahead(&payload);
-    }
+    let mut staged = staged_for(&payload, times, global.force_classic);
+    let mut zip = None;
     let (mut round, mut failed) = (1, 0);
     let outcome = loop {
         let mut wormhole = match pending.pair().await {
@@ -346,7 +220,7 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
         } else {
             None
         };
-        let result = deliver(&mut wormhole, global, &payload, &mut staged).await;
+        let result = deliver(&mut wormhole, global, &payload, &mut staged, &mut zip).await;
         wormhole.close(mood_for(&result)).await;
         if times == 1 {
             break result;
@@ -390,25 +264,34 @@ async fn deliver(
     global: &Global,
     payload: &Payload,
     staged: &mut Staged,
+    zip: &mut Option<zipdir::Built>,
 ) -> anyhow::Result<()> {
-    match payload {
-        Payload::Text(text) => send_text(wormhole, text.clone()).await,
-        Payload::File(path, offer) => {
-            let size = offer.filesize;
+    let events = transfer::terminal(global, "Sending");
+    let traffic = match payload {
+        Payload::Text(text) => return send_text(wormhole, text.clone()).await,
+        Payload::File(source, offer) => {
             send_data(
                 wormhole,
-                global,
+                &global.options(),
                 staged,
                 Offer::File(offer.clone()),
-                path,
-                size,
+                source,
+                &events,
             )
-            .await
+            .await?
         }
         Payload::Tree(name, entries, bundle) => {
-            send_tree(wormhole, global, staged, name, entries, *bundle).await
+            send_tree(
+                wormhole, global, staged, zip, name, entries, *bundle, &events,
+            )
+            .await?
         }
+    };
+    eprintln!("Confirmation received. Transfer complete.");
+    if let Some(went) = traffic.and_then(transfer::went) {
+        eprintln!("{went}");
     }
+    Ok(())
 }
 
 fn other_side(code: &Code, as_wormhole: bool) -> String {
@@ -426,24 +309,6 @@ async fn stdin_text() -> anyhow::Result<String> {
         .await
         .context("reading stdin")?;
     Ok(text)
-}
-
-enum Prepared {
-    Iroh(IrohTransport),
-    Classic(Transit),
-}
-
-impl Prepared {
-    async fn after(self, sent: anyhow::Result<()>) -> anyhow::Result<Self> {
-        match (sent, self) {
-            (Ok(()), prepared) => Ok(prepared),
-            (Err(e), Self::Iroh(iroh)) => {
-                iroh.close().await;
-                Err(e)
-            }
-            (Err(e), Self::Classic(_)) => Err(e),
-        }
-    }
 }
 
 async fn paths_payload(mut paths: Vec<PathBuf>, relative: bool) -> anyhow::Result<Payload> {
@@ -481,7 +346,8 @@ async fn path_payload(path: PathBuf) -> anyhow::Result<Payload> {
         filename: name,
         filesize: meta.len(),
     };
-    Ok(Payload::File(path, offer))
+    let size = offer.filesize;
+    Ok(Payload::File(Arc::new(FileSource::new(path, size)), offer))
 }
 
 fn top_names(entries: &[zipdir::Entry]) -> Vec<String> {
@@ -543,41 +409,23 @@ async fn send_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> 
     Ok(())
 }
 
-pub(crate) async fn offer_text(wormhole: &mut Wormhole, text: String) -> anyhow::Result<()> {
-    protocol::send(wormhole, &AppMessage::Offer(Offer::Message(text))).await?;
-    loop {
-        if let AppMessage::Answer(answer) = protocol::next(wormhole, "receiver").await? {
-            if answer == Answer::MessageAck("ok".into()) {
-                return Ok(());
-            }
-            bail!("unexpected answer from the receiver: {answer:?}");
-        }
-    }
-}
-
-async fn require_iroh(wormhole: &mut Wormhole, global: &Global) -> anyhow::Result<bool> {
-    let use_iroh = global.use_iroh(wormhole);
-    if global.force_iroh && !use_iroh {
-        protocol::send_error(wormhole, "the sender requires iroh-v1").await?;
-        bail!("the other side does not speak iroh-v1 (--force-iroh)");
-    }
-    Ok(use_iroh)
-}
-
+#[allow(clippy::too_many_arguments)]
 async fn send_tree(
     wormhole: &mut Wormhole,
     global: &Global,
     staged: &mut Staged,
+    zip: &mut Option<zipdir::Built>,
     name: &str,
     entries: &Arc<Vec<zipdir::Entry>>,
     bundle: bool,
-) -> anyhow::Result<()> {
+    events: &Arc<dyn Events>,
+) -> anyhow::Result<Option<Traffic>> {
     if global.use_collection(wormhole) {
-        return send_collection(wormhole, global, staged, name, entries, bundle).await;
+        return send_collection(wormhole, global, staged, name, entries, bundle, events).await;
     }
     staged.drop_collection_ahead().await;
-    require_iroh(wormhole, global).await?;
-    if staged.zip.is_none() {
+    require_iroh(wormhole, &global.options()).await?;
+    if zip.is_none() {
         eprintln!("Building zipfile..");
         let cancel = zipdir::Cancel::default();
         let _cancel_on_drop = cancel.on_drop();
@@ -587,14 +435,14 @@ async fn send_tree(
             .context("building the zip file")
             .and_then(|built| built);
         match zipped {
-            Ok(built) => staged.zip = Some(built),
+            Ok(built) => *zip = Some(built),
             Err(e) => {
                 protocol::send_error(wormhole, "the sender could not read its data").await?;
                 return Err(e);
             }
         }
     }
-    let built = staged.zip.as_ref().expect("the zip file was just built");
+    let built = zip.as_ref().expect("the zip file was just built");
     let bundle = bundle && crate::speaks_iroh(wormhole);
     if bundle {
         eprintln!(
@@ -620,15 +468,15 @@ async fn send_tree(
             Vec::new()
         },
     };
-    let size = offer.zipsize;
-    let path = built.file.path().to_owned();
+    let source: Arc<dyn Source> =
+        Arc::new(FileSource::new(built.file.path().to_owned(), offer.zipsize));
     send_data(
         wormhole,
-        global,
+        &global.options(),
         staged,
         Offer::Directory(offer),
-        &path,
-        size,
+        &source,
+        events,
     )
     .await
 }
@@ -640,13 +488,14 @@ async fn send_collection(
     name: &str,
     entries: &[zipdir::Entry],
     bundle: bool,
-) -> anyhow::Result<()> {
+    events: &Arc<dyn Events>,
+) -> anyhow::Result<Option<Traffic>> {
     if staged.collection.is_none() {
         let hashing = staged
             .collection_ahead
             .take()
-            .unwrap_or_else(|| Hashing::collection(entries));
-        let (offered, manifest) = match hashing.finish(global).await {
+            .unwrap_or_else(|| collection_hashing(entries));
+        let (offered, manifest) = match hashing.finish(events.as_ref()).await {
             Ok(imported) => imported,
             Err(e) => {
                 protocol::send_error(wormhole, "the sender could not read its data").await?;
@@ -683,147 +532,14 @@ async fn send_collection(
     }
     send_over(
         wormhole,
-        global,
+        &global.options(),
         Offer::Collection(offer.clone()),
         None,
         offer.numbytes,
         Some(offered),
+        events,
     )
     .await
-}
-
-async fn send_data(
-    wormhole: &mut Wormhole,
-    global: &Global,
-    staged: &mut Staged,
-    offer: Offer,
-    path: &Path,
-    size: u64,
-) -> anyhow::Result<()> {
-    let use_iroh = require_iroh(wormhole, global).await?;
-    if !use_iroh {
-        staged.drop_blob_ahead().await;
-    }
-    if use_iroh && staged.blob.is_none() {
-        let hashing = staged
-            .blob_ahead
-            .take()
-            .unwrap_or_else(|| Hashing::blob(path.to_owned(), size));
-        match hashing.finish(global).await {
-            Ok(offered) => staged.blob = Some(offered),
-            Err(e) => {
-                protocol::send_error(wormhole, "the sender could not read its data").await?;
-                return Err(e);
-            }
-        }
-    }
-    let offered = if use_iroh { staged.blob.as_ref() } else { None };
-    send_over(wormhole, global, offer, Some(path), size, offered).await
-}
-
-async fn send_over(
-    wormhole: &mut Wormhole,
-    global: &Global,
-    offer: Offer,
-    path: Option<&Path>,
-    size: u64,
-    offered: Option<&Offered>,
-) -> anyhow::Result<()> {
-    let prepared = if offered.is_some() {
-        let iroh = global.iroh_or_tell(wormhole, IrohRole::Sender).await?;
-        let info = AppMessage::Iroh(iroh.info().await);
-        Prepared::Iroh(iroh).after(protocol::send(wormhole, &info).await)
-    } else {
-        let transit = global.transit(Role::Sender, wormhole.transit_key()).await;
-        let info = AppMessage::Transit(transit.info());
-        Prepared::Classic(transit).after(protocol::send(wormhole, &info).await)
-    }
-    .await?;
-    let prepared = prepared
-        .after(protocol::send(wormhole, &AppMessage::Offer(offer)).await)
-        .await?;
-
-    let answered = async {
-        let (mut their_iroh, mut their_transit) = (None, TransitInfo::default());
-        loop {
-            match protocol::next(wormhole, "receiver").await? {
-                AppMessage::Iroh(info) => their_iroh = Some(info),
-                AppMessage::Transit(info) => their_transit = info,
-                AppMessage::Answer(Answer::FileAck(ack)) if ack == "ok" => {
-                    return Ok((their_iroh, their_transit));
-                }
-                AppMessage::Answer(answer) => {
-                    bail!("unexpected answer from the receiver: {answer:?}")
-                }
-                _ => {}
-            }
-        }
-    }
-    .await;
-    let mut pipe = match (answered, prepared) {
-        (Ok((Some(theirs), _)), Prepared::Iroh(iroh)) => {
-            Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
-        }
-        (Ok((_, theirs)), Prepared::Classic(transit)) => {
-            Pipe::Classic(transit.connect(&theirs).await?)
-        }
-        (Ok(_), Prepared::Iroh(iroh)) => {
-            iroh.close().await;
-            bail!("the receiver accepted without an iroh address");
-        }
-        (Err(e), Prepared::Iroh(iroh)) => {
-            iroh.close().await;
-            return Err(e);
-        }
-        (Err(e), Prepared::Classic(_)) => return Err(e),
-    };
-    eprintln!("Sending ({})..", pipe.describe());
-    let bar = transfer::progress(
-        size,
-        global.hide_progress,
-        global.ascii,
-        pipe.through_wormhole(),
-    );
-    transfer::follow_pipe(&pipe, &bar);
-    let sent = async {
-        let digest = match &mut pipe {
-            Pipe::Iroh(iroh) => {
-                iroh.provide(offered.expect("iroh pipes carry a blob"))
-                    .await?;
-                transfer::follow_sent(iroh, &bar);
-                None
-            }
-            Pipe::Classic(records) => {
-                let path = path.expect("classic pipes carry a file");
-                let mut source = tokio::fs::File::open(path)
-                    .await
-                    .with_context(|| format!("opening {}", path.display()))?;
-                Some(transfer::send_stream(records, &mut source, size, &bar).await?)
-            }
-        };
-        if digest.is_some() {
-            eprintln!("Waiting for the receiver to confirm..");
-        }
-        let acked = transfer::await_ack(&mut pipe, digest.as_ref()).await;
-        if acked.is_ok() {
-            transfer::finale(&bar).await;
-        }
-        bar.finish_and_clear();
-        acked
-    }
-    .await;
-    if let Err(e) = sent {
-        bar.finish_and_clear();
-        pipe.abort().await;
-        return Err(e);
-    }
-    let went = transfer::went_by(&pipe);
-    pipe.shutdown().await;
-    eprintln!("Confirmation received. Transfer complete.");
-    if let Some(went) = went {
-        eprintln!("{went}");
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -848,40 +564,5 @@ mod tests {
         let refused = kept("../a.txt").unwrap_err().to_string();
         assert!(refused.contains("cannot keep `..`"), "{refused}");
         assert!(kept("a/./../b").is_err());
-    }
-
-    fn running() -> (Hashing<()>, tokio::sync::oneshot::Receiver<()>) {
-        let (ended, released) = tokio::sync::oneshot::channel::<()>();
-        let hashing = Hashing::start(0, move |mut progress| async move {
-            let _ended = ended;
-            while progress(1).is_continue() {
-                tokio::task::yield_now().await;
-            }
-            Err(wyrmyon_transport_iroh::Error::Blob("stopped".into()))
-        });
-        (hashing, released)
-    }
-
-    #[tokio::test]
-    async fn dropping_or_stopping_a_hashing_ends_its_import() {
-        let (hashing, released) = running();
-        drop(hashing);
-        assert!(released.await.is_err());
-        let (hashing, released) = running();
-        assert_eq!(hashing.stop().await, None);
-        assert!(released.await.is_err());
-    }
-
-    #[tokio::test]
-    async fn aborting_a_finished_hashing_hands_back_what_it_imported() {
-        let hashing = Hashing::start(0, |mut progress| async move {
-            let _ = progress(7);
-            Ok(7)
-        });
-        while !hashing.task.as_ref().unwrap().is_finished() {
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(hashing.hashed.load(Ordering::Relaxed), 7);
-        assert_eq!(hashing.stop().await, Some(7));
     }
 }
