@@ -98,46 +98,38 @@ enum Command {
     Forward(forward::ForwardArgs),
 }
 
-pub(crate) fn speaks_iroh(wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
-    wormhole.their_app_versions()["wyrmyon"]["transports"]
-        .as_array()
-        .is_some_and(|t| t.iter().any(|t| t == wyrmyon_transport_iroh::TRANSPORT))
-}
+pub(crate) use wyrmyon_transfer::speaks_iroh;
 
 impl Global {
-    fn config(&self) -> Config {
-        self.config_offering(&[protocol::COLLECTION])
-    }
-
-    fn forward_config(&self) -> Config {
-        self.config_offering(&[protocol::FORWARD])
-    }
-
-    fn config_offering(&self, offers: &[&str]) -> Config {
-        let app_versions = if self.force_classic {
-            serde_json::json!({})
-        } else {
-            serde_json::json!({"wyrmyon": {
-                "transports": [wyrmyon_transport_iroh::TRANSPORT],
-                "offers": offers,
-            }})
-        };
-        Config {
+    fn options(&self) -> wyrmyon_transfer::Options {
+        wyrmyon_transfer::Options {
             relay_url: self.relay_url.clone(),
-            app_versions,
-            ..Config::default()
+            transit_helper: self.transit_helper.clone(),
+            no_listen: self.no_listen,
+            force_classic: self.force_classic,
+            force_iroh: self.force_iroh,
+            iroh_relays: self.iroh_relays.clone(),
         }
     }
 
+    fn config(&self) -> Config {
+        self.options().config()
+    }
+
+    fn forward_config(&self) -> Config {
+        self.options().forward_config()
+    }
+
+    fn config_offering(&self, offers: &[&str]) -> Config {
+        self.options().config_offering(offers)
+    }
+
     fn use_iroh(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
-        speaks_iroh(wormhole) && !self.force_classic
+        self.options().use_iroh(wormhole)
     }
 
     fn use_collection(&self, wormhole: &wyrmyon_wormhole::Wormhole) -> bool {
-        let theirs = wormhole.their_app_versions()["wyrmyon"]["offers"]
-            .as_array()
-            .is_some_and(|o| o.iter().any(|o| o == protocol::COLLECTION));
-        theirs && self.use_iroh(wormhole)
+        self.options().use_collection(wormhole)
     }
 
     async fn iroh_or_tell(
@@ -145,22 +137,11 @@ impl Global {
         wormhole: &mut wyrmyon_wormhole::Wormhole,
         role: wyrmyon_transport_iroh::Role,
     ) -> anyhow::Result<IrohTransport> {
-        let bound = IrohTransport::bind(role, self.iroh_relays.clone()).await;
-        if bound.is_err() {
-            protocol::send_error(wormhole, "cannot open an iroh endpoint").await?;
-        }
-        Ok(bound?)
+        self.options().iroh_or_tell(wormhole, role).await
     }
 
     async fn transit(&self, role: Role, key: Key) -> Transit {
-        let transit = Transit::new(role, key)
-            .await
-            .with_relays(vec![self.transit_helper.clone()]);
-        if self.no_listen {
-            transit.without_listener()
-        } else {
-            transit
-        }
+        self.options().transit(role, key).await
     }
 }
 
