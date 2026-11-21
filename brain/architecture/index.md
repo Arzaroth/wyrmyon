@@ -9,5 +9,6 @@
 | [servers.md](servers.md) | The mailbox, the relays, and the rules for sharing the public mailbox |
 | [transfer.md](transfer.md) | The transfer library: sources, sinks, events, the engines the CLI and the app share |
 | [iroh-v1.md](iroh-v1.md) | The iroh transport: endpoint auth, channel binding, streams, blobs |
+| [mobile.md](mobile.md) | The Android app: the Rust side, the bridge to Dart, the build hook |
 | [distribution.md](distribution.md) | Platforms, release artefacts and packages, install scripts, CI |
 | [testing.md](testing.md) | The gate, and keeping tests off the public servers |

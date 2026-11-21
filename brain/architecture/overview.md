@@ -1,6 +1,6 @@
 # Overview
 
-A Cargo workspace of five crates. The security-critical code sits in one small
+A Cargo workspace of six crates, and the Android app in `apps/mobile`. The security-critical code sits in one small
 crate, and the CLI is written once against a `Transport` trait, so the two
 transports are interchangeable behind it.
 
@@ -12,6 +12,7 @@ transports are interchangeable behind it.
 | `crates/transport-classic` | `wyrmyon-transport-classic` | TCP hint racing, transit relay, encrypted records |
 | `crates/transport-iroh` | `wyrmyon-transport-iroh` | iroh endpoint, address exchange, peer pinning, channel binding, verified blobs (iroh-blobs) |
 | `crates/transfer` | `wyrmyon-transfer` | App messages, transport choice, the pipe, sending a source and receiving into a sink ([transfer.md](transfer.md)) |
+| `crates/mobile` | `wyrmyon-mobile` | The Android app's Rust side: sending a stream or text, receiving into a descriptor, progress updates, bridged to Dart ([mobile.md](mobile.md)) |
 | `crates/cli` | `wyrmyon` | clap, progress, prompts, destinations, zips; the `wyrmyon` and `wyrm` binaries |
 | `crates/testkit` | `wyrmyon-testkit` | In-process mailbox server for tests; never shipped |
 

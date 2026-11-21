@@ -55,8 +55,9 @@ never touch n0's iroh relays: `tests/support` disables them.
 
 - `CHANGELOG.md` `[Unreleased]` gets an entry with every user-facing change; it
   becomes the release notes.
-- The Rust toolchain is pinned in `rust-toolchain.toml` and `.mise.toml`;
-  bump both together.
+- The Rust toolchain is pinned in `rust-toolchain.toml`, `.mise.toml` and
+  `crates/mobile/rust-toolchain.toml` (the app's build hook reads it);
+  bump them together. `.mise.toml` also pins Flutter and Java for the app.
 - Before finishing: `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test`. CI runs the same on Linux (x86_64, aarch64), macOS
   (aarch64) and Windows (x86_64); keep platform-specific code behind `cfg`

@@ -44,6 +44,7 @@ wyrmyon.
 | How does `wyrm forward` carry a TCP connection, and what can the taker reach? | [features/forward.md](features/forward.md) |
 | How is the iroh connection authenticated? | [architecture/iroh-v1.md](architecture/iroh-v1.md) |
 | How is it built, packaged and installed? | [architecture/distribution.md](architecture/distribution.md) |
+| How does the Android app call the Rust crates, and how is it built? | [architecture/mobile.md](architecture/mobile.md) |
 | Why does `wyrm --update` refuse a .deb or MSI install? | [features/update.md](features/update.md) |
 | Why would a transfer go through a relay here? | [features/netcheck.md](features/netcheck.md) |
 | Which `wormhole` options work when wyrmyon answers to that name? | [features/wormhole-shim.md](features/wormhole-shim.md) |

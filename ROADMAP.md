@@ -133,9 +133,9 @@ phone the files are chosen before the code is scanned.
       writer). Decided: streams rather than copying to a path first; iroh
       still copies a stream into its blob store, as it needs the hash before
       the offer.
-- [ ] `crates/mobile`: the flutter_rust_bridge API (send sources, receive a
+- [x] `crates/mobile`: the flutter_rust_bridge API (send sources, receive a
       code, an offer to accept, progress events) over the existing crates.
-- [ ] `apps/mobile`: the Flutter project, Android only; Flutter, Java and the
+- [x] `apps/mobile`: the Flutter project, Android only; Flutter, Java and the
       Android Rust targets pinned; a CI job for `flutter test` and the APK.
 - [ ] The flows: the share menu and the picker into Send, then the scanner
       (or typing the code, or showing one); Receive by scanning or typing,
