@@ -118,6 +118,30 @@ free; the iroh path is then a pure upgrade on top of it.
       hosts; one QUIC stream per TCP connection with a port header and a
       status byte; the mailbox closed once connected.
 
+## M11 - Android app
+
+Files between a phone and a computer, the computer showing the code and the
+phone scanning it, both ways. Decided: Flutter over the Rust crates through
+flutter_rust_bridge, Android first; the app lives in this repository; on the
+phone the files are chosen before the code is scanned.
+
+- [x] `wyrm receive --new --qr` draws the code with `role=leader`, which asks
+      the scanning app to send.
+- [ ] Transfers read from and write to streams with a name and a size rather
+      than paths, as Android hands out `content://` URIs; the CLI unchanged.
+- [ ] `crates/mobile`: the flutter_rust_bridge API (send sources, receive a
+      code, an offer to accept, progress events) over the existing crates.
+- [ ] `apps/mobile`: the Flutter project, Android only; Flutter, Java and the
+      Android Rust targets pinned; a CI job for `flutter test` and the APK.
+- [ ] The flows: the share menu and the picker into Send, then the scanner
+      (or typing the code, or showing one); Receive by scanning or typing,
+      with the offer to accept; files saved to `Download/wyrmyon` through
+      MediaStore and the newest of them listed on Home, read from the folder
+      rather than kept as a history; a foreground service and a notification
+      when a transfer ends; `wormhole-transfer:` links open the app in either
+      role.
+- [ ] Folders, through Android's folder picker, sent as a `collection-v1`.
+
 ## Later
 
 - [ ] `--times` receivers served at once rather than in turn: one
@@ -133,6 +157,10 @@ free; the iroh path is then a pure upgrade on top of it.
       unreachable; its codes carry a prefix (`m7-guitarist-revenge`) that
       legacy clients reject as malformed, which is correct.
 - [ ] Dilation on the legacy side, for Python clients that support it.
+- [ ] Paired devices: a phone and a computer that met once by QR code
+      remember each other's node IDs and a shared key, and send over iroh
+      without a code to a `wyrm` left listening.
+- [ ] The app on iOS, from the same Flutter project.
 - [ ] Self-hosted iroh relays; a client default change, since the relay URL
       travels inside the encrypted NodeAddr.
 

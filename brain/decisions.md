@@ -293,3 +293,19 @@ port, a dead target) the taker can report.
 The mailbox is closed as soon as the connection is up, so a forward that
 lasts hours costs the public server the same few messages as a transfer.
 
+## The Android app: Flutter over the Rust crates, the phone always scanning
+
+The app is a full client built on `wormhole-core` and both transports, so it
+meets the Python client and other apps on the public mailbox and upgrades to
+iroh with a wyrm. Flutter, through flutter_rust_bridge, is the shortest way
+to call those crates (async calls and event streams come generated) and
+keeps iOS a build target rather than a second app; React Native would need
+uniffi-bindgen-react-native and its C++ glue.
+
+Between a phone and a computer, the computer shows the code and the phone
+scans it in both directions: `wyrm send --qr` for the phone to receive,
+`wyrm receive --new --qr` (`role=leader`) for it to send. Only the phone has
+a camera and the computer the bigger screen. On the phone the files are
+chosen first and the code scanned after, as a share from another app
+already starts with them; the protocol does not mind the order, since the
+computer is waiting on the code.
