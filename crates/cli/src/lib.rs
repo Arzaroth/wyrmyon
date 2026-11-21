@@ -16,12 +16,12 @@ mod zipdir;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
+use wyrmyon_transfer::PUBLIC_TRANSIT_HELPER;
 use wyrmyon_transfer::protocol;
 use wyrmyon_transport_classic::DirectHint;
 use wyrmyon_transport_iroh::IrohTransport;
 use wyrmyon_wormhole::{Config, Mood, PUBLIC_RELAY, Welcome};
 
-const PUBLIC_TRANSIT_HELPER: &str = "tcp:transit.magic-wormhole.io:4001";
 const CODE_LENGTH: u8 = 2;
 
 #[derive(Parser)]

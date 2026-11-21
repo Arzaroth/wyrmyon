@@ -4,6 +4,8 @@ use wyrmyon_wormhole::{Config, Key, Wormhole};
 
 use crate::protocol;
 
+pub const PUBLIC_TRANSIT_HELPER: &str = "tcp:transit.magic-wormhole.io:4001";
+
 #[derive(Clone, Debug)]
 pub struct Options {
     pub relay_url: String,

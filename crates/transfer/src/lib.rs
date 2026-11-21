@@ -7,7 +7,7 @@ mod send;
 mod source;
 
 pub use events::{Events, Quiet, Settled};
-pub use options::{Options, speaks_iroh};
+pub use options::{Options, PUBLIC_TRANSIT_HELPER, speaks_iroh};
 pub use pipe::{Pipe, await_ack, receive_stream, send_ack, send_stream};
 pub use receive::{
     Connection, Received, Sink, await_offer, receive_into, receiver_requires_iroh, refuse,

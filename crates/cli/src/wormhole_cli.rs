@@ -6,10 +6,11 @@ use std::process::ExitCode;
 use anyhow::{Context, bail};
 use clap::builder::BoolishValueParser;
 use clap::{Args, Parser, Subcommand};
+use wyrmyon_transfer::PUBLIC_TRANSIT_HELPER;
 use wyrmyon_transport_classic::DirectHint;
 use wyrmyon_wormhole::{APPID, PUBLIC_RELAY};
 
-use crate::{CODE_LENGTH, Command, Global, PUBLIC_TRANSIT_HELPER, receive, send, ssh};
+use crate::{CODE_LENGTH, Command, Global, receive, send, ssh};
 
 pub const NAME: &str = "wormhole";
 
