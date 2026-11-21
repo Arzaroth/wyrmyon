@@ -24,4 +24,6 @@ wyrmyon-transport-iroh = { path = "../transport-iroh" }
 wyrmyon-wormhole = { path = "../wormhole-core" }
 
 [dev-dependencies]
+tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros"] }
+wyrmyon-testkit = { path = "../testkit" }
