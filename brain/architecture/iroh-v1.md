@@ -110,6 +110,11 @@ verifies them, so there is no record layer on top. iroh-blobs runs inside this
 connection only: there is no `iroh-blobs` ALPN on the endpoint, so the blob
 store cannot be reached by anyone who has not passed the pin and the binding.
 
+A blob can also be offered from a stream (`Offered::import_reader`, copied
+into the throwaway store as it is hashed) and a fetched one copied into any
+writer (`Fetched::export_writer`), for a sender or a receiver without a path
+([transfer.md](transfer.md#streams-and-the-copies-left)).
+
 ## Sources
 
 - [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs)
@@ -119,3 +124,5 @@ store cannot be reached by anyone who has not passed the pin and the binding.
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
 - [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)
+- [crates/transfer/src/send.rs](../../crates/transfer/src/send.rs)
+- [crates/transfer/src/receive.rs](../../crates/transfer/src/receive.rs)

@@ -141,7 +141,7 @@ just dropped ([decisions.md](../decisions.md)).
 ## Sources
 
 - [crates/cli/src/forward.rs](../../crates/cli/src/forward.rs)
-- [crates/cli/src/protocol.rs](../../crates/cli/src/protocol.rs) (`FORWARD`, `ForwardOffer`, `Answer::ForwardAck`)
+- [crates/transfer/src/protocol.rs](../../crates/transfer/src/protocol.rs) (`FORWARD`, `ForwardOffer`, `Answer::ForwardAck`)
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`forward_config`, `run`)
 - [crates/transport-iroh/src/forward.rs](../../crates/transport-iroh/src/forward.rs)
 - [crates/transport-iroh/src/lib.rs](../../crates/transport-iroh/src/lib.rs) (`connect_unless`)

@@ -36,7 +36,7 @@ allocated code as a QR code that asks the phone scanning it to send.
    An `error` or any other answer fails the transfer.
 3. Connects ([transit-classic.md](../architecture/transit-classic.md)) and
    streams the file in 64 KiB records with a progress bar, hashing it with
-   SHA-256 (`transfer.rs`). A file that grows or shrinks during the send fails
+   SHA-256 (`wyrmyon_transfer::send_stream`). A file that grows or shrinks during the send fails
    it.
 4. Reads the receiver's last record, `{"ack": "ok", "sha256": <hex>}`, and
    checks the hash when there is one.
@@ -83,6 +83,9 @@ allocated code as a QR code that asks the phone scanning it to send.
 
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
-- [crates/cli/src/protocol.rs](../../crates/cli/src/protocol.rs)
+- [crates/transfer/src/protocol.rs](../../crates/transfer/src/protocol.rs)
+- [crates/transfer/src/send.rs](../../crates/transfer/src/send.rs)
+- [crates/transfer/src/receive.rs](../../crates/transfer/src/receive.rs)
+- [crates/transfer/src/pipe.rs](../../crates/transfer/src/pipe.rs)
 - [crates/cli/src/transfer.rs](../../crates/cli/src/transfer.rs)
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs)

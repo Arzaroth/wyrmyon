@@ -33,7 +33,7 @@ more (`Code::is_reusable`), or the run is refused before it starts.
 4. Between turns: `Waiting for receiver K of N..`.
 5. The run fails at the end with `F of N transfers failed` if any did.
 
-The payload is staged once for the whole run (`Staged` in `send.rs`): the
+The payload is staged once for the whole run (`Staged` in `crates/transfer/src/send.rs`): the
 zip is built at most once, the first time a receiver needs it, and the blob
 or the collection hashed at most once, starting when the code is shown
 ([resume.md](resume.md)). A receiver that cannot use the hash (a legacy

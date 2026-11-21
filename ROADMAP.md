@@ -127,8 +127,12 @@ phone the files are chosen before the code is scanned.
 
 - [x] `wyrm receive --new --qr` draws the code with `role=leader`, which asks
       the scanning app to send.
-- [ ] Transfers read from and write to streams with a name and a size rather
-      than paths, as Android hands out `content://` URIs; the CLI unchanged.
+- [x] The transfer engine as a library, `crates/transfer`, shared by the CLI
+      and the app: it sends a `Source` (a path, or any stream, as Android
+      hands out `content://` URIs) and receives into a `Sink` (a file, or any
+      writer). Decided: streams rather than copying to a path first; iroh
+      still copies a stream into its blob store, as it needs the hash before
+      the offer.
 - [ ] `crates/mobile`: the flutter_rust_bridge API (send sources, receive a
       code, an offer to accept, progress events) over the existing crates.
 - [ ] `apps/mobile`: the Flutter project, Android only; Flutter, Java and the
@@ -140,7 +144,9 @@ phone the files are chosen before the code is scanned.
       rather than kept as a history; a foreground service and a notification
       when a transfer ends; `wormhole-transfer:` links open the app in either
       role.
-- [ ] Folders, through Android's folder picker, sent as a `collection-v1`.
+- [ ] Several files and folders from streams: the collection import and the
+      legacy zip built from sources, and a received collection or zip written
+      into a sink; then folders through Android's folder picker.
 
 ## Later
 

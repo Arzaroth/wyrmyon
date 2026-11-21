@@ -123,5 +123,5 @@ from a wyrm.
 - [crates/cli/src/zipdir.rs](../../crates/cli/src/zipdir.rs) (`list_bundle`, `extract_with`)
 - [crates/cli/src/merge.rs](../../crates/cli/src/merge.rs) (`named`, `listing`, `outside`, `clash`, `Merge`)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs) (`bundle_base`, `receive_directory`, `receive_collection`)
-- [crates/cli/src/protocol.rs](../../crates/cli/src/protocol.rs)
+- [crates/transfer/src/protocol.rs](../../crates/transfer/src/protocol.rs)
 - [crates/transport-iroh/src/collection.rs](../../crates/transport-iroh/src/collection.rs) (`Placement`, `Under`)

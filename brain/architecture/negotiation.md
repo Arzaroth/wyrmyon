@@ -63,5 +63,6 @@ on the same wormhole ([decisions.md](../decisions.md)).
 ## Sources
 
 - [crates/cli/src/lib.rs](../../crates/cli/src/lib.rs) (`config`, `forward_config`, `use_iroh`)
+- [crates/transfer/src/options.rs](../../crates/transfer/src/options.rs)
 - [crates/cli/src/send.rs](../../crates/cli/src/send.rs)
 - [crates/cli/src/receive.rs](../../crates/cli/src/receive.rs)
