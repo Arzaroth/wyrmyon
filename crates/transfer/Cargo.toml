@@ -1,0 +1,21 @@
+[package]
+name = "wyrmyon-transfer"
+description = "Sends and receives over a wormhole: the offers, the transports, the streams"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+wyrmyon-transport-classic = { path = "../transport-classic" }
+wyrmyon-transport-iroh = { path = "../transport-iroh" }
+wyrmyon-wormhole = { path = "../wormhole-core" }

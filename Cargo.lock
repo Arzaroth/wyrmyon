@@ -5267,6 +5267,7 @@ dependencies = [
  "tokio",
  "winresource",
  "wyrmyon-testkit",
+ "wyrmyon-transfer",
  "wyrmyon-transport-classic",
  "wyrmyon-transport-iroh",
  "wyrmyon-wormhole",
@@ -5282,6 +5283,18 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "wyrmyon-transfer"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "wyrmyon-transport-classic",
+ "wyrmyon-transport-iroh",
+ "wyrmyon-wormhole",
 ]
 
 [[package]]

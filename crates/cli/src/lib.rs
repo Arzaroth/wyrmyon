@@ -2,7 +2,6 @@ mod discard;
 mod forward;
 mod merge;
 mod netcheck;
-mod protocol;
 mod qr;
 mod receive;
 mod send;
@@ -17,6 +16,7 @@ mod zipdir;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
+use wyrmyon_transfer::protocol;
 use wyrmyon_transport_classic::{DirectHint, Role, Transit};
 use wyrmyon_transport_iroh::IrohTransport;
 use wyrmyon_wormhole::{Config, Key, Mood, PUBLIC_RELAY, Welcome};

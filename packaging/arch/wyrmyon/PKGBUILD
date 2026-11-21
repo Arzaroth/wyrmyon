@@ -36,7 +36,7 @@ build() {
 check() {
   cd "$pkgname-$pkgver"
   export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
-  cargo test --frozen -p wyrmyon-wormhole -p wyrmyon-transport-classic
+  cargo test --frozen -p wyrmyon-wormhole -p wyrmyon-transport-classic -p wyrmyon-transfer
 }
 
 package() {
