@@ -1,0 +1,168 @@
+use anyhow::{Context, bail};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use wyrmyon_transport_classic::RecordPipe;
+use wyrmyon_transport_iroh::{IrohPipe, Traffic};
+
+const CHUNK: usize = 1 << 16;
+
+pub enum Pipe {
+    Classic(RecordPipe),
+    Iroh(IrohPipe),
+}
+
+impl Pipe {
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Classic(pipe) => pipe.describe().to_owned(),
+            Self::Iroh(pipe) => pipe.describe().to_owned(),
+        }
+    }
+
+    pub fn through_wormhole(&self) -> bool {
+        matches!(self, Self::Classic(_))
+    }
+
+    pub fn traffic(&self) -> Option<Traffic> {
+        match self {
+            Self::Classic(_) => None,
+            Self::Iroh(pipe) => Some(pipe.traffic()),
+        }
+    }
+
+    async fn send_last(&mut self, data: &[u8]) -> anyhow::Result<()> {
+        match self {
+            Self::Classic(pipe) => {
+                pipe.send_record(data).await?;
+                pipe.flush().await?;
+            }
+            Self::Iroh(pipe) => pipe.send_last(data).await?,
+        }
+        Ok(())
+    }
+
+    async fn receive_last(&mut self) -> anyhow::Result<Vec<u8>> {
+        Ok(match self {
+            Self::Classic(pipe) => pipe.receive_record().await?,
+            Self::Iroh(pipe) => pipe.receive_last().await?,
+        })
+    }
+
+    pub async fn abort(self) {
+        match self {
+            Self::Classic(pipe) => pipe.shutdown().await,
+            Self::Iroh(pipe) => pipe.abort().await,
+        }
+    }
+
+    pub async fn shutdown(self) {
+        match self {
+            Self::Classic(pipe) => pipe.shutdown().await,
+            Self::Iroh(pipe) => pipe.finish().await,
+        }
+    }
+}
+
+pub async fn send_stream(
+    pipe: &mut RecordPipe,
+    source: &mut (dyn AsyncRead + Unpin + Send),
+    size: u64,
+    progress: &(dyn Fn(u64) + Sync),
+) -> anyhow::Result<[u8; 32]> {
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; CHUNK];
+    let mut sent = 0u64;
+    loop {
+        let n = source.read(&mut buf).await.context("reading the data")?;
+        if n == 0 {
+            break;
+        }
+        sent += n as u64;
+        if sent > size {
+            bail!("the data grew while it was being sent");
+        }
+        hasher.update(&buf[..n]);
+        pipe.send_record(&buf[..n]).await?;
+        progress(sent);
+    }
+    if sent != size {
+        bail!("the data shrank while it was being sent");
+    }
+    pipe.flush().await?;
+    Ok(hasher.finalize().into())
+}
+
+pub async fn receive_stream(
+    pipe: &mut RecordPipe,
+    sink: &mut (dyn AsyncWrite + Unpin + Send),
+    size: u64,
+    progress: &(dyn Fn(u64) + Sync),
+) -> anyhow::Result<[u8; 32]> {
+    let mut hasher = Sha256::new();
+    let mut received = 0u64;
+    while received < size {
+        let chunk = pipe.receive_record().await?;
+        received += chunk.len() as u64;
+        if received > size {
+            bail!("the sender sent more than the {size} bytes it offered");
+        }
+        hasher.update(&chunk);
+        sink.write_all(&chunk).await.context("writing the data")?;
+        progress(received);
+    }
+    sink.flush().await.context("writing the data")?;
+    Ok(hasher.finalize().into())
+}
+
+pub async fn await_ack(pipe: &mut Pipe, digest: Option<&[u8; 32]>) -> anyhow::Result<()> {
+    let raw = pipe.receive_last().await?;
+    let ack: Value =
+        serde_json::from_slice(&raw).context("the receiver's confirmation is not JSON")?;
+    if ack["ack"] != "ok" {
+        bail!("transfer failed, the receiver says: {ack}");
+    }
+    if let (Some(theirs), Some(digest)) = (ack["sha256"].as_str(), digest)
+        && theirs != hex::encode(digest)
+    {
+        bail!("transfer failed: the receiver got different data");
+    }
+    Ok(())
+}
+
+pub async fn send_ack(pipe: &mut Pipe, digest: Option<&[u8; 32]>) -> anyhow::Result<()> {
+    let ack = match digest {
+        Some(digest) => json!({"ack": "ok", "sha256": hex::encode(digest)}),
+        None => json!({"ack": "ok"}),
+    }
+    .to_string();
+    pipe.send_last(ack.as_bytes()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wyrmyon_transport_classic::{Role, Transit};
+    use wyrmyon_wormhole::Key;
+
+    async fn pair() -> (RecordPipe, RecordPipe) {
+        let sender = Transit::new(Role::Sender, Key::from_bytes([2; 32])).await;
+        let receiver = Transit::new(Role::Receiver, Key::from_bytes([2; 32])).await;
+        let (sender_info, receiver_info) = (sender.info(), receiver.info());
+        let (a, b) = tokio::join!(
+            sender.connect(&receiver_info),
+            receiver.connect(&sender_info)
+        );
+        (a.unwrap(), b.unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_source_that_does_not_match_its_offer_fails_the_send() {
+        let (mut pipe, _other) = pair().await;
+        let grew = send_stream(&mut pipe, &mut &b"longer than offered"[..], 4, &|_| {}).await;
+        assert!(grew.unwrap_err().to_string().contains("grew"));
+        let (mut pipe, _other) = pair().await;
+        let shrank = send_stream(&mut pipe, &mut &b"ab"[..], 4, &|_| {}).await;
+        assert!(shrank.unwrap_err().to_string().contains("shrank"));
+    }
+}

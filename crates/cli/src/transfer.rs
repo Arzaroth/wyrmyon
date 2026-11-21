@@ -1,78 +1,22 @@
-use anyhow::{Context, bail};
 use indicatif::{ProgressBar, ProgressStyle};
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::watch;
+pub use wyrmyon_transfer::{Pipe, await_ack, send_ack};
 use wyrmyon_transport_classic::RecordPipe;
 use wyrmyon_transport_iroh::{IrohPipe, Route, Traffic};
 
 use crate::wyrm::{Look, Paint, Wyrm};
 
-const CHUNK: usize = 1 << 16;
 const FINALE: std::time::Duration = std::time::Duration::from_millis(800);
 
-pub enum Pipe {
-    Classic(RecordPipe),
-    Iroh(IrohPipe),
+pub fn follow_pipe(pipe: &Pipe, bar: &ProgressBar) {
+    if let Pipe::Iroh(pipe) = pipe {
+        follow_route(pipe, bar);
+    }
 }
 
-impl Pipe {
-    pub fn describe(&self) -> String {
-        match self {
-            Self::Classic(pipe) => pipe.describe().to_owned(),
-            Self::Iroh(pipe) => pipe.describe().to_owned(),
-        }
-    }
-
-    pub fn through_wormhole(&self) -> bool {
-        matches!(self, Self::Classic(_))
-    }
-
-    pub fn follow_route(&self, bar: &ProgressBar) {
-        if let Self::Iroh(pipe) = self {
-            follow_route(pipe, bar);
-        }
-    }
-
-    pub fn went(&self) -> Option<String> {
-        match self {
-            Self::Classic(_) => None,
-            Self::Iroh(pipe) => went(pipe.traffic()),
-        }
-    }
-
-    async fn send_last(&mut self, data: &[u8]) -> anyhow::Result<()> {
-        match self {
-            Self::Classic(pipe) => {
-                pipe.send_record(data).await?;
-                pipe.flush().await?;
-            }
-            Self::Iroh(pipe) => pipe.send_last(data).await?,
-        }
-        Ok(())
-    }
-
-    async fn receive_last(&mut self) -> anyhow::Result<Vec<u8>> {
-        Ok(match self {
-            Self::Classic(pipe) => pipe.receive_record().await?,
-            Self::Iroh(pipe) => pipe.receive_last().await?,
-        })
-    }
-
-    pub async fn abort(self) {
-        match self {
-            Self::Classic(pipe) => pipe.shutdown().await,
-            Self::Iroh(pipe) => pipe.abort().await,
-        }
-    }
-
-    pub async fn shutdown(self) {
-        match self {
-            Self::Classic(pipe) => pipe.shutdown().await,
-            Self::Iroh(pipe) => pipe.finish().await,
-        }
-    }
+pub fn went_by(pipe: &Pipe) -> Option<String> {
+    went(pipe.traffic()?)
 }
 
 pub fn follow_route(pipe: &IrohPipe, bar: &ProgressBar) {
@@ -193,28 +137,10 @@ pub async fn send_stream(
     size: u64,
     bar: &ProgressBar,
 ) -> anyhow::Result<[u8; 32]> {
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; CHUNK];
-    let mut sent = 0u64;
-    loop {
-        let n = source.read(&mut buf).await.context("reading the data")?;
-        if n == 0 {
-            break;
-        }
-        sent += n as u64;
-        if sent > size {
-            bail!("the data grew while it was being sent");
-        }
-        hasher.update(&buf[..n]);
-        pipe.send_record(&buf[..n]).await?;
-        bar.inc(n as u64);
-    }
-    if sent != size {
-        bail!("the data shrank while it was being sent");
-    }
-    pipe.flush().await?;
+    let digest =
+        wyrmyon_transfer::send_stream(pipe, source, size, &|n| bar.set_position(n)).await?;
     finale(bar).await;
-    Ok(hasher.finalize().into())
+    Ok(digest)
 }
 
 pub async fn receive_stream(
@@ -223,63 +149,15 @@ pub async fn receive_stream(
     size: u64,
     bar: &ProgressBar,
 ) -> anyhow::Result<[u8; 32]> {
-    let mut hasher = Sha256::new();
-    let mut received = 0u64;
-    while received < size {
-        let chunk = pipe.receive_record().await?;
-        received += chunk.len() as u64;
-        if received > size {
-            bail!("the sender sent more than the {size} bytes it offered");
-        }
-        hasher.update(&chunk);
-        sink.write_all(&chunk).await.context("writing the data")?;
-        bar.inc(chunk.len() as u64);
-    }
-    sink.flush().await.context("writing the data")?;
+    let digest =
+        wyrmyon_transfer::receive_stream(pipe, sink, size, &|n| bar.set_position(n)).await?;
     finale(bar).await;
-    Ok(hasher.finalize().into())
-}
-
-pub async fn await_ack(pipe: &mut Pipe, digest: Option<&[u8; 32]>) -> anyhow::Result<()> {
-    let raw = pipe.receive_last().await?;
-    let ack: Value =
-        serde_json::from_slice(&raw).context("the receiver's confirmation is not JSON")?;
-    if ack["ack"] != "ok" {
-        bail!("transfer failed, the receiver says: {ack}");
-    }
-    if let (Some(theirs), Some(digest)) = (ack["sha256"].as_str(), digest)
-        && theirs != hex::encode(digest)
-    {
-        bail!("transfer failed: the receiver got different data");
-    }
-    Ok(())
-}
-
-pub async fn send_ack(pipe: &mut Pipe, digest: Option<&[u8; 32]>) -> anyhow::Result<()> {
-    let ack = match digest {
-        Some(digest) => json!({"ack": "ok", "sha256": hex::encode(digest)}),
-        None => json!({"ack": "ok"}),
-    }
-    .to_string();
-    pipe.send_last(ack.as_bytes()).await
+    Ok(digest)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wyrmyon_transport_classic::{Role, Transit};
-    use wyrmyon_wormhole::Key;
-
-    async fn pair() -> (RecordPipe, RecordPipe) {
-        let sender = Transit::new(Role::Sender, Key::from_bytes([2; 32])).await;
-        let receiver = Transit::new(Role::Receiver, Key::from_bytes([2; 32])).await;
-        let (sender_info, receiver_info) = (sender.info(), receiver.info());
-        let (a, b) = tokio::join!(
-            sender.connect(&receiver_info),
-            receiver.connect(&sender_info)
-        );
-        (a.unwrap(), b.unwrap())
-    }
 
     #[test]
     fn the_route_summary_says_where_the_bytes_went() {
@@ -338,16 +216,5 @@ mod tests {
         }
         drop(tx);
         announcer.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_source_that_does_not_match_its_offer_fails_the_send() {
-        let (mut pipe, _other) = pair().await;
-        let bar = progress(0, true, false, false);
-        let grew = send_stream(&mut pipe, &mut &b"longer than offered"[..], 4, &bar).await;
-        assert!(grew.unwrap_err().to_string().contains("grew"));
-        let (mut pipe, _other) = pair().await;
-        let shrank = send_stream(&mut pipe, &mut &b"ab"[..], 4, &bar).await;
-        assert!(shrank.unwrap_err().to_string().contains("shrank"));
     }
 }

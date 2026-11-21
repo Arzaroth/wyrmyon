@@ -254,7 +254,7 @@ async fn receive_payload(
         global.ascii,
         pipe.through_wormhole(),
     );
-    pipe.follow_route(&bar);
+    transfer::follow_pipe(&pipe, &bar);
     let received = async {
         match &mut pipe {
             Pipe::Iroh(iroh) => {
@@ -276,7 +276,7 @@ async fn receive_payload(
     .await;
     match received {
         Ok(digest) => {
-            if let Some(went) = pipe.went() {
+            if let Some(went) = transfer::went_by(&pipe) {
                 eprintln!("{went}");
             }
             Ok(Incoming {
@@ -649,7 +649,7 @@ async fn receive_collection(
             if let Some(dir) = dir {
                 dir.keep();
             }
-            if let Some(went) = pipe.went() {
+            if let Some(went) = transfer::went_by(&pipe) {
                 eprintln!("{went}");
             }
             transfer::send_ack(&mut pipe, None).await

@@ -5290,8 +5290,11 @@ name = "wyrmyon-transfer"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "tokio",
  "wyrmyon-transport-classic",
  "wyrmyon-transport-iroh",
  "wyrmyon-wormhole",

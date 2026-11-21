@@ -784,7 +784,7 @@ async fn send_over(
         global.ascii,
         pipe.through_wormhole(),
     );
-    pipe.follow_route(&bar);
+    transfer::follow_pipe(&pipe, &bar);
     let sent = async {
         let digest = match &mut pipe {
             Pipe::Iroh(iroh) => {
@@ -817,7 +817,7 @@ async fn send_over(
         pipe.abort().await;
         return Err(e);
     }
-    let went = pipe.went();
+    let went = transfer::went_by(&pipe);
     pipe.shutdown().await;
     eprintln!("Confirmation received. Transfer complete.");
     if let Some(went) = went {
