@@ -182,7 +182,7 @@ async fn negotiate(
             Mode::Share(ports) => {
                 let config = global.config_offering(&[]);
                 let code: Option<Code> = args.code.as_deref().map(str::parse).transpose()?;
-                let qr = args.qr.then_some(global.ascii);
+                let qr = args.qr.then_some((global.ascii, crate::qr::Role::Follower));
                 let pending = if let Some(code) = code {
                     show_code(&code, qr, &other_side(&code));
                     wyrmyon_wormhole::join(&config, code).await?

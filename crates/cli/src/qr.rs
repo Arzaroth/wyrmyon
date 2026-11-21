@@ -15,8 +15,17 @@ const SMALLEST: i16 = 6;
 const CHUNK: usize = 4096;
 const NEAR: usize = 64;
 
-pub fn uri(code: &str) -> String {
-    format!("wormhole-transfer:{code}")
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Follower,
+    Leader,
+}
+
+pub fn uri(code: &str, role: Role) -> String {
+    match role {
+        Role::Follower => format!("wormhole-transfer:{code}"),
+        Role::Leader => format!("wormhole-transfer:{code}?role=leader"),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,9 +301,9 @@ mod tests {
     }
 
     fn assert_scans(code: &str) {
-        let grid = grid(&uri(code));
+        let grid = grid(&uri(code, Role::Follower));
         for shade in [in_ink, with_silhouette] {
-            assert_eq!(scanned(&grid, shade), [uri(code)], "{code}");
+            assert_eq!(scanned(&grid, shade), [uri(code, Role::Follower)], "{code}");
         }
     }
 
@@ -350,9 +359,12 @@ mod tests {
     #[test]
     fn it_encodes_the_uri_the_python_client_does_and_colours_on_request() {
         assert_eq!(
-            uri("7-guitarist-revenge"),
+            uri("7-guitarist-revenge", Role::Follower),
             "wormhole-transfer:7-guitarist-revenge"
         );
+        let leader = uri("7-guitarist-revenge", Role::Leader);
+        assert_eq!(leader, "wormhole-transfer:7-guitarist-revenge?role=leader");
+        assert_eq!(scanned(&grid(&leader), in_ink), [leader]);
         let plain = render("7-a-b", Look::Plain);
         let coloured = render("7-a-b", Look::Coloured);
         assert_eq!(coloured.lines().count(), plain.lines().count());
@@ -452,7 +464,7 @@ mod tests {
             let mut codes = vec![format!("4095-{}", longest.join("-"))];
             codes.extend((0..4).map(|n| format!("{}-{}", n * 37 + 1, choose_words(words))));
             for code in codes {
-                assert!(grid(&uri(&code)).logo.is_some(), "{code}");
+                assert!(grid(&uri(&code, Role::Follower)).logo.is_some(), "{code}");
                 assert_scans(&code);
             }
         }
@@ -462,13 +474,13 @@ mod tests {
     fn long_custom_codes_scan_and_the_longest_go_without_the_wyrm() {
         for len in [120, 300] {
             let code = format!("7-{}", "z".repeat(len));
-            assert!(grid(&uri(&code)).logo.is_some());
+            assert!(grid(&uri(&code, Role::Follower)).logo.is_some());
             assert_scans(&code);
         }
         let code = format!("7-{}", "z".repeat(1300));
-        assert_eq!(grid(&uri(&code)).logo, None);
+        assert_eq!(grid(&uri(&code, Role::Follower)).logo, None);
         assert_scans(&code);
-        assert!(!render(&uri(&code), Look::Picture).contains("\x1b_G"));
+        assert!(!render(&uri(&code, Role::Follower), Look::Picture).contains("\x1b_G"));
     }
 
     #[test]
@@ -476,9 +488,9 @@ mod tests {
         let mut versions = Vec::new();
         for len in [1, 8, 17, 30, 41, 50, 70, 90, 120, 160, 300, 1000, 1250] {
             let code = "z".repeat(len);
-            let qr = encode(&uri(&code));
+            let qr = encode(&uri(&code, Role::Follower));
             let width = qr.width();
-            let grid = grid(&uri(&code));
+            let grid = grid(&uri(&code, Role::Follower));
             let (left, top) = grid.logo.unwrap();
             let (w, h) = (logo::COLS, logo::ROWS * 2);
             assert!(w * h * 100 <= width * width * LOGO_BUDGET_PERCENT);
@@ -517,9 +529,9 @@ mod tests {
         let mut len = 1;
         while len <= 1250 {
             let code = "z".repeat(len);
-            let qr = encode(&uri(&code));
+            let qr = encode(&uri(&code, Role::Follower));
             let colors = qr.to_colors();
-            let grid = grid(&uri(&code));
+            let grid = grid(&uri(&code, Role::Follower));
             let turned = |against: bool| Grid {
                 width: grid.width,
                 logo: grid.logo,
@@ -545,7 +557,11 @@ mod tests {
                 .find(|&scale| scanned_at(&clean, in_ink, scale).is_some())
                 .expect("the clean code decodes at some scale");
             let found = scanned_at(&turned(true), in_ink, scale);
-            assert_eq!(found, Some(vec![uri(&code)]), "{code} at {scale}");
+            assert_eq!(
+                found,
+                Some(vec![uri(&code, Role::Follower)]),
+                "{code} at {scale}"
+            );
         }
         assert_eq!(
             seen.into_iter().collect::<Vec<_>>(),

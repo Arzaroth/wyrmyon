@@ -295,7 +295,7 @@ pub async fn run(global: &Global, args: SendArgs) -> anyhow::Result<()> {
         None => paths_payload(args.paths, args.relative).await?,
     };
 
-    let qr = args.qr.then_some(global.ascii);
+    let qr = args.qr.then_some((global.ascii, crate::qr::Role::Follower));
     let times = args.times;
     let config = global.config();
     if times > 1 && code.as_ref().is_some_and(|code| !code.is_reusable()) {

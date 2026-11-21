@@ -252,20 +252,20 @@ fn bare(targets: &[String]) -> anyhow::Result<Command> {
     }
 }
 
-fn show_code(code: &wyrmyon_wormhole::Code, qr: Option<bool>, other_side: &str) {
+fn show_code(code: &wyrmyon_wormhole::Code, qr: Option<(bool, qr::Role)>, other_side: &str) {
     eprintln!("Wormhole code is: {code}");
-    if let Some(ascii) = qr {
-        show_qr(code, ascii);
+    if let Some((ascii, role)) = qr {
+        show_qr(code, ascii, role);
     }
     eprintln!("On the other computer, please run:\n\n{other_side}\n");
 }
 
-fn show_qr(code: &wyrmyon_wormhole::Code, ascii: bool) {
+fn show_qr(code: &wyrmyon_wormhole::Code, ascii: bool, role: qr::Role) {
     use std::io::IsTerminal;
     let look = qr::Look::choose(ascii, std::io::stderr().is_terminal(), |name| {
         std::env::var(name).ok()
     });
-    eprint!("{}", qr::render(&qr::uri(&code.to_string()), look));
+    eprint!("{}", qr::render(&qr::uri(&code.to_string(), role), look));
 }
 
 fn show_welcome(welcome: &Welcome) {

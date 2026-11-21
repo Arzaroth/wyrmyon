@@ -347,6 +347,7 @@ fn receive_args(args: ReceiveArgs) -> receive::ReceiveArgs {
     receive::ReceiveArgs {
         code: args.code,
         new: args.allocate,
+        qr: false,
         code_length: args.common.code_length.unwrap_or(CODE_LENGTH),
         accept_file: args.accept_file,
         output_file: args.output_file,

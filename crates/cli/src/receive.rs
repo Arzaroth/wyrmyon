@@ -26,6 +26,9 @@ pub struct ReceiveArgs {
     /// Allocate a code here, for the sender to use with `send --code`
     #[arg(long, visible_alias = "allocate")]
     pub(crate) new: bool,
+    /// Also show the allocated code as a QR code, for a phone to scan and send from
+    #[arg(long, requires = "new")]
+    pub(crate) qr: bool,
     /// Number of words in the code: the one `--new` allocates, or the one the prompt completes
     #[arg(long, default_value_t = CODE_LENGTH, value_parser = clap::value_parser!(u8).range(1..=8))]
     pub(crate) code_length: u8,
@@ -50,6 +53,7 @@ impl ReceiveArgs {
         Self {
             code,
             new: false,
+            qr: false,
             code_length: CODE_LENGTH,
             accept_file: false,
             output_file: None,
@@ -81,7 +85,8 @@ pub async fn run(global: &Global, args: ReceiveArgs) -> anyhow::Result<()> {
         };
         let other_side =
             format!("  {first} send --code {code} FILE\n\n(or: {then} send --code {code} FILE)");
-        waiting.0.suspend(|| show_code(code, None, &other_side));
+        let qr = args.qr.then_some((global.ascii, crate::qr::Role::Leader));
+        waiting.0.suspend(|| show_code(code, qr, &other_side));
         pending
     };
     waiting.0.suspend(|| show_welcome(pending.welcome()));

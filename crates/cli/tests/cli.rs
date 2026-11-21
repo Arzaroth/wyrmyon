@@ -89,6 +89,26 @@ async fn the_hint_names_the_code_and_qr_draws_it() {
     );
     drop(receiver);
 
+    let mut scanned = wyrm(&server.url())
+        .args(["receive", "--new", "--qr", "--ascii"])
+        .spawn()
+        .unwrap();
+    let (allocated, hint) = read_hint(scanned.stderr.take().unwrap()).await;
+    assert!(
+        hint.contains(&format!("wyrm send --code {allocated} FILE")),
+        "{hint}"
+    );
+    assert!(hint.contains("##############"), "{hint}");
+    drop(scanned);
+
+    let refused = wyrm(&server.url())
+        .args(["receive", "--qr"])
+        .output()
+        .await
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--new"));
+
     let receiver = wyrm(&server.url())
         .args(["receive", &code])
         .spawn()
