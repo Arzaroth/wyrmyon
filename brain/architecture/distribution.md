@@ -16,7 +16,8 @@ runs `scripts/coverage.sh --check`: line coverage under 98% fails the build
 ([testing.md](testing.md)). Coverage is measured on Linux, so code behind
 `#[cfg(not(unix))]` is built and tested by the Windows job but never counted.
 An `android` job analyzes and tests the Flutter app and builds its APK
-([mobile.md](mobile.md)).
+([mobile.md](mobile.md)). The app's release APKs, signed with its release key,
+come from `mise run apk-release`, which refuses to build without that key.
 
 The repository lives on Forgejo (`git.arzaroth.com/Arzaroth/wyrmyon`) and is
 push-mirrored to GitHub (`github.com/Arzaroth/wyrmyon`). CI and releases run on

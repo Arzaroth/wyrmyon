@@ -17,7 +17,12 @@ in `crates/mobile/rust-toolchain.toml` (the Android Rust targets).
 ```sh
 flutter test
 flutter build apk
+mise run apk-release   # the signed APKs to publish, one per ABI
 ```
+
+Release signing reads `android/key.properties` (copy `~/.keys/wyrmyon.properties`)
+or the `WYRMYON_ANDROID_*` variables; without them a release build is
+debug-signed, and `apk-release` refuses.
 
 After changing the Rust API in `crates/mobile/src/api`, regenerate the bridge
 with `flutter_rust_bridge_codegen generate` (version 2.13.0, as pinned in

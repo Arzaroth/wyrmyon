@@ -7,6 +7,14 @@
 - `wyrm receive --new --qr` shows the allocated code as a QR code with
   `role=leader`, the `wormhole-transfer:` URI that asks the phone scanning it
   to send, so a phone sends to a computer by scanning its screen.
+- The Android app (`apps/mobile`, Android 10 and newer): files, several files,
+  folders and text between a phone and a computer, both ways. Send from the
+  share menu or the pickers, then scan the computer's QR code, type its code
+  or show one; receive by scanning or typing, with the offer to accept.
+  Received files land in `Download/wyrmyon` and are listed on Home. It talks
+  to `wyrm` over iroh and to any other magic-wormhole client over classic
+  transit, keeps going with the screen off, and its servers can be changed in
+  Settings. `mise run apk-release` builds its signed APKs.
 
 ## [0.8.0] - 2026-11-16
 
