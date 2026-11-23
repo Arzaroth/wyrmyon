@@ -137,6 +137,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_are_checked_before_they_are_kept() {
+        assert!(check_settings(default_settings()).is_ok());
+        let mailbox = Settings {
+            mailbox: "https://example.com".into(),
+            ..default_settings()
+        };
+        assert!(
+            check_settings(mailbox)
+                .unwrap_err()
+                .to_string()
+                .contains("mailbox")
+        );
+        let relays = Settings {
+            iroh_relays: "ftp://nope".into(),
+            ..default_settings()
+        };
+        assert!(
+            check_settings(relays)
+                .unwrap_err()
+                .to_string()
+                .contains("iroh relays")
+        );
+    }
+
+    #[test]
     fn a_typed_code_completes_from_the_word_list() {
         assert!(completions("7-guitar".into()).contains(&"7-guitarist-".to_owned()));
         assert!(completions("7-guitarist-reve".into()).contains(&"7-guitarist-revenge".to_owned()));
