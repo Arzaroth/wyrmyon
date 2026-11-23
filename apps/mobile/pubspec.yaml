@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   flutter_rust_bridge: 2.13.0
   flutter_rust_bridge_hooks: 2.13.0
+  mobile_scanner: 7.5.0
+  qr_flutter: 4.1.0
 
 dev_dependencies:
   flutter_test:
