@@ -18,6 +18,16 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: 0.14.4
 
 flutter:
   uses-material-design: true
+
+# The launcher icon is the project's dragon (assets/logo.png at the repository root),
+# scaled without smoothing for its pixel art. Regenerate: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: ../../assets/logo.png
+  adaptive_icon_background: "#151B32"
+  adaptive_icon_foreground: assets/icon/foreground.png
