@@ -6,6 +6,8 @@ import 'package:wyrmyon/platform.dart';
 
 import 'fakes.dart';
 
+const notes = PickedFile(uri: 'content://notes', name: 'notes.txt', size: 2000);
+
 const photo = PickedFile(
   uri: 'content://photo',
   name: 'photo.jpg',
@@ -102,6 +104,60 @@ void main() {
     await tester.tap(find.text('Show a code'));
     await settle(tester);
     expect(engine.runs.single, (kind: 'text', code: null, what: 'hi'));
+  });
+
+  testWidgets('several files go as one bundle', (tester) async {
+    final (engine, _) = await launch(
+      tester,
+      shared: const SharedFiles([photo, notes]),
+    );
+    expect(find.text('2 items · 4.1 MB'), findsOneWidget);
+    await tester.tap(find.text('Show a code'));
+    await settle(tester);
+    expect(engine.runs.single, (kind: 'bundle', code: null, what: '2 items'));
+    expect(engine.sentFiles, [
+      (path: 'photo.jpg', size: 4100000),
+      (path: 'notes.txt', size: 2000),
+    ]);
+  });
+
+  testWidgets('a picked folder goes whole, with its empty folders', (
+    tester,
+  ) async {
+    final (engine, platform) = await launch(
+      tester,
+      shared: const SharedText('placeholder'),
+    );
+    platform.folder = const PickedFolder(
+      name: 'album',
+      files: [
+        PickedFile(uri: 'content://a', name: 'a.jpg', size: 10),
+        PickedFile(uri: 'content://b', name: 'day 2/b.jpg', size: 20),
+      ],
+      dirs: ['empty'],
+    );
+    await tester.tap(find.byTooltip('Remove'));
+    await tester.pump();
+    await tester.tap(find.text('Folder'));
+    await settle(tester);
+    expect(find.text('album/'), findsOneWidget);
+    await tester.tap(find.text('Show a code'));
+    await settle(tester);
+    expect(engine.runs.single, (kind: 'folder', code: null, what: 'album'));
+    expect(engine.sentFiles.map((f) => f.path), ['a.jpg', 'day 2/b.jpg']);
+    expect(engine.sentDirs, ['empty']);
+    engine.running.tell(Stage.done);
+    await settle(tester);
+    expect(find.text('2 files · 30 B'), findsOneWidget);
+  });
+
+  testWidgets('two items with one name cannot be sent', (tester) async {
+    await launch(tester, shared: const SharedFiles([photo, photo]));
+    expect(find.text('Two items are named photo.jpg'), findsOneWidget);
+    final scan = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Scan code to send'),
+    );
+    expect(scan.onPressed, isNull);
   });
 
   testWidgets('a leader link sends the picked file to its code', (
@@ -272,5 +328,69 @@ void main() {
     await settle(tester);
     expect(find.text('Sending'), findsOneWidget);
     expect(platform.calls.first, 'started Sending photo.jpg');
+  });
+
+  testWidgets('a received folder lands in its own folder', (tester) async {
+    final (engine, platform) = await launch(
+      tester,
+      shared: const SharedLink('wormhole-transfer:7-guitarist-revenge'),
+    );
+    engine.running
+      ..offered = OfferInfo(
+        kind: OfferKind.folder,
+        name: 'album',
+        size: BigInt.from(3000),
+        count: BigInt.from(2),
+        text: '',
+      )
+      ..tell(Stage.offer);
+    await tester.pump();
+    expect(find.text('album/'), findsOneWidget);
+    expect(find.text('Saved to Download/wyrmyon/album'), findsOneWidget);
+    await tester.tap(find.text('Accept'));
+    await settle(tester);
+    final open = engine.running.openMember!;
+    expect(await open('a.jpg'), 7);
+    expect(await open('day 2/b.jpg'), 8);
+    engine.running.tell(Stage.done);
+    await settle(tester);
+    expect(find.text('Received'), findsOneWidget);
+    expect(find.text('Open'), findsNothing);
+    expect(
+      platform.calls,
+      containsAll([
+        'create album/a.jpg',
+        'create album/day 2/b.jpg',
+        'finish content://downloads/1 kept=true',
+        'finish content://downloads/2 kept=true',
+      ]),
+    );
+  });
+
+  testWidgets('a failed bundle removes what it had written', (tester) async {
+    final (engine, platform) = await launch(
+      tester,
+      shared: const SharedLink('wormhole-transfer:7-guitarist-revenge'),
+    );
+    engine.running
+      ..offered = OfferInfo(
+        kind: OfferKind.files,
+        name: 'x',
+        size: BigInt.from(3000),
+        count: BigInt.from(2),
+        text: '',
+      )
+      ..tell(Stage.offer);
+    await tester.pump();
+    expect(find.text('2 files'), findsOneWidget);
+    await tester.tap(find.text('Accept'));
+    await settle(tester);
+    await engine.running.openMember!('a.jpg');
+    engine.running.tell(Stage.failed, detail: 'the sender went away');
+    await settle(tester);
+    expect(
+      platform.calls,
+      containsAll(['create a.jpg', 'finish content://downloads/1 kept=false']),
+    );
   });
 }
