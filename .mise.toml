@@ -2,3 +2,26 @@
 rust = { version = "1.99.0", components = "clippy,rustfmt,llvm-tools-preview" }
 flutter = "3.44.6"
 java = "temurin-21.0.13+9.0.LTS"
+
+[tasks.apk-release]
+description = "The Android app's release APKs, one per ABI, signed with the release key"
+dir = "{{ config_root }}/apps/mobile"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+if [ ! -f android/key.properties ] && [ -z "${WYRMYON_ANDROID_KEYSTORE:-}" ]; then
+  echo "apk-release: no release keystore (apps/mobile/android/key.properties or WYRMYON_ANDROID_KEYSTORE)." >&2
+  echo "   A debug-signed build is signed with a key everybody has, and nothing can upgrade from it." >&2
+  exit 1
+fi
+flutter build apk --release --split-per-abi
+sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+apksigner=$(ls -d "$sdk"/build-tools/*/apksigner | sort -V | tail -1)
+for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
+  if "$apksigner" verify --print-certs "$apk" | grep -q "CN=Android Debug"; then
+    echo "apk-release: $apk is signed with the debug key" >&2
+    exit 1
+  fi
+  ls -lh "$apk"
+done
+'''
