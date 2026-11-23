@@ -157,6 +157,7 @@ class _Received extends StatelessWidget {
       leading: const Icon(Icons.insert_drive_file_outlined),
       title: Text(download.name, overflow: TextOverflow.ellipsis),
       subtitle: Text(
+        '${download.folder.isEmpty ? '' : '${download.folder}/ · '}'
         '${formatAge(download.modified, DateTime.now())} · '
         '${formatBytes(download.size)}',
       ),

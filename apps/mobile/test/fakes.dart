@@ -9,6 +9,7 @@ class FakeRunning implements Running {
   bool cancelled = false;
   bool refused = false;
   ({int fd, String cacheDir})? accepted;
+  Future<int> Function(String path)? openMember;
 
   @override
   Stream<Update> get updates => _updates.stream;
@@ -36,11 +37,22 @@ class FakeRunning implements Running {
   }
 
   @override
+  Future<void> acceptFiles(
+    Future<int> Function(String path) open,
+    String cacheDir,
+  ) async {
+    openMember = open;
+    accepted = (fd: -1, cacheDir: cacheDir);
+  }
+
+  @override
   Future<void> refuse() async => refused = true;
 }
 
 class FakeEngine implements Engine {
   final runs = <({String kind, String? code, String what})>[];
+  List<TreeFile> sentFiles = const [];
+  List<String> sentDirs = const [];
   final running = FakeRunning();
 
   @override
@@ -81,6 +93,22 @@ class FakeEngine implements Engine {
   }
 
   @override
+  Running sendFiles({
+    String? code,
+    required String name,
+    required bool bundle,
+    required List<TreeFile> files,
+    required List<String> dirs,
+    required Future<int> Function(int index) open,
+    required String cacheDir,
+  }) {
+    runs.add((kind: bundle ? 'bundle' : 'folder', code: code, what: name));
+    sentFiles = files;
+    sentDirs = dirs;
+    return running;
+  }
+
+  @override
   Running receive({String? code}) {
     runs.add((kind: 'receive', code: code, what: ''));
     return running;
@@ -92,6 +120,8 @@ class FakePlatform implements Platform {
   final sharing = StreamController<Shared>.broadcast();
   Shared? initial;
   List<PickedFile> picked = const [];
+  PickedFolder? folder;
+  var created = 0;
   List<Download> downloads = const [];
 
   @override
@@ -104,15 +134,19 @@ class FakePlatform implements Platform {
   Future<List<PickedFile>> pickFiles() async => picked;
 
   @override
+  Future<PickedFolder?> pickFolder() async => folder;
+
+  @override
   Future<int> openRead(String uri) async => 3;
 
   @override
   Future<String> cacheDir() async => '/cache';
 
   @override
-  Future<({String uri, int fd})> createDownload(String name) async {
-    calls.add('create $name');
-    return (uri: 'content://downloads/1', fd: 7);
+  Future<({String uri, int fd})> createDownload(String path) async {
+    calls.add('create $path');
+    created++;
+    return (uri: 'content://downloads/$created', fd: 6 + created);
   }
 
   @override

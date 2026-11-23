@@ -16,18 +16,34 @@ class PickedFile {
   );
 }
 
+class PickedFolder {
+  const PickedFolder({
+    required this.name,
+    required this.files,
+    this.dirs = const [],
+  });
+
+  final String name;
+  final List<PickedFile> files;
+  final List<String> dirs;
+
+  int get size => files.fold<int>(0, (sum, file) => sum + file.size);
+}
+
 class Download {
   const Download({
     required this.uri,
     required this.name,
     required this.size,
     required this.modified,
+    this.folder = '',
   });
 
   final String uri;
   final String name;
   final int size;
   final DateTime modified;
+  final String folder;
 }
 
 sealed class Shared {
@@ -58,9 +74,10 @@ abstract class Platform {
   Future<Shared?> takeShared();
   Stream<Shared> get shared;
   Future<List<PickedFile>> pickFiles();
+  Future<PickedFolder?> pickFolder();
   Future<int> openRead(String uri);
   Future<String> cacheDir();
-  Future<({String uri, int fd})> createDownload(String name);
+  Future<({String uri, int fd})> createDownload(String path);
   Future<void> finishDownload(String uri, {required bool kept});
   Future<List<Download>> recentDownloads(int limit);
   Future<bool> openDownload(String uri);
@@ -116,6 +133,24 @@ class AndroidPlatform implements Platform {
   }
 
   @override
+  Future<PickedFolder?> pickFolder() async {
+    final picked = await _channel.invokeMethod<Map<Object?, Object?>>(
+      'pickFolder',
+    );
+    if (picked == null) return null;
+    return PickedFolder(
+      name: picked['name']! as String,
+      files: [
+        for (final file in picked['files']! as List<Object?>)
+          PickedFile.of(file! as Map<Object?, Object?>),
+      ],
+      dirs: [
+        for (final dir in picked['dirs']! as List<Object?>) dir! as String,
+      ],
+    );
+  }
+
+  @override
   Future<int> openRead(String uri) async =>
       await _channel.invokeMethod<int>('openRead', {'uri': uri}) ?? -1;
 
@@ -124,10 +159,10 @@ class AndroidPlatform implements Platform {
       (await _channel.invokeMethod<String>('cacheDir'))!;
 
   @override
-  Future<({String uri, int fd})> createDownload(String name) async {
+  Future<({String uri, int fd})> createDownload(String path) async {
     final created = (await _channel.invokeMethod<Map<Object?, Object?>>(
       'createDownload',
-      {'name': name},
+      {'path': path},
     ))!;
     return (uri: created['uri']! as String, fd: created['fd']! as int);
   }
@@ -152,6 +187,7 @@ class AndroidPlatform implements Platform {
             modified: DateTime.fromMillisecondsSinceEpoch(
               (map['modified']! as num).toInt(),
             ),
+            folder: map['folder'] as String? ?? '',
           ),
     ];
   }

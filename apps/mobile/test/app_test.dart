@@ -104,15 +104,6 @@ void main() {
     expect(engine.runs.single, (kind: 'text', code: null, what: 'hi'));
   });
 
-  testWidgets('several files wait for the next version', (tester) async {
-    await launch(tester, shared: const SharedFiles([photo, photo]));
-    expect(find.text('One file or one text at a time for now'), findsOneWidget);
-    final scan = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Scan code to send'),
-    );
-    expect(scan.onPressed, isNull);
-  });
-
   testWidgets('a leader link sends the picked file to its code', (
     tester,
   ) async {

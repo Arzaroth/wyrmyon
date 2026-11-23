@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -46,9 +47,10 @@ class MainActivity : FlutterActivity() {
                     pendingIntent = null
                 }
                 "pickFiles" -> pickFiles(result)
+                "pickFolder" -> pickFolder(result)
                 "openRead" -> result.success(openRead(Uri.parse(call.argument<String>("uri"))))
                 "cacheDir" -> result.success(cacheDir.absolutePath)
-                "createDownload" -> result.success(Downloads.create(this, call.argument<String>("name")!!))
+                "createDownload" -> result.success(Downloads.create(this, call.argument<String>("path")!!))
                 "finishDownload" -> {
                     Downloads.finish(this, Uri.parse(call.argument<String>("uri")), call.argument<Boolean>("kept")!!)
                     result.success(null)
@@ -83,7 +85,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun pickFiles(result: MethodChannel.Result) {
-        picking?.success(emptyList<Any>())
+        picking?.success(null)
         picking = result
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
@@ -92,9 +94,83 @@ class MainActivity : FlutterActivity() {
         startActivityForResult(intent, PICK_FILES)
     }
 
+    private fun pickFolder(result: MethodChannel.Result) {
+        picking?.success(null)
+        picking = result
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER)
+    }
+
+    private fun folder(tree: Uri): Map<String, Any> {
+        val root = DocumentsContract.getTreeDocumentId(tree)
+        val files = mutableListOf<Map<String, Any>>()
+        val dirs = mutableListOf<String>()
+        var name = "folder"
+        contentResolver.query(
+            DocumentsContract.buildDocumentUriUsingTree(tree, root),
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null,
+        )?.use { if (it.moveToFirst()) name = it.getString(0) ?: name }
+        walk(tree, root, "", files, dirs)
+        return mapOf("name" to name, "files" to files, "dirs" to dirs)
+    }
+
+    private fun walk(
+        tree: Uri,
+        parent: String,
+        prefix: String,
+        files: MutableList<Map<String, Any>>,
+        dirs: MutableList<String>,
+    ) {
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+        )
+        var empty = true
+        contentResolver.query(
+            DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent), columns, null, null, null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                empty = false
+                val id = cursor.getString(0)
+                val path = prefix + (cursor.getString(1) ?: id)
+                if (cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    walk(tree, id, "$path/", files, dirs)
+                } else {
+                    files.add(
+                        mapOf(
+                            "uri" to DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(),
+                            "name" to path,
+                            "size" to if (cursor.isNull(3)) -1L else cursor.getLong(3),
+                        ),
+                    )
+                }
+            }
+        }
+        if (empty && prefix.isNotEmpty()) dirs.add(prefix.trimEnd('/'))
+    }
+
     @Deprecated("FlutterActivity still delivers results here")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_FOLDER) {
+            val result = picking ?: return
+            picking = null
+            val tree = data?.data
+            if (resultCode != RESULT_OK || tree == null) {
+                result.success(null)
+                return
+            }
+            Thread {
+                try {
+                    val found = folder(tree)
+                    runOnUiThread { result.success(found) }
+                } catch (e: Exception) {
+                    runOnUiThread { result.error("platform", e.message ?: e.javaClass.simpleName, null) }
+                }
+            }.start()
+            return
+        }
         if (requestCode != PICK_FILES) return
         val result = picking ?: return
         picking = null
@@ -217,5 +293,6 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val PICK_FILES = 1
         const val NOTIFICATIONS = 2
+        const val PICK_FOLDER = 3
     }
 }

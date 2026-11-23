@@ -10,8 +10,14 @@ abstract class Running {
   void cancel();
   OfferInfo? offer();
   Future<void> accept(int fd, String cacheDir);
+  Future<void> acceptFiles(
+    Future<int> Function(String path) open,
+    String cacheDir,
+  );
   Future<void> refuse();
 }
+
+typedef TreeFile = ({String path, int size});
 
 abstract class Engine {
   Scanned? scan(String text);
@@ -23,6 +29,15 @@ abstract class Engine {
     required Future<int> Function() open,
   });
   Running sendText({String? code, required String text});
+  Running sendFiles({
+    String? code,
+    required String name,
+    required bool bundle,
+    required List<TreeFile> files,
+    required List<String> dirs,
+    required Future<int> Function(int index) open,
+    required String cacheDir,
+  });
   Running receive({String? code});
 }
 
@@ -79,6 +94,36 @@ class RustEngine implements Engine {
   }
 
   @override
+  Running sendFiles({
+    String? code,
+    required String name,
+    required bool bundle,
+    required List<TreeFile> files,
+    required List<String> dirs,
+    required Future<int> Function(int index) open,
+    required String cacheDir,
+  }) {
+    final transfer = bridge.Transfer();
+    return _Running(
+      transfer,
+      bridge.sendFiles(
+        settings: _settings,
+        code: code,
+        name: name,
+        bundle: bundle,
+        files: [
+          for (final file in files)
+            bridge.Picked(path: file.path, size: BigInt.from(file.size)),
+        ],
+        dirs: dirs,
+        open: open,
+        cacheDir: cacheDir,
+        transfer: transfer,
+      ),
+    );
+  }
+
+  @override
   Running receive({String? code}) {
     final transfer = bridge.Transfer();
     return _Running(
@@ -105,6 +150,12 @@ class _Running implements Running {
   @override
   Future<void> accept(int fd, String cacheDir) =>
       bridge.accept(transfer: _transfer, fd: fd, cacheDir: cacheDir);
+
+  @override
+  Future<void> acceptFiles(
+    Future<int> Function(String path) open,
+    String cacheDir,
+  ) => bridge.acceptFiles(transfer: _transfer, open: open, cacheDir: cacheDir);
 
   @override
   Future<void> refuse() => bridge.refuse(transfer: _transfer);

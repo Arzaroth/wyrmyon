@@ -158,15 +158,28 @@ class _Body extends StatelessWidget {
   List<Widget> _offered(BuildContext context) {
     final offer = transfer.offer!;
     final text = Theme.of(context).textTheme;
+    final folder = offer.kind == OfferKind.folder;
+    final tree = folder || offer.kind == OfferKind.files;
     return [
       ListTile(
-        leading: const Icon(Icons.insert_drive_file_outlined, size: 40),
-        title: Text(offer.name, style: text.titleLarge),
-        subtitle: Text(formatBytes(offer.size.toInt())),
+        leading: Icon(
+          tree ? Icons.folder_copy_outlined : Icons.insert_drive_file_outlined,
+          size: 40,
+        ),
+        title: Text(TransferController.describe(offer), style: text.titleLarge),
+        subtitle: Text(
+          tree
+              ? '${offer.count} files · ${formatBytes(offer.size.toInt())}'
+              : formatBytes(offer.size.toInt()),
+        ),
       ),
-      const ListTile(
-        leading: Icon(Icons.folder_outlined),
-        title: Text('Saved to Download/wyrmyon'),
+      ListTile(
+        leading: const Icon(Icons.folder_outlined),
+        title: Text(
+          folder
+              ? 'Saved to Download/wyrmyon/${offer.name}'
+              : 'Saved to Download/wyrmyon',
+        ),
       ),
       const SizedBox(height: 24),
       FilledButton(onPressed: transfer.accept, child: const Text('Accept')),
@@ -191,8 +204,17 @@ class _Body extends StatelessWidget {
     return [
       if (transfer.job case SendFile(:final file))
         Text(file.name, style: text.titleLarge),
+      if (transfer.job case SendTree(
+        :final entries,
+        :final name,
+        :final bundle,
+      ))
+        Text(
+          bundle ? '${entries.length} files' : '$name/',
+          style: text.titleLarge,
+        ),
       if (transfer.offer case final offer?)
-        Text(offer.name, style: text.titleLarge),
+        Text(TransferController.describe(offer), style: text.titleLarge),
       const SizedBox(height: 24),
       Text(
         hashing
@@ -248,6 +270,20 @@ class _Body extends StatelessWidget {
       ],
       if (transfer.job case SendFile(:final file))
         Center(child: Text('${file.name} · ${formatBytes(file.size)}')),
+      if (transfer.job case final SendTree tree)
+        Center(
+          child: Text(
+            '${tree.entries.length} files · ${formatBytes(tree.size)}',
+          ),
+        ),
+      if (offer != null &&
+          (offer.kind == OfferKind.folder || offer.kind == OfferKind.files))
+        Center(
+          child: Text(
+            '${transfer.saved} files · ${formatBytes(offer.size.toInt())} in '
+            '${offer.kind == OfferKind.folder ? 'Download/wyrmyon/${offer.name}' : 'Download/wyrmyon'}',
+          ),
+        ),
       if (offer != null && offer.kind == OfferKind.file)
         Center(
           child: Text(

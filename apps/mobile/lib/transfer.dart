@@ -20,6 +20,24 @@ class SendText extends Job {
   final String text;
 }
 
+typedef Entry = ({String path, PickedFile file});
+
+class SendTree extends Job {
+  const SendTree({
+    required this.name,
+    required this.bundle,
+    required this.entries,
+    this.dirs = const [],
+  });
+
+  final String name;
+  final bool bundle;
+  final List<Entry> entries;
+  final List<String> dirs;
+
+  int get size => entries.fold(0, (sum, entry) => sum + entry.file.size);
+}
+
 class Receive extends Job {
   const Receive();
 }
@@ -52,6 +70,7 @@ class TransferController extends ChangeNotifier {
   Running? _running;
   StreamSubscription<Update>? _updates;
   ({String uri, int fd})? _download;
+  final _downloads = <String>[];
   DateTime? _told;
   bool _disposed = false;
 
@@ -63,8 +82,19 @@ class TransferController extends ChangeNotifier {
   String get title => switch (job) {
     SendFile(:final file) => 'Sending ${file.name}',
     SendText() => 'Sending text',
-    Receive() => offer == null ? 'Receiving' : 'Receiving ${offer!.name}',
+    SendTree(:final bundle, :final name, :final entries) =>
+      bundle ? 'Sending ${entries.length} files' : 'Sending $name',
+    Receive() => offer == null ? 'Receiving' : 'Receiving ${describe(offer!)}',
   };
+
+  static String describe(OfferInfo offer) => switch (offer.kind) {
+    OfferKind.files => '${offer.count} files',
+    OfferKind.folder => '${offer.name}/',
+    _ => offer.name,
+  };
+
+  bool get _tree =>
+      offer?.kind == OfferKind.folder || offer?.kind == OfferKind.files;
 
   void start() {
     final running = switch (job) {
@@ -75,8 +105,36 @@ class TransferController extends ChangeNotifier {
         open: () => platform.openRead(file.uri),
       ),
       SendText(:final text) => engine.sendText(code: code, text: text),
+      SendTree() => null,
       Receive() => engine.receive(code: code),
     };
+    if (running == null) {
+      unawaited(_startTree(job as SendTree));
+      return;
+    }
+    _listen(running);
+  }
+
+  Future<void> _startTree(SendTree tree) async {
+    final cacheDir = await platform.cacheDir();
+    if (_disposed || ended) return;
+    _listen(
+      engine.sendFiles(
+        code: code,
+        name: tree.name,
+        bundle: tree.bundle,
+        files: [
+          for (final entry in tree.entries)
+            (path: entry.path, size: entry.file.size),
+        ],
+        dirs: tree.dirs,
+        open: (index) => platform.openRead(tree.entries[index].file.uri),
+        cacheDir: cacheDir,
+      ),
+    );
+  }
+
+  void _listen(Running running) {
     _running = running;
     _updates = running.updates.listen(_update);
     unawaited(platform.transferStarted(title));
@@ -110,7 +168,7 @@ class TransferController extends ChangeNotifier {
           phase = Phase.offered;
         }
       case Stage.done:
-        if (job is! Receive || _download != null) {
+        if (job is! Receive || _download != null || _accepted) {
           _end(Phase.done, _finished());
         }
       case Stage.failed:
@@ -123,7 +181,8 @@ class TransferController extends ChangeNotifier {
   String _finished() => switch (job) {
     SendFile(:final file) => 'Sent ${file.name}',
     SendText() => 'Text sent',
-    Receive() => 'Saved ${offer?.name ?? ''} to Download/wyrmyon',
+    SendTree() => title.replaceFirst('Sending', 'Sent'),
+    Receive() => 'Saved ${describe(offer!)} to Download/wyrmyon',
   };
 
   void _progress() {
@@ -150,14 +209,23 @@ class TransferController extends ChangeNotifier {
         platform.finishDownload(download.uri, kept: ended == Phase.done),
       );
     }
+    for (final uri in _downloads) {
+      unawaited(platform.finishDownload(uri, kept: ended == Phase.done));
+    }
     unawaited(platform.transferEnded(title, told));
     unawaited(_updates?.cancel());
   }
 
+  bool _accepted = false;
+
+  int get saved => _downloads.length;
+
   Future<void> accept() async {
     if (phase != Phase.offered) return;
     phase = Phase.running;
+    _accepted = true;
     _changed();
+    if (_tree) return _acceptTree();
     try {
       final name = offer!.name;
       final cache = await platform.cacheDir();
@@ -168,6 +236,28 @@ class TransferController extends ChangeNotifier {
       if (ended) return;
       error = '$e';
       if (_download == null) await _running!.refuse();
+      _end(Phase.failed, error);
+      _changed();
+    }
+  }
+
+  Future<void> _acceptTree() async {
+    final base = offer!.kind == OfferKind.folder ? '${offer!.name}/' : '';
+    try {
+      final cache = await platform.cacheDir();
+      await _running!.acceptFiles((path) async {
+        if (ended) return -1;
+        final download = await platform.createDownload('$base$path');
+        if (ended) {
+          await platform.finishDownload(download.uri, kept: false);
+          return -1;
+        }
+        _downloads.add(download.uri);
+        return download.fd;
+      }, '$cache/received');
+    } on Object catch (e) {
+      if (ended) return;
+      error = '$e';
       _end(Phase.failed, error);
       _changed();
     }

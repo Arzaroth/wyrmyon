@@ -12,10 +12,13 @@ object Downloads {
     private val folder = Environment.DIRECTORY_DOWNLOADS + "/wyrmyon/"
     private val collection: Uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
 
-    fun create(context: Context, name: String): Map<String, Any> {
+    fun create(context: Context, path: String): Map<String, Any> {
+        val parts = path.split('/').filter { it.isNotEmpty() && it != "." && it != ".." }
+        require(parts.isNotEmpty()) { "the received name is empty" }
+        val name = parts.last()
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.RELATIVE_PATH, folder)
+            put(MediaStore.Downloads.RELATIVE_PATH, folder + parts.dropLast(1).joinToString("") { "$it/" })
             put(MediaStore.Downloads.IS_PENDING, 1)
             mimeType(name)?.let { put(MediaStore.Downloads.MIME_TYPE, it) }
         }
@@ -45,13 +48,14 @@ object Downloads {
             MediaStore.Downloads.DISPLAY_NAME,
             MediaStore.Downloads.SIZE,
             MediaStore.Downloads.DATE_MODIFIED,
+            MediaStore.Downloads.RELATIVE_PATH,
         )
         val found = mutableListOf<Map<String, Any>>()
         context.contentResolver.query(
             collection,
             projection,
-            "${MediaStore.Downloads.RELATIVE_PATH} = ?",
-            arrayOf(folder),
+            "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?",
+            arrayOf("$folder%"),
             "${MediaStore.Downloads.DATE_MODIFIED} DESC",
         )?.use { cursor ->
             while (found.size < limit && cursor.moveToNext()) {
@@ -61,6 +65,7 @@ object Downloads {
                         "name" to (cursor.getString(1) ?: ""),
                         "size" to cursor.getLong(2),
                         "modified" to cursor.getLong(3) * 1000,
+                        "folder" to (cursor.getString(4) ?: folder).removePrefix(folder).trimEnd('/'),
                     ),
                 )
             }
