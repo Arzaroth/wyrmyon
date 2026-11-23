@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="transfer_running">Transfer running</string>
+    <string name="channel_running">Transfers in progress</string>
+    <string name="channel_ended">Finished transfers</string>
+</resources>

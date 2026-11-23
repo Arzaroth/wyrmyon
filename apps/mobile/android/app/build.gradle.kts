@@ -15,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.arzaroth.wyrmyon"
-        minSdk = flutter.minSdkVersion
+        minSdk = 29
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
