@@ -7,6 +7,7 @@ use wyrmyon_transfer::protocol::{self, Answer, AppMessage, Offer};
 use wyrmyon_transfer::{Connection, Events, Sink, await_offer, receive_into, refuse};
 use wyrmyon_wormhole::{Mood, Wormhole};
 
+use crate::Cancel;
 use crate::api::types::{OfferInfo, OfferKind, Settings};
 use crate::report::{Report, Reporter};
 use crate::session;
@@ -15,6 +16,7 @@ pub struct Incoming {
     info: OfferInfo,
     waiting: Option<Waiting>,
     report: Report,
+    cancel: Cancel,
 }
 
 struct Waiting {
@@ -27,10 +29,12 @@ pub async fn receive(
     settings: &Settings,
     code: Option<String>,
     report: Report,
+    cancel: &Cancel,
 ) -> anyhow::Result<Incoming> {
     let options = settings.options()?;
-    let mut wormhole = session::pair(&options, code, &report).await?;
-    let (offer, connection) = match await_offer(&mut wormhole, &options).await {
+    let mut wormhole = session::until(cancel, session::pair(&options, code, &report)).await?;
+    let awaited = Box::pin(session::until(cancel, await_offer(&mut wormhole, &options))).await;
+    let (offer, connection) = match awaited {
         Ok(awaited) => awaited,
         Err(e) => return session::finish(wormhole, Err(e), &report).await,
     };
@@ -48,6 +52,7 @@ pub async fn receive(
                 size: file.filesize,
             }),
             report,
+            cancel: cancel.clone(),
         }),
         (offer, connection) => {
             if let Some(connection) = connection {
@@ -82,6 +87,7 @@ pub async fn receive(
                 },
                 waiting: None,
                 report,
+                cancel: cancel.clone(),
             })
         }
     }
@@ -105,7 +111,8 @@ impl Incoming {
         else {
             return Ok(());
         };
-        let events: Arc<dyn Events> = Arc::new(Reporter::new(Arc::clone(&self.report)));
+        let events: Arc<dyn Events> =
+            Arc::new(Reporter::new(Arc::clone(&self.report), self.cancel.clone()));
         let result = async {
             let sink = Sink::Writer(&mut *writer);
             let received =

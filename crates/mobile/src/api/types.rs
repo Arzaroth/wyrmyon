@@ -40,6 +40,13 @@ impl Settings {
     }
 }
 
+#[frb(sync)]
+pub fn completions(typed: String) -> Vec<String> {
+    wyrmyon_wormhole::code::completions(typed.trim(), CODE_WORDS)
+}
+
+pub(crate) const CODE_WORDS: usize = 2;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Send,
@@ -85,7 +92,9 @@ pub enum Stage {
     Connected,
     Moving,
     AwaitingAck,
+    Offer,
     Done,
+    Failed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -2,8 +2,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use wyrmyon_transfer::{Events, Pipe};
+use wyrmyon_transfer::{Events, Pipe, Settled};
 
+use crate::Cancel;
 use crate::api::types::{Stage, Update};
 
 pub type Report = Arc<dyn Fn(Update) + Send + Sync>;
@@ -19,16 +20,24 @@ pub(crate) fn tell(report: &Report, stage: Stage, detail: String) {
     });
 }
 
+pub fn ended(report: &Report, result: anyhow::Result<()>) {
+    if let Err(e) = result {
+        tell(report, Stage::Failed, format!("{e:#}"));
+    }
+}
+
 pub(crate) struct Reporter {
     report: Report,
+    cancel: Cancel,
     total: AtomicU64,
     last: Mutex<Option<Instant>>,
 }
 
 impl Reporter {
-    pub(crate) fn new(report: Report) -> Self {
+    pub(crate) fn new(report: Report, cancel: Cancel) -> Self {
         Self {
             report,
+            cancel,
             total: AtomicU64::new(0),
             last: Mutex::new(None),
         }
@@ -81,6 +90,10 @@ impl Events for Reporter {
         self.progress(Stage::Moving, bytes);
     }
 
+    fn cancelled(&self) -> Settled<'_> {
+        Box::pin(self.cancel.cancelled())
+    }
+
     fn awaiting_ack(&self) {
         let total = self.total.load(Ordering::Relaxed);
         (self.report)(Update {
@@ -100,7 +113,10 @@ mod tests {
     fn progress_is_told_at_most_every_tenth_of_a_second_and_always_at_the_end() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&seen);
-        let reporter = Reporter::new(Arc::new(move |update| kept.lock().unwrap().push(update)));
+        let reporter = Reporter::new(
+            Arc::new(move |update| kept.lock().unwrap().push(update)),
+            Cancel::new(),
+        );
         reporter.hashing(100);
         for bytes in 1..=100 {
             reporter.hashed(bytes);

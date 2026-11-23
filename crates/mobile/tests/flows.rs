@@ -4,7 +4,7 @@ use std::time::Duration;
 use serde_json::{Map, json};
 use tokio::sync::mpsc;
 use wyrmyon_mobile::api::types::{OfferKind, Settings, Stage, Update};
-use wyrmyon_mobile::{Outgoing, Report, receive, send};
+use wyrmyon_mobile::{Cancel, Outgoing, Report, receive, send};
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transfer::protocol::{self, AppMessage, DirectoryOffer, FileOffer, Offer};
 use wyrmyon_transfer::{Events, Opened, Options, Quiet, Reader, Source, Staged, send_data};
@@ -127,12 +127,13 @@ async fn the_phone_sends_a_file_to_the_code_it_scanned() {
     let (report, mut computer) = watching();
     let receiving = {
         let settings = settings.clone();
-        tokio::spawn(async move { receive(&settings, None, report).await })
+        tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await })
     };
     let code = computer.code().await;
     let (report, phone) = watching();
-    let sending =
-        tokio::spawn(async move { send(&settings, Some(code), file(300_000), report).await });
+    let sending = tokio::spawn(async move {
+        send(&settings, Some(code), file(300_000), report, &Cancel::new()).await
+    });
 
     let incoming = within(receiving).await.unwrap().unwrap();
     let info = incoming.info();
@@ -195,9 +196,14 @@ async fn a_legacy_sender_reaches_the_phone_over_classic_transit() {
 
     let cache = tempfile::tempdir().unwrap();
     let (report, phone) = watching();
-    let incoming = within(Box::pin(receive(&settings(&server), Some(code), report)))
-        .await
-        .unwrap();
+    let incoming = within(Box::pin(receive(
+        &settings(&server),
+        Some(code),
+        report,
+        &Cancel::new(),
+    )))
+    .await
+    .unwrap();
     assert_eq!(incoming.info().name, "notes.txt");
     let mut written = Vec::new();
     within(incoming.accept(&mut written, cache.path().to_owned()))
@@ -217,7 +223,7 @@ async fn text_arrives_whole_and_the_server_s_notice_is_told() {
     let (report, mut phone) = watching();
     let receiving = {
         let settings = settings.clone();
-        tokio::spawn(async move { receive(&settings, None, report).await })
+        tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await })
     };
     let code = phone.code().await;
     let (report, _) = watching();
@@ -226,6 +232,7 @@ async fn text_arrives_whole_and_the_server_s_notice_is_told() {
         Some(code),
         Outgoing::Text("hello".into()),
         report,
+        &Cancel::new(),
     )))
     .await
     .unwrap();
@@ -250,13 +257,18 @@ async fn a_refused_file_tells_the_sender() {
     let (report, mut phone) = watching();
     let sending = {
         let settings = settings.clone();
-        tokio::spawn(async move { send(&settings, None, file(10), report).await })
+        tokio::spawn(async move { send(&settings, None, file(10), report, &Cancel::new()).await })
     };
     let code = phone.code().await;
     let (report, _) = watching();
-    let incoming = within(Box::pin(receive(&settings, Some(code), report)))
-        .await
-        .unwrap();
+    let incoming = within(Box::pin(receive(
+        &settings,
+        Some(code),
+        report,
+        &Cancel::new(),
+    )))
+    .await
+    .unwrap();
     within(incoming.refuse()).await.unwrap();
     let said = within(sending).await.unwrap().unwrap_err().to_string();
     assert!(said.contains("transfer rejected"), "{said}");
@@ -283,7 +295,7 @@ async fn folders_and_files_without_a_connection_are_refused() {
         let (report, mut phone) = watching();
         let receiving = {
             let settings = settings(&server);
-            tokio::spawn(async move { receive(&settings, None, report).await })
+            tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await })
         };
         let mut wormhole = peer(&server, phone.code().await).await;
         protocol::send(&mut wormhole, &AppMessage::Offer(offer))
@@ -303,7 +315,7 @@ async fn a_peer_that_gives_up_before_offering_ends_the_wait() {
     let (report, mut phone) = watching();
     let receiving = {
         let settings = settings(&server);
-        tokio::spawn(async move { receive(&settings, None, report).await })
+        tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await })
     };
     let mut wormhole = peer(&server, phone.code().await).await;
     protocol::send_error(&mut wormhole, "gave up")
@@ -323,6 +335,7 @@ async fn a_mistyped_code_or_server_goes_nowhere() {
         Some("guitarist".into()),
         file(1),
         report.clone(),
+        &Cancel::new(),
     )
     .await
     .unwrap_err()
@@ -332,5 +345,9 @@ async fn a_mistyped_code_or_server_goes_nowhere() {
         transit_helper: "nowhere".into(),
         ..settings(&server)
     };
-    assert!(receive(&nowhere, None, report).await.is_err());
+    assert!(
+        receive(&nowhere, None, report, &Cancel::new())
+            .await
+            .is_err()
+    );
 }

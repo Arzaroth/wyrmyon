@@ -11,7 +11,6 @@ import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'receive.dart';
 
 /// Main entrypoint of the Rust API
 class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
@@ -66,7 +65,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1704700789;
+  int get rustContentHash => 1437288937;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,22 +77,29 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  void crateApiBridgeTransferCancel({required Transfer that});
+
+  Transfer crateApiBridgeTransferNew();
+
+  OfferInfo? crateApiBridgeTransferOffer({required Transfer that});
+
   Future<void> crateApiBridgeAccept({
-    required Incoming incoming,
+    required Transfer transfer,
     required int fd,
     required String cacheDir,
   });
 
-  Settings crateApiTypesDefaultSettings();
+  List<String> crateApiTypesCompletions({required String typed});
 
-  OfferInfo crateApiBridgeOfferInfo({required Incoming incoming});
+  Settings crateApiTypesDefaultSettings();
 
   Stream<Update> crateApiBridgeReceive({
     required Settings settings,
     String? code,
+    required Transfer transfer,
   });
 
-  Future<void> crateApiBridgeRefuse({required Incoming incoming});
+  Future<void> crateApiBridgeRefuse({required Transfer transfer});
 
   Scanned crateApiTypesScan({required String text});
 
@@ -103,21 +109,23 @@ abstract class RustLibApi extends BaseApi {
     required String name,
     required BigInt size,
     required FutureOr<int> Function() open,
+    required Transfer transfer,
   });
 
   Stream<Update> crateApiBridgeSendText({
     required Settings settings,
     String? code,
     required String text,
+    required Transfer transfer,
   });
 
   RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_Incoming;
+  get rust_arc_increment_strong_count_Transfer;
 
   RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_Incoming;
+  get rust_arc_decrement_strong_count_Transfer;
 
-  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_IncomingPtr;
+  CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_TransferPtr;
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -129,8 +137,83 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  void crateApiBridgeTransferCancel({required Transfer that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiBridgeTransferCancelConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiBridgeTransferCancelConstMeta =>
+      const TaskConstMeta(debugName: "Transfer_cancel", argNames: ["that"]);
+
+  @override
+  Transfer crateApiBridgeTransferNew() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiBridgeTransferNewConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiBridgeTransferNewConstMeta =>
+      const TaskConstMeta(debugName: "Transfer_new", argNames: []);
+
+  @override
+  OfferInfo? crateApiBridgeTransferOffer({required Transfer that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_offer_info,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiBridgeTransferOfferConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiBridgeTransferOfferConstMeta =>
+      const TaskConstMeta(debugName: "Transfer_offer", argNames: ["that"]);
+
+  @override
   Future<void> crateApiBridgeAccept({
-    required Incoming incoming,
+    required Transfer transfer,
     required int fd,
     required String cacheDir,
   }) {
@@ -138,8 +221,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
-            incoming,
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+            transfer,
             serializer,
           );
           sse_encode_i_32(fd, serializer);
@@ -147,16 +230,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 4,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
+          decodeErrorData: null,
         ),
         constMeta: kCrateApiBridgeAcceptConstMeta,
-        argValues: [incoming, fd, cacheDir],
+        argValues: [transfer, fd, cacheDir],
         apiImpl: this,
       ),
     );
@@ -164,8 +247,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiBridgeAcceptConstMeta => const TaskConstMeta(
     debugName: "accept",
-    argNames: ["incoming", "fd", "cacheDir"],
+    argNames: ["transfer", "fd", "cacheDir"],
   );
+
+  @override
+  List<String> crateApiTypesCompletions({required String typed}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(typed, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTypesCompletionsConstMeta,
+        argValues: [typed],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTypesCompletionsConstMeta =>
+      const TaskConstMeta(debugName: "completions", argNames: ["typed"]);
 
   @override
   Settings crateApiTypesDefaultSettings() {
@@ -173,7 +279,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_settings,
@@ -190,35 +296,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "default_settings", argNames: []);
 
   @override
-  OfferInfo crateApiBridgeOfferInfo({required Incoming incoming}) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
-            incoming,
-            serializer,
-          );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_offer_info,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateApiBridgeOfferInfoConstMeta,
-        argValues: [incoming],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiBridgeOfferInfoConstMeta =>
-      const TaskConstMeta(debugName: "offer_info", argNames: ["incoming"]);
-
-  @override
   Stream<Update> crateApiBridgeReceive({
     required Settings settings,
     String? code,
+    required Transfer transfer,
   }) {
     final updates = RustStreamSink<Update>();
     unawaited(
@@ -228,21 +309,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_box_autoadd_settings(settings, serializer);
             sse_encode_opt_String(code, serializer);
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+              transfer,
+              serializer,
+            );
             sse_encode_StreamSink_update_Sse(updates, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 4,
+              funcId: 7,
               port: port_,
             );
           },
           codec: SseCodec(
-            decodeSuccessData:
-                sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming,
-            decodeErrorData: sse_decode_AnyhowException,
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
           ),
           constMeta: kCrateApiBridgeReceiveConstMeta,
-          argValues: [settings, code, updates],
+          argValues: [settings, code, transfer, updates],
           apiImpl: this,
         ),
       ),
@@ -252,39 +336,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiBridgeReceiveConstMeta => const TaskConstMeta(
     debugName: "receive",
-    argNames: ["settings", "code", "updates"],
+    argNames: ["settings", "code", "transfer", "updates"],
   );
 
   @override
-  Future<void> crateApiBridgeRefuse({required Incoming incoming}) {
+  Future<void> crateApiBridgeRefuse({required Transfer transfer}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
-            incoming,
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+            transfer,
             serializer,
           );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 8,
             port: port_,
           );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
+          decodeErrorData: null,
         ),
         constMeta: kCrateApiBridgeRefuseConstMeta,
-        argValues: [incoming],
+        argValues: [transfer],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiBridgeRefuseConstMeta =>
-      const TaskConstMeta(debugName: "refuse", argNames: ["incoming"]);
+      const TaskConstMeta(debugName: "refuse", argNames: ["transfer"]);
 
   @override
   Scanned crateApiTypesScan({required String text}) {
@@ -293,7 +377,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_scanned,
@@ -316,6 +400,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String name,
     required BigInt size,
     required FutureOr<int> Function() open,
+    required Transfer transfer,
   }) {
     final updates = RustStreamSink<Update>();
     unawaited(
@@ -331,20 +416,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
               open,
               serializer,
             );
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+              transfer,
+              serializer,
+            );
             sse_encode_StreamSink_update_Sse(updates, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 7,
+              funcId: 10,
               port: port_,
             );
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_AnyhowException,
+            decodeErrorData: null,
           ),
           constMeta: kCrateApiBridgeSendFileConstMeta,
-          argValues: [settings, code, name, size, open, updates],
+          argValues: [settings, code, name, size, open, transfer, updates],
           apiImpl: this,
         ),
       ),
@@ -354,7 +443,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiBridgeSendFileConstMeta => const TaskConstMeta(
     debugName: "send_file",
-    argNames: ["settings", "code", "name", "size", "open", "updates"],
+    argNames: [
+      "settings",
+      "code",
+      "name",
+      "size",
+      "open",
+      "transfer",
+      "updates",
+    ],
   );
 
   @override
@@ -362,6 +459,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required Settings settings,
     String? code,
     required String text,
+    required Transfer transfer,
   }) {
     final updates = RustStreamSink<Update>();
     unawaited(
@@ -372,20 +470,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_box_autoadd_settings(settings, serializer);
             sse_encode_opt_String(code, serializer);
             sse_encode_String(text, serializer);
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+              transfer,
+              serializer,
+            );
             sse_encode_StreamSink_update_Sse(updates, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 8,
+              funcId: 11,
               port: port_,
             );
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_AnyhowException,
+            decodeErrorData: null,
           ),
           constMeta: kCrateApiBridgeSendTextConstMeta,
-          argValues: [settings, code, text, updates],
+          argValues: [settings, code, text, transfer, updates],
           apiImpl: this,
         ),
       ),
@@ -395,7 +497,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiBridgeSendTextConstMeta => const TaskConstMeta(
     debugName: "send_text",
-    argNames: ["settings", "code", "text", "updates"],
+    argNames: ["settings", "code", "text", "transfer", "updates"],
   );
 
   Future<void> Function(int) encode_DartFn_Inputs__Output_i_32_AnyhowException(
@@ -431,12 +533,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_Incoming => wire
-      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming;
+  get rust_arc_increment_strong_count_Transfer => wire
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer;
 
   RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_Incoming => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming;
+  get rust_arc_decrement_strong_count_Transfer => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer;
 
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
@@ -445,21 +547,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  Incoming
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
+  Transfer
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return IncomingImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TransferImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
-  Incoming
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
+  Transfer
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return IncomingImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TransferImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -476,12 +578,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  Incoming
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
+  Transfer
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return IncomingImpl.frbInternalDcoDecode(raw as List<dynamic>);
+    return TransferImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -494,6 +596,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  OfferInfo dco_decode_box_autoadd_offer_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_offer_info(raw);
   }
 
   @protected
@@ -518,6 +626,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 dco_decode_isize(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeI64(raw);
+  }
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_String).toList();
   }
 
   @protected
@@ -550,6 +664,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  OfferInfo? dco_decode_opt_box_autoadd_offer_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_offer_info(raw);
   }
 
   @protected
@@ -629,24 +749,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  Incoming
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
+  Transfer
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return IncomingImpl.frbInternalSseDecode(
+    return TransferImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
   }
 
   @protected
-  Incoming
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
+  Transfer
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return IncomingImpl.frbInternalSseDecode(
+    return TransferImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -660,12 +780,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  Incoming
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
+  Transfer
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return IncomingImpl.frbInternalSseDecode(
+    return TransferImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -684,6 +804,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  OfferInfo sse_decode_box_autoadd_offer_info(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_offer_info(deserializer));
   }
 
   @protected
@@ -709,6 +835,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_isize(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -746,6 +884,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  OfferInfo? sse_decode_opt_box_autoadd_offer_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_offer_info(deserializer));
     } else {
       return null;
     }
@@ -834,26 +985,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
-    Incoming self,
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+    Transfer self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as IncomingImpl).frbInternalSseEncode(move: true),
+      (self as TransferImpl).frbInternalSseEncode(move: true),
       serializer,
     );
   }
 
   @protected
   void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
-    Incoming self,
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+    Transfer self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as IncomingImpl).frbInternalSseEncode(move: false),
+      (self as TransferImpl).frbInternalSseEncode(move: false),
       serializer,
     );
   }
@@ -887,13 +1038,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerIncoming(
-    Incoming self,
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTransfer(
+    Transfer self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_usize(
-      (self as IncomingImpl).frbInternalSseEncode(move: null),
+      (self as TransferImpl).frbInternalSseEncode(move: null),
       serializer,
     );
   }
@@ -922,6 +1073,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_offer_info(
+    OfferInfo self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_offer_info(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_settings(
     Settings self,
     SseSerializer serializer,
@@ -946,6 +1106,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_isize(PlatformInt64 self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_String(item, serializer);
+    }
   }
 
   @protected
@@ -980,6 +1149,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_offer_info(
+    OfferInfo? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_offer_info(self, serializer);
     }
   }
 
@@ -1044,21 +1226,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 }
 
 @sealed
-class IncomingImpl extends RustOpaque implements Incoming {
+class TransferImpl extends RustOpaque implements Transfer {
   // Not to be used by end users
-  IncomingImpl.frbInternalDcoDecode(List<dynamic> wire)
+  TransferImpl.frbInternalDcoDecode(List<dynamic> wire)
     : super.frbInternalDcoDecode(wire, _kStaticData);
 
   // Not to be used by end users
-  IncomingImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
+  TransferImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
     : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
 
   static final _kStaticData = RustArcStaticData(
     rustArcIncrementStrongCount:
-        RustLib.instance.api.rust_arc_increment_strong_count_Incoming,
+        RustLib.instance.api.rust_arc_increment_strong_count_Transfer,
     rustArcDecrementStrongCount:
-        RustLib.instance.api.rust_arc_decrement_strong_count_Incoming,
+        RustLib.instance.api.rust_arc_decrement_strong_count_Transfer,
     rustArcDecrementStrongCountPtr:
-        RustLib.instance.api.rust_arc_decrement_strong_count_IncomingPtr,
+        RustLib.instance.api.rust_arc_decrement_strong_count_TransferPtr,
   );
+
+  void cancel() =>
+      RustLib.instance.api.crateApiBridgeTransferCancel(that: this);
+
+  OfferInfo? offer() =>
+      RustLib.instance.api.crateApiBridgeTransferOffer(that: this);
 }

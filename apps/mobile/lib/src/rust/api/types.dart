@@ -12,6 +12,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Settings defaultSettings() =>
     RustLib.instance.api.crateApiTypesDefaultSettings();
 
+List<String> completions({required String typed}) =>
+    RustLib.instance.api.crateApiTypesCompletions(typed: typed);
+
 Scanned scan({required String text}) =>
     RustLib.instance.api.crateApiTypesScan(text: text);
 
@@ -98,7 +101,9 @@ enum Stage {
   connected,
   moving,
   awaitingAck,
+  offer,
   done,
+  failed,
 }
 
 class Update {

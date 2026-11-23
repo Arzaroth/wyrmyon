@@ -1,21 +1,63 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use flutter_rust_bridge::{DartFnFuture, frb};
 use wyrmyon_transfer::{Opened, Reader, Source};
 
-use crate::api::types::{OfferInfo, Settings, Update};
+use crate::api::types::{OfferInfo, Settings, Stage, Update};
 use crate::frb_generated::StreamSink;
-use crate::report::Report;
-use crate::{Incoming, Outgoing};
+use crate::report::{Report, ended, tell};
+use crate::{Cancel, Incoming, Outgoing};
+
+#[frb(opaque)]
+pub struct Transfer {
+    cancel: Cancel,
+    incoming: Mutex<Option<(Incoming, Report)>>,
+}
+
+impl Transfer {
+    #[frb(sync)]
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            cancel: Cancel::new(),
+            incoming: Mutex::new(None),
+        }
+    }
+
+    #[frb(sync)]
+    pub fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
+    #[frb(sync)]
+    pub fn offer(&self) -> Option<OfferInfo> {
+        self.slot().as_ref().map(|(incoming, _)| incoming.info())
+    }
+
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<(Incoming, Report)>> {
+        self.incoming.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
 
 pub async fn send_text(
     settings: Settings,
     code: Option<String>,
     text: String,
+    transfer: &Transfer,
     updates: StreamSink<Update>,
-) -> anyhow::Result<()> {
-    crate::send(&settings, code, Outgoing::Text(text), reporting(updates)).await
+) {
+    let report = reporting(updates);
+    let outgoing = Outgoing::Text(text);
+    let sent = crate::send(
+        &settings,
+        code,
+        outgoing,
+        Arc::clone(&report),
+        &transfer.cancel,
+    )
+    .await;
+    ended(&report, sent);
 }
 
 pub async fn send_file(
@@ -24,36 +66,71 @@ pub async fn send_file(
     name: String,
     size: u64,
     open: impl Fn() -> DartFnFuture<i32> + Send + Sync + 'static,
+    transfer: &Transfer,
     updates: StreamSink<Update>,
-) -> anyhow::Result<()> {
+) {
+    let report = reporting(updates);
     let source = Arc::new(Descriptor {
         size,
         open: Box::new(open),
     });
     let outgoing = Outgoing::File { name, source };
-    crate::send(&settings, code, outgoing, reporting(updates)).await
+    let sent = crate::send(
+        &settings,
+        code,
+        outgoing,
+        Arc::clone(&report),
+        &transfer.cancel,
+    )
+    .await;
+    ended(&report, sent);
 }
 
 pub async fn receive(
     settings: Settings,
     code: Option<String>,
+    transfer: &Transfer,
     updates: StreamSink<Update>,
-) -> anyhow::Result<Incoming> {
-    crate::receive(&settings, code, reporting(updates)).await
+) {
+    let report = reporting(updates);
+    let received = Box::pin(crate::receive(
+        &settings,
+        code,
+        Arc::clone(&report),
+        &transfer.cancel,
+    ))
+    .await;
+    match received {
+        Ok(incoming) => {
+            *transfer.slot() = Some((incoming, Arc::clone(&report)));
+            tell(&report, Stage::Offer, String::new());
+        }
+        Err(e) => ended(&report, Err(e)),
+    }
 }
 
-#[frb(sync)]
-pub fn offer_info(incoming: &Incoming) -> OfferInfo {
-    incoming.info()
+pub async fn accept(transfer: &Transfer, fd: i32, cache_dir: String) {
+    let Some((incoming, report)) = transfer.slot().take() else {
+        return;
+    };
+    let accepted = match owned_file(fd) {
+        Ok(file) => {
+            let mut file = tokio::fs::File::from_std(file);
+            incoming.accept(&mut file, PathBuf::from(cache_dir)).await
+        }
+        Err(e) => {
+            let _ = incoming.refuse().await;
+            Err(e)
+        }
+    };
+    ended(&report, accepted);
 }
 
-pub async fn accept(incoming: Incoming, fd: i32, cache_dir: String) -> anyhow::Result<()> {
-    let mut file = tokio::fs::File::from_std(owned_file(fd)?);
-    incoming.accept(&mut file, PathBuf::from(cache_dir)).await
-}
-
-pub async fn refuse(incoming: Incoming) -> anyhow::Result<()> {
-    incoming.refuse().await
+pub async fn refuse(transfer: &Transfer) {
+    let Some((incoming, report)) = transfer.slot().take() else {
+        return;
+    };
+    ended(&report, incoming.refuse().await);
 }
 
 fn reporting(updates: StreamSink<Update>) -> Report {

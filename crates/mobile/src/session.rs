@@ -1,11 +1,20 @@
 use anyhow::Context;
-use wyrmyon_transfer::Options;
+use wyrmyon_transfer::{Cancelled, Options, protocol};
 use wyrmyon_wormhole::{Code, Mood, Wormhole};
 
-use crate::api::types::Stage;
+use crate::Cancel;
+use crate::api::types::{CODE_WORDS, Stage};
 use crate::report::{Report, tell};
 
-const CODE_WORDS: usize = 2;
+pub(crate) async fn until<T>(
+    cancel: &Cancel,
+    work: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    tokio::select! {
+        done = work => done,
+        () = cancel.cancelled() => Err(Cancelled.into()),
+    }
+}
 
 pub(crate) async fn pair(
     options: &Options,
@@ -34,10 +43,13 @@ pub(crate) async fn pair(
 }
 
 pub(crate) async fn finish<T>(
-    wormhole: Wormhole,
+    mut wormhole: Wormhole,
     result: anyhow::Result<T>,
     report: &Report,
 ) -> anyhow::Result<T> {
+    if result.as_ref().is_err_and(anyhow::Error::is::<Cancelled>) {
+        let _ = protocol::send_error(&mut wormhole, "transfer cancelled").await;
+    }
     let mood = match &result {
         Ok(_) => Mood::Happy,
         Err(e) => e

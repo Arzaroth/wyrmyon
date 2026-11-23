@@ -4,11 +4,10 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
-import '../receive.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
-// These functions are ignored because they are not marked as `pub`: `owned_file`, `reporting`
+// These functions are ignored because they are not marked as `pub`: `owned_file`, `reporting`, `slot`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Descriptor`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `open`, `size`
 
@@ -16,10 +15,12 @@ Stream<Update> sendText({
   required Settings settings,
   String? code,
   required String text,
+  required Transfer transfer,
 }) => RustLib.instance.api.crateApiBridgeSendText(
   settings: settings,
   code: code,
   text: text,
+  transfer: transfer,
 );
 
 Stream<Update> sendFile({
@@ -28,29 +29,44 @@ Stream<Update> sendFile({
   required String name,
   required BigInt size,
   required FutureOr<int> Function() open,
+  required Transfer transfer,
 }) => RustLib.instance.api.crateApiBridgeSendFile(
   settings: settings,
   code: code,
   name: name,
   size: size,
   open: open,
+  transfer: transfer,
 );
 
-Stream<Update> receive({required Settings settings, String? code}) =>
-    RustLib.instance.api.crateApiBridgeReceive(settings: settings, code: code);
-
-OfferInfo offerInfo({required Incoming incoming}) =>
-    RustLib.instance.api.crateApiBridgeOfferInfo(incoming: incoming);
+Stream<Update> receive({
+  required Settings settings,
+  String? code,
+  required Transfer transfer,
+}) => RustLib.instance.api.crateApiBridgeReceive(
+  settings: settings,
+  code: code,
+  transfer: transfer,
+);
 
 Future<void> accept({
-  required Incoming incoming,
+  required Transfer transfer,
   required int fd,
   required String cacheDir,
 }) => RustLib.instance.api.crateApiBridgeAccept(
-  incoming: incoming,
+  transfer: transfer,
   fd: fd,
   cacheDir: cacheDir,
 );
 
-Future<void> refuse({required Incoming incoming}) =>
-    RustLib.instance.api.crateApiBridgeRefuse(incoming: incoming);
+Future<void> refuse({required Transfer transfer}) =>
+    RustLib.instance.api.crateApiBridgeRefuse(transfer: transfer);
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Transfer>>
+abstract class Transfer implements RustOpaqueInterface {
+  void cancel();
+
+  factory Transfer() => RustLib.instance.api.crateApiBridgeTransferNew();
+
+  OfferInfo? offer();
+}
