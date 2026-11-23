@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use anyhow::{Context, bail};
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{
-    IrohPipe, IrohTransport, Manifest, Offered, Role as IrohRole, Source as Member, Traffic,
+    IrohPipe, IrohTransport, Manifest, Offered, Role as IrohRole, Source as Member, Streamed,
+    Traffic,
 };
 use wyrmyon_wormhole::Wormhole;
 
@@ -146,9 +147,37 @@ impl Hashing<(Offered, Manifest)> {
     }
 }
 
+impl Hashing<(Offered, Manifest)> {
+    pub fn tree(tree: Arc<crate::Tree>) -> Self {
+        Self::start(tree.numbytes(), move |mut progress| async move {
+            let mut streams = Vec::with_capacity(tree.members.len());
+            for member in &tree.members {
+                let reader = member.source.open().await.map_err(|e| {
+                    wyrmyon_transport_iroh::Error::Blob(format!("{}: {e}", member.name))
+                })?;
+                streams.push(Streamed {
+                    reader,
+                    size: member.source.size(),
+                    name: member.name.clone(),
+                    mode: member.mode,
+                });
+            }
+            Offered::import_streams(streams, &tree.dirs, &mut progress).await
+        })
+    }
+}
+
 impl<T> Drop for Hashing<T> {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+pub(crate) fn unreadable(e: &anyhow::Error) -> &'static str {
+    if e.is::<Cancelled>() {
+        "the sender cancelled"
+    } else {
+        "the sender could not read its data"
     }
 }
 
@@ -193,12 +222,7 @@ pub async fn send_data(
         match hashing.finish(events.as_ref()).await {
             Ok(offered) => staged.blob = Some(offered),
             Err(e) => {
-                let why = if e.is::<Cancelled>() {
-                    "the sender cancelled"
-                } else {
-                    "the sender could not read its data"
-                };
-                protocol::send_error(wormhole, why).await?;
+                protocol::send_error(wormhole, unreadable(&e)).await?;
                 return Err(e);
             }
         }

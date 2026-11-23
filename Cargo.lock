@@ -5543,10 +5543,12 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "tokio",
+ "tokio-util",
  "wyrmyon-testkit",
  "wyrmyon-transport-classic",
  "wyrmyon-transport-iroh",
  "wyrmyon-wormhole",
+ "zip 8.6.0",
 ]
 
 [[package]]
