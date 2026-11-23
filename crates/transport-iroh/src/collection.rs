@@ -44,6 +44,37 @@ pub struct Source {
     pub mode: u32,
 }
 
+pub struct Streamed {
+    pub reader: crate::Reader,
+    pub size: u64,
+    pub name: String,
+    pub mode: u32,
+}
+
+enum Member<'a> {
+    Path(&'a Source),
+    Stream(Streamed),
+}
+
+impl Member<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Self::Path(source) => &source.name,
+            Self::Stream(streamed) => &streamed.name,
+        }
+    }
+
+    fn mode(&self) -> u32 {
+        match self {
+            Self::Path(source) => source.mode,
+            Self::Stream(streamed) => streamed.mode,
+        }
+    }
+}
+
+pub type Writer = Box<dyn tokio::io::AsyncWrite + Send + Unpin>;
+pub type Opening = std::pin::Pin<Box<dyn Future<Output = std::io::Result<Writer>> + Send>>;
+
 pub struct Collection {
     fetched: Fetched,
     manifest: Manifest,
@@ -133,15 +164,32 @@ impl Offered {
         dirs: &[String],
         progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
     ) -> Result<(Self, Manifest), Error> {
+        let members = sources.iter().map(Member::Path).collect();
+        Self::import_members(members, dirs, progress).await
+    }
+
+    pub async fn import_streams(
+        streams: Vec<Streamed>,
+        dirs: &[String],
+        progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
+    ) -> Result<(Self, Manifest), Error> {
+        let members = streams.into_iter().map(Member::Stream).collect();
+        Self::import_members(members, dirs, progress).await
+    }
+
+    async fn import_members(
+        members: Vec<Member<'_>>,
+        dirs: &[String],
+        progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
+    ) -> Result<(Self, Manifest), Error> {
+        let count = members.len();
         let (dir, store) = crate::blobs::throwaway_store().await?;
-        match import_all(&store, sources, dirs, progress).await {
+        match import_all(&store, members, dirs, progress).await {
             Ok((root, tags, manifest)) => Ok((
                 Self {
                     store,
                     root,
-                    payload: std::sync::Arc::new(
-                        tags[..sources.len()].iter().map(TempTag::hash).collect(),
-                    ),
+                    payload: std::sync::Arc::new(tags[..count].iter().map(TempTag::hash).collect()),
                     tags,
                     _dir: dir,
                 },
@@ -159,37 +207,42 @@ type Failed = Box<dyn std::error::Error + Send + Sync>;
 
 async fn import_file(
     store: &FsStore,
-    source: &Source,
+    member: Member<'_>,
     progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
 ) -> Result<(TempTag, u64), Failed> {
-    let tag = match crate::blobs::add_path(store, &source.path, progress).await {
-        Ok(tag) => tag,
-        Err(e) => return Err(format!("{}: {e}", source.path.display()).into()),
+    let added = match member {
+        Member::Path(source) => crate::blobs::add_path(store, &source.path, progress)
+            .await
+            .map_err(|e| format!("{}: {e}", source.path.display())),
+        Member::Stream(streamed) => {
+            let name = streamed.name;
+            crate::blobs::add_reader(store, streamed.reader, streamed.size, progress)
+                .await
+                .map_err(|e| format!("{name}: {e}"))
+        }
     };
+    let tag = added?;
     let size = store.remote().local(tag.hash()).await?.local_bytes();
     Ok((tag, size))
 }
 
 async fn import_all(
     store: &FsStore,
-    sources: &[Source],
+    members: Vec<Member<'_>>,
     dirs: &[String],
     progress: &mut (dyn FnMut(u64) -> ControlFlow<()> + Send),
 ) -> Result<(Hash, Vec<TempTag>, Manifest), Failed> {
-    let mut tags = Vec::with_capacity(sources.len() + 2);
-    let mut files = Vec::with_capacity(sources.len());
+    let mut tags = Vec::with_capacity(members.len() + 2);
+    let mut files = Vec::with_capacity(members.len());
     let mut done = 0u64;
-    for source in sources {
-        let (tag, size) = import_file(store, source, &mut |hashed| progress(done + hashed)).await?;
+    for member in members {
+        let (path, mode) = (member.name().to_owned(), member.mode());
+        let (tag, size) = import_file(store, member, &mut |hashed| progress(done + hashed)).await?;
         done += size;
         if progress(done).is_break() {
             return Err(crate::blobs::stopped().into());
         }
-        files.push(ManifestFile {
-            path: source.name.clone(),
-            size,
-            mode: source.mode,
-        });
+        files.push(ManifestFile { path, size, mode });
         tags.push(tag);
     }
     let manifest = Manifest {
@@ -386,6 +439,29 @@ impl Collection {
                 Ok(())
             }
             Err(e) => Err(self.fetched.abandon(e).await),
+        }
+    }
+
+    pub async fn export_each(
+        self,
+        open: &mut (dyn FnMut(&ManifestFile) -> Opening + Send),
+    ) -> Result<(), Error> {
+        let exported = async {
+            for (hash, file) in self.children[1..].iter().zip(&self.manifest.files) {
+                let mut writer = open(file).await?;
+                let mut reader = self.fetched.store.blobs().reader(*hash);
+                tokio::io::copy(&mut reader, &mut writer).await?;
+                tokio::io::AsyncWriteExt::shutdown(&mut writer).await?;
+            }
+            std::io::Result::Ok(())
+        }
+        .await;
+        match exported {
+            Ok(()) => {
+                self.fetched.discard().await;
+                Ok(())
+            }
+            Err(e) => Err(self.fetched.keep(e).await),
         }
     }
 

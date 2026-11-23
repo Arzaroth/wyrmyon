@@ -18,7 +18,8 @@ use wyrmyon_wormhole::Key;
 
 pub use blobs::{Fetched, Offered, Reader};
 pub use collection::{
-    Collection, MAX_FILES, MAX_MANIFEST, Manifest, ManifestFile, Placement, Source, Under,
+    Collection, MAX_FILES, MAX_MANIFEST, Manifest, ManifestFile, Opening, Placement, Source,
+    Streamed, Under, Writer,
 };
 pub use forward::{Event as ForwardEvent, Forwarding, Next as ForwardNext};
 pub use netcheck::{NetCheck, PortMapping, netcheck};
