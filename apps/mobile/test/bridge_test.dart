@@ -1,5 +1,7 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wyrmyon/engine.dart' show RustEngine;
+import 'package:wyrmyon/src/rust/api/bridge.dart';
 import 'package:wyrmyon/src/rust/api/types.dart';
 import 'package:wyrmyon/src/rust/frb_generated.dart';
 
@@ -29,5 +31,20 @@ void main() {
       defaultSettings().mailbox,
       startsWith('ws://relay.magic-wormhole.io'),
     );
+  });
+
+  test('a typed code completes from the word list', () {
+    expect(completions(typed: '7-guitar'), contains('7-guitarist-'));
+  });
+
+  test('the engine reads codes and refuses the rest', () {
+    final engine = RustEngine();
+    expect(engine.scan('7-guitarist-revenge')?.direction, Direction.receive);
+    expect(engine.scan('https://example.com'), isNull);
+  });
+
+  test('a transfer holds no offer until one arrives', () {
+    final transfer = Transfer()..cancel();
+    expect(transfer.offer(), isNull);
   });
 }
