@@ -510,6 +510,7 @@ async fn a_folder_from_a_wyrm_arrives_as_a_collection() {
         (info.kind, info.name.as_str(), info.count, info.size),
         (OfferKind::Folder, "album", 2, 201_000)
     );
+    assert!(info.iroh, "a wyrm offers over iroh");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -517,6 +518,7 @@ async fn files_from_a_legacy_sender_arrive_from_its_zip() {
     let server = MailboxServer::start().await;
     let info = Box::pin(tree_to_phone(classic(&server), false)).await;
     assert_eq!((info.kind, info.count), (OfferKind::Folder, 2));
+    assert!(!info.iroh, "a legacy sender offers over classic transit");
 }
 
 #[tokio::test(flavor = "multi_thread")]
