@@ -23,3 +23,17 @@ impl Cancel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_cancel_reaches_whoever_waits_on_it() {
+        let cancel = Cancel::new();
+        let waiting = tokio::spawn(cancel.clone().cancelled());
+        cancel.cancel();
+        waiting.await.unwrap();
+        cancel.cancelled().await;
+    }
+}

@@ -7,7 +7,9 @@ use wyrmyon_mobile::api::types::{OfferKind, Settings, Stage, Update};
 use wyrmyon_mobile::{Cancel, Outgoing, Report, receive, send};
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transfer::protocol::{self, AppMessage, DirectoryOffer, FileOffer, Offer};
-use wyrmyon_transfer::{Events, Opened, Options, Quiet, Reader, Source, Staged, send_data};
+use wyrmyon_transfer::{
+    Cancelled, Events, Opened, Options, Quiet, Reader, Source, Staged, send_data,
+};
 use wyrmyon_transport_iroh::Relays;
 use wyrmyon_wormhole::{Mood, Wormhole};
 
@@ -350,4 +352,52 @@ async fn a_mistyped_code_or_server_goes_nowhere() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_while_waiting_for_the_peer_ends_at_once() {
+    let server = MailboxServer::start().await;
+    let settings = settings(&server);
+    let (report, mut phone) = watching();
+    let cancel = Cancel::new();
+    let receiving = {
+        let cancel = cancel.clone();
+        tokio::spawn(async move { receive(&settings, None, report, &cancel).await })
+    };
+    phone.code().await;
+    cancel.cancel();
+    let refused = within(receiving).await.unwrap().err().unwrap();
+    assert!(refused.is::<Cancelled>(), "{refused:#}");
+    assert_eq!(refused.to_string(), "the transfer was cancelled");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_cancelling_while_the_receiver_decides_tells_it() {
+    let server = MailboxServer::start().await;
+    let settings = settings(&server);
+    let (report, mut phone) = watching();
+    let cancel = Cancel::new();
+    let sending = {
+        let cancel = cancel.clone();
+        tokio::spawn(async move { send(&settings, None, file(10), report, &cancel).await })
+    };
+    let code = phone.code().await;
+    let mut computer = peer(&server, code).await;
+    let options = classic(&server);
+    let (offer, connection) = within(Box::pin(wyrmyon_transfer::await_offer(
+        &mut computer,
+        &options,
+    )))
+    .await
+    .unwrap();
+    assert!(matches!(offer, Offer::File(_)));
+    cancel.cancel();
+    let cancelled = within(sending).await.unwrap().err().unwrap();
+    assert!(cancelled.is::<Cancelled>(), "{cancelled:#}");
+    let told = within(protocol::next(&mut computer, "sender")).await;
+    assert!(format!("{:#}", told.err().unwrap()).contains("transfer cancelled"));
+    if let Some(connection) = connection {
+        connection.close().await;
+    }
+    computer.close(Mood::Happy).await;
 }

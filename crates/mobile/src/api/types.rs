@@ -124,6 +124,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_typed_code_completes_from_the_word_list() {
+        assert!(completions("7-guitar".into()).contains(&"7-guitarist-".to_owned()));
+        assert!(completions("7-guitarist-reve".into()).contains(&"7-guitarist-revenge".to_owned()));
+        assert_eq!(completions("7".into()), Vec::<String>::new());
+    }
+
+    #[test]
     fn a_leader_link_asks_the_phone_to_send() {
         let scanned = scan("wormhole-transfer:7-guitarist-revenge?role=leader".into()).unwrap();
         assert_eq!(scanned.code, "7-guitarist-revenge");

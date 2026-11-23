@@ -110,6 +110,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_a_failure_is_told_at_the_end_with_its_causes() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let kept = Arc::clone(&seen);
+        let report: Report = Arc::new(move |update| kept.lock().unwrap().push(update));
+        ended(&report, Ok(()));
+        let failed = Err(anyhow::anyhow!("the disk is full").context("writing the data"));
+        ended(&report, failed);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].stage, Stage::Failed);
+        assert_eq!(seen[0].detail, "writing the data: the disk is full");
+    }
+
+    #[test]
     fn progress_is_told_at_most_every_tenth_of_a_second_and_always_at_the_end() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&seen);
