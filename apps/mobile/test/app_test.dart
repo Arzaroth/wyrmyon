@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wyrmyon/app.dart';
 import 'package:wyrmyon/engine.dart';
+import 'package:wyrmyon/transfer.dart';
 import 'package:wyrmyon/platform.dart';
 import 'package:wyrmyon/settings.dart';
 
@@ -396,6 +397,141 @@ void main() {
     expect(
       platform.calls,
       containsAll(['create a.jpg', 'finish content://downloads/1 kept=false']),
+    );
+  });
+
+  testWidgets('settings are checked, kept, and restored', (tester) async {
+    final store = FakeSettingsStore();
+    final (engine, _) = await launch(tester, settings: store);
+    await tester.tap(find.byTooltip('Settings'));
+    await settle(tester);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Mailbox server'),
+      'https://example.com',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(find.text('the mailbox: a ws:// or wss:// address'), findsOneWidget);
+    expect(store.saves, 0);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Mailbox server'),
+      'wss://mailbox.example.com/v1',
+    );
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(engine.settings.mailbox, 'wss://mailbox.example.com/v1');
+    expect(store.kept?.mailbox, 'wss://mailbox.example.com/v1');
+    await tester.tap(find.byTooltip('Settings'));
+    await settle(tester);
+    await tester.tap(find.text('Restore the defaults'));
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(engine.settings, publicSettings);
+    expect(store.kept, isNull);
+  });
+
+  testWidgets('every received file is listed under All', (tester) async {
+    final (_, platform) = await launch(
+      tester,
+      downloads: [
+        Download(
+          uri: 'content://downloads/3',
+          name: 'b.jpg',
+          size: 10,
+          modified: DateTime.now(),
+          folder: 'album/day 2',
+        ),
+      ],
+    );
+    expect(find.textContaining('album/day 2/'), findsOneWidget);
+    await tester.tap(find.text('All ›'));
+    await settle(tester);
+    expect(find.text('Received'), findsOneWidget);
+    expect(find.text('b.jpg'), findsOneWidget);
+    await tester.tap(find.byTooltip('Show in folder'));
+    expect(platform.calls, ['show downloads']);
+  });
+
+  testWidgets(
+    'a sent folder shows its speed, its files, and how long it took',
+    (tester) async {
+      final (engine, platform) = await launch(
+        tester,
+        shared: const SharedText('placeholder'),
+      );
+      platform.folder = const PickedFolder(
+        name: 'album',
+        files: [
+          PickedFile(uri: 'content://a', name: 'a.jpg', size: 1000000),
+          PickedFile(uri: 'content://b', name: 'b.jpg', size: 1000000),
+        ],
+      );
+      await tester.tap(find.byTooltip('Remove'));
+      await tester.pump();
+      await tester.tap(find.text('Folder'));
+      await settle(tester);
+      await tester.tap(find.text('Show a code'));
+      await settle(tester);
+      var now = DateTime(2026);
+      clock = () => now;
+      addTearDown(() => clock = DateTime.now);
+      engine.running.tell(
+        Stage.connected,
+        total: 2000000,
+        detail: 'iroh, direct',
+      );
+      await tester.pump();
+      now = now.add(const Duration(seconds: 2));
+      engine.running.tell(Stage.moving, bytes: 1200000, total: 2000000);
+      await tester.pump();
+      expect(find.text('600 KB/s'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(Icons.hourglass_empty), findsOneWidget);
+      now = now.add(const Duration(seconds: 5));
+      engine.running.tell(Stage.done);
+      await settle(tester);
+      expect(find.text('in 0:07'), findsOneWidget);
+      expect(find.text('Verified end to end'), findsOneWidget);
+      platform.picked = const [notes];
+      await tester.tap(find.text('Send more'));
+      await settle(tester);
+      expect(find.text('notes.txt'), findsOneWidget);
+      expect(find.text('Send'), findsOneWidget);
+    },
+  );
+
+  testWidgets('a received bundle can be shared whole or shown', (tester) async {
+    final (engine, platform) = await launch(
+      tester,
+      shared: const SharedLink('wormhole-transfer:7-guitarist-revenge'),
+    );
+    engine.running
+      ..offered = OfferInfo(
+        kind: OfferKind.files,
+        name: 'x',
+        size: BigInt.from(30),
+        count: BigInt.from(2),
+        text: '',
+      )
+      ..tell(Stage.offer);
+    await tester.pump();
+    await tester.tap(find.text('Accept'));
+    await settle(tester);
+    await engine.running.openMember!('a.jpg');
+    await engine.running.openMember!('b.jpg');
+    await tester.pump();
+    expect(find.text('a.jpg'), findsOneWidget);
+    engine.running.tell(Stage.done);
+    await settle(tester);
+    await tester.tap(find.text('Share all'));
+    await tester.tap(find.text('Show in folder'));
+    expect(
+      platform.calls,
+      containsAllInOrder([
+        'share content://downloads/1 content://downloads/2',
+        'show downloads',
+      ]),
     );
   });
 }
