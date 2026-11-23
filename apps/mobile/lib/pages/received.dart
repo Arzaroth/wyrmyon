@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../app.dart';
 import '../format.dart';
 import '../platform.dart';
+import '../ui.dart';
 
 class ReceivedPage extends StatefulWidget {
   const ReceivedPage({super.key});
@@ -34,20 +35,21 @@ class _ReceivedPageState extends State<ReceivedPage> {
   @override
   Widget build(BuildContext context) {
     final all = _all;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Received'),
-        actions: [
-          IconButton(
-            tooltip: 'Show in folder',
-            icon: const Icon(Icons.folder_open_outlined),
-            onPressed: () => Services.of(context).platform.showDownloads(),
-          ),
-        ],
-      ),
+    return Screen(
+      title: 'Received',
+      actions: [
+        IconButton(
+          tooltip: 'Show in folder',
+          icon: const Icon(Icons.folder_open_outlined),
+          onPressed: () => Services.of(context).platform.showDownloads(),
+        ),
+      ],
       body: all == null
           ? const Center(child: CircularProgressIndicator())
-          : ListView(children: [for (final d in all) ReceivedTile(d)]),
+          : ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              children: [for (final d in all) ReceivedTile(d)],
+            ),
     );
   }
 }
@@ -61,14 +63,14 @@ class ReceivedTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final platform = Services.of(context).platform;
     final messenger = ScaffoldMessenger.of(context);
-    return ListTile(
-      leading: const Icon(Icons.insert_drive_file_outlined),
-      title: Text(download.name, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${download.folder.isEmpty ? '' : '${download.folder}/ · '}'
-        '${formatAge(download.modified, DateTime.now())} · '
-        '${formatBytes(download.size)}',
-      ),
+    return Item(
+      boxed: false,
+      icon: iconFor(download.name),
+      name: download.name,
+      sub:
+          '${download.folder.isEmpty ? '' : '${download.folder}/ · '}'
+          '${formatAge(download.modified, DateTime.now())} · '
+          '${formatBytes(download.size)}',
       onTap: () async {
         if (!await platform.openDownload(download.uri)) {
           messenger.showSnackBar(
@@ -78,7 +80,8 @@ class ReceivedTile extends StatelessWidget {
       },
       trailing: IconButton(
         tooltip: 'Share',
-        icon: const Icon(Icons.share),
+        color: Palette.dim,
+        icon: const Icon(Icons.more_vert),
         onPressed: () => platform.shareDownload(download.uri),
       ),
     );

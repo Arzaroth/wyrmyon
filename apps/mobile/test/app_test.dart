@@ -5,6 +5,7 @@ import 'package:wyrmyon/engine.dart';
 import 'package:wyrmyon/transfer.dart';
 import 'package:wyrmyon/platform.dart';
 import 'package:wyrmyon/settings.dart';
+import 'package:wyrmyon/ui.dart';
 
 import 'fakes.dart';
 
@@ -30,6 +31,10 @@ Future<(FakeEngine, FakePlatform)> launch(
 }) async {
   final engine = FakeEngine();
   settings ??= FakeSettingsStore();
+  tester.view
+    ..physicalSize = const Size(1080, 2400)
+    ..devicePixelRatio = 2.75;
+  addTearDown(tester.view.reset);
   final platform = FakePlatform()
     ..initial = shared
     ..downloads = downloads;
@@ -79,7 +84,7 @@ void main() {
       shared: const SharedFiles([photo]),
     );
     expect(find.text('photo.jpg'), findsOneWidget);
-    await tester.tap(find.text('Show a code'));
+    await tester.tap(find.text('Show a code instead'));
     await settle(tester);
     expect(engine.runs.single, (kind: 'file', code: null, what: 'photo.jpg'));
 
@@ -94,7 +99,8 @@ void main() {
       ..tell(Stage.moving, bytes: 2050000, total: 4100000);
     await tester.pump();
     expect(find.text('50%'), findsOneWidget);
-    expect(find.text('iroh, direct'), findsOneWidget);
+    expect(find.text('Connected · direct'), findsOneWidget);
+    expect(find.text('iroh · wyrmyon peer'), findsOneWidget);
 
     engine.running.tell(Stage.done);
     await settle(tester);
@@ -107,7 +113,7 @@ void main() {
 
   testWidgets('a shared text is sent', (tester) async {
     final (engine, _) = await launch(tester, shared: const SharedText('hi'));
-    await tester.tap(find.text('Show a code'));
+    await tester.tap(find.text('Show a code instead'));
     await settle(tester);
     expect(engine.runs.single, (kind: 'text', code: null, what: 'hi'));
   });
@@ -118,7 +124,7 @@ void main() {
       shared: const SharedFiles([photo, notes]),
     );
     expect(find.text('2 items · 4.1 MB'), findsOneWidget);
-    await tester.tap(find.text('Show a code'));
+    await tester.tap(find.text('Show a code instead'));
     await settle(tester);
     expect(engine.runs.single, (kind: 'bundle', code: null, what: '2 items'));
     expect(engine.sentFiles, [
@@ -147,7 +153,7 @@ void main() {
     await tester.tap(find.text('Folder'));
     await settle(tester);
     expect(find.text('album/'), findsOneWidget);
-    await tester.tap(find.text('Show a code'));
+    await tester.tap(find.text('Show a code instead'));
     await settle(tester);
     expect(engine.runs.single, (kind: 'folder', code: null, what: 'album'));
     expect(engine.sentFiles.map((f) => f.path), ['a.jpg', 'day 2/b.jpg']);
@@ -160,8 +166,8 @@ void main() {
   testWidgets('two items with one name cannot be sent', (tester) async {
     await launch(tester, shared: const SharedFiles([photo, photo]));
     expect(find.text('Two items are named photo.jpg'), findsOneWidget);
-    final scan = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Scan code to send'),
+    final scan = tester.widget<Primary>(
+      find.widgetWithText(Primary, 'Scan code to send'),
     );
     expect(scan.onPressed, isNull);
   });
@@ -357,7 +363,7 @@ void main() {
       ..tell(Stage.offer);
     await tester.pump();
     expect(find.text('album/'), findsOneWidget);
-    expect(find.text('Saved to Download/wyrmyon/album'), findsOneWidget);
+    expect(find.text('Download/wyrmyon/album'), findsOneWidget);
     await tester.tap(find.text('Accept'));
     await settle(tester);
     final open = engine.running.openMember!;
@@ -411,16 +417,13 @@ void main() {
     final (engine, _) = await launch(tester, settings: store);
     await tester.tap(find.byTooltip('Settings'));
     await settle(tester);
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Mailbox server'),
-      'https://example.com',
-    );
+    await tester.enterText(find.byType(TextField).first, 'https://example.com');
     await tester.tap(find.text('Save'));
     await tester.pump();
     expect(find.text('the mailbox: a ws:// or wss:// address'), findsOneWidget);
     expect(store.saves, 0);
     await tester.enterText(
-      find.widgetWithText(TextField, 'Mailbox server'),
+      find.byType(TextField).first,
       'wss://mailbox.example.com/v1',
     );
     await tester.tap(find.text('Save'));
@@ -477,7 +480,7 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Folder'));
       await settle(tester);
-      await tester.tap(find.text('Show a code'));
+      await tester.tap(find.text('Show a code instead'));
       await settle(tester);
       var now = DateTime(2026);
       clock = () => now;
@@ -493,14 +496,14 @@ void main() {
       await tester.pump();
       expect(find.text('600 KB/s'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);
-      expect(find.byIcon(Icons.hourglass_empty), findsOneWidget);
+      expect(find.text('b.jpg'), findsOneWidget);
       now = now.add(const Duration(seconds: 5));
       engine.running.tell(Stage.done);
       await settle(tester);
-      expect(find.text('in 0:07'), findsOneWidget);
+      expect(find.text('2 files · 2.0 MB in 0:07'), findsOneWidget);
       expect(find.text('Verified end to end'), findsOneWidget);
       platform.picked = const [notes];
-      await tester.tap(find.text('Send more'));
+      await tester.tap(find.text('Send more to this PC'));
       await settle(tester);
       expect(find.text('notes.txt'), findsOneWidget);
       expect(find.text('Send'), findsOneWidget);

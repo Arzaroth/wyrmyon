@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../engine.dart';
+import '../ui.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -63,27 +64,34 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     Widget field(TextEditingController controller, String label, String help) =>
         Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: TextField(
-            controller: controller,
-            autocorrect: false,
-            enableSuggestions: false,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              labelText: label,
-              helperText: help,
-              helperMaxLines: 3,
-            ),
+          padding: const EdgeInsets.only(bottom: 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 8,
+            children: [
+              Label(label),
+              TextField(
+                controller: controller,
+                autocorrect: false,
+                enableSuggestions: false,
+                keyboardType: TextInputType.url,
+                cursorColor: Palette.cyan,
+                style: const TextStyle(fontFamily: mono, fontSize: 16),
+                decoration: InputDecoration(
+                  semanticCounterText: label,
+                  helperText: help,
+                  helperMaxLines: 3,
+                ),
+              ),
+            ],
           ),
         );
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+    return Screen(
+      title: 'Settings',
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         children: [
           field(
             _mailbox,
@@ -102,21 +110,21 @@ class _SettingsPageState extends State<SettingsPage> {
             'default, disabled, or a comma-separated list of relay URLs.',
           ),
           if (_problem case final problem?)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(problem, style: TextStyle(color: scheme.error)),
-            ),
-          FilledButton(onPressed: _save, child: const Text('Save')),
-          const SizedBox(height: 8),
-          TextButton(
+            Text(problem, style: const TextStyle(color: Palette.error)),
+        ],
+      ),
+      foot: [
+        Primary('Save', onPressed: _save),
+        Center(
+          child: Ghost(
+            'Restore the defaults',
             onPressed: () => setState(() {
               _problem = null;
               _fill(Services.of(context).engine.defaults);
             }),
-            child: const Text('Restore the defaults'),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

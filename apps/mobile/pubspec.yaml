@@ -23,6 +23,19 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png
+  fonts:
+    - family: Ubuntu
+      fonts:
+        - asset: assets/fonts/Ubuntu-Regular.ttf
+        - asset: assets/fonts/Ubuntu-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Ubuntu-Bold.ttf
+          weight: 700
+    - family: UbuntuMono
+      fonts:
+        - asset: assets/fonts/UbuntuMono-Regular.ttf
 
 # The launcher icon is the project's dragon (assets/logo.png at the repository root),
 # scaled without smoothing for its pixel art. Regenerate: dart run flutter_launcher_icons

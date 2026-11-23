@@ -26,3 +26,7 @@ String formatDuration(Duration took) {
   if (minutes < 60) return '$minutes:$rest';
   return '${minutes ~/ 60}:${(minutes % 60).toString().padLeft(2, '0')}:$rest';
 }
+
+String formatTook(Duration took) => took < const Duration(seconds: 1)
+    ? 'in under a second'
+    : 'in ${formatDuration(took)}';

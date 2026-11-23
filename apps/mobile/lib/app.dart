@@ -9,6 +9,7 @@ import 'pages/transfer.dart';
 import 'platform.dart';
 import 'settings.dart';
 import 'transfer.dart';
+import 'ui.dart';
 
 final returning = RouteObserver<ModalRoute<void>>();
 
@@ -105,7 +106,6 @@ class _WyrmyonAppState extends State<WyrmyonApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF2E7D5B);
     return Services(
       engine: widget.engine,
       platform: widget.platform,
@@ -115,11 +115,8 @@ class _WyrmyonAppState extends State<WyrmyonApp> {
         navigatorKey: _navigator,
         scaffoldMessengerKey: _messenger,
         navigatorObservers: [returning],
-        theme: ThemeData(colorSchemeSeed: seed),
-        darkTheme: ThemeData(
-          colorSchemeSeed: seed,
-          brightness: Brightness.dark,
-        ),
+        theme: wyrmyonTheme(),
+        debugShowCheckedModeBanner: false,
         home: const HomePage(),
       ),
     );

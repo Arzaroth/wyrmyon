@@ -4,6 +4,7 @@ import '../app.dart';
 import '../format.dart';
 import '../platform.dart';
 import '../transfer.dart';
+import '../ui.dart';
 import 'scan.dart';
 import 'transfer.dart';
 import 'type_code.dart';
@@ -112,78 +113,57 @@ class _SendPageState extends State<SendPage> {
     ].where((file) => file.size < 0).toList();
     final clash = _clash;
     final ready = job != null && unknown.isEmpty;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Send'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(24),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              _text != null
-                  ? 'Text'
-                  : '$_count '
-                        '${_count == 1 ? 'item' : 'items'} · '
-                        '${formatBytes(total)}',
-            ),
-          ),
-        ),
-      ),
+    Widget remove(VoidCallback onPressed) => IconButton(
+      tooltip: 'Remove',
+      color: Palette.dim,
+      icon: const Icon(Icons.close),
+      onPressed: onPressed,
+    );
+    return Screen(
+      title: 'Send',
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         children: [
+          Text(
+            _text != null
+                ? 'Text'
+                : '$_count ${_count == 1 ? 'item' : 'items'} · '
+                      '${formatBytes(total)}',
+            style: subStyle,
+          ),
+          const SizedBox(height: 12),
           if (_text case final text?)
-            Card.outlined(
-              child: ListTile(
-                leading: const Icon(Icons.notes),
-                title: Text(text, maxLines: 4, overflow: TextOverflow.ellipsis),
-                trailing: IconButton(
-                  tooltip: 'Remove',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => setState(() => _text = null),
-                ),
-              ),
+            Item(
+              icon: Icons.notes,
+              name: text.replaceAll('\n', ' '),
+              sub: '${text.length} characters',
+              trailing: remove(() => setState(() => _text = null)),
             ),
           for (final file in _files)
-            ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: Text(file.name, overflow: TextOverflow.ellipsis),
-              subtitle: Text(
-                file.size < 0 ? 'size unknown' : formatBytes(file.size),
-              ),
-              trailing: IconButton(
-                tooltip: 'Remove',
-                icon: const Icon(Icons.close),
-                onPressed: () => setState(() => _files.remove(file)),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Item(
+                icon: iconFor(file.name),
+                name: file.name,
+                sub: file.size < 0 ? 'size unknown' : formatBytes(file.size),
+                trailing: remove(() => setState(() => _files.remove(file))),
               ),
             ),
           for (final folder in _folders)
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: Text('${folder.name}/', overflow: TextOverflow.ellipsis),
-              subtitle: Text(
-                '${folder.files.length} files · ${formatBytes(folder.size)}',
-              ),
-              trailing: IconButton(
-                tooltip: 'Remove',
-                icon: const Icon(Icons.close),
-                onPressed: () => setState(() => _folders.remove(folder)),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Item(
+                icon: Icons.folder_copy_outlined,
+                name: '${folder.name}/',
+                sub:
+                    '${folder.files.length} files · ${formatBytes(folder.size)}',
+                trailing: remove(() => setState(() => _folders.remove(folder))),
               ),
             ),
-          const SizedBox(height: 8),
           Row(
-            spacing: 8,
             children: [
-              OutlinedButton.icon(
-                onPressed: _add,
-                icon: const Icon(Icons.add),
-                label: const Text('Files'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _addFolder,
-                icon: const Icon(Icons.create_new_folder_outlined),
-                label: const Text('Folder'),
-              ),
+              Ghost('Files', icon: Icons.add, onPressed: _add),
+              Ghost('Folder', icon: Icons.add, onPressed: _addFolder),
             ],
           ),
           if (_text != null && _count > 0)
@@ -191,66 +171,50 @@ class _SendPageState extends State<SendPage> {
           if (clash != null) _Hint('Two items are named $clash'),
           if (unknown.isNotEmpty)
             _Hint(
-              'The size of ${unknown.first.name} is unknown, so it cannot be sent',
+              'The size of ${unknown.first.name} is unknown, '
+              'so it cannot be sent',
             ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 8,
-            children: code != null
-                ? [
-                    FilledButton.icon(
-                      onPressed: ready ? () => _start(() async => code) : null,
-                      icon: const Icon(Icons.send),
-                      label: Text('Send to $code'),
-                    ),
-                  ]
-                : [
-                    FilledButton.icon(
-                      onPressed: ready
-                          ? () => _start(
-                              () => Navigator.of(
-                                context,
-                              ).push(ScanPage.route(Purpose.send)),
-                            )
-                          : null,
-                      icon: const Icon(Icons.qr_code_scanner),
-                      label: const Text('Scan code to send'),
-                    ),
-                    Row(
-                      spacing: 8,
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: ready
-                                ? () => _start(
-                                    () => Navigator.of(
-                                      context,
-                                    ).push(TypeCodePage.route()),
-                                  )
-                                : null,
-                            child: const Text('Type a code'),
-                          ),
-                        ),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: ready
-                                ? () => _start(() async => null, show: true)
-                                : null,
-                            child: const Text('Show a code'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-          ),
-        ),
-      ),
+      foot: code != null
+          ? [
+              Primary(
+                'Send to $code',
+                icon: Icons.send,
+                onPressed: ready ? () => _start(() async => code) : null,
+              ),
+            ]
+          : [
+              Primary(
+                'Scan code to send',
+                icon: Icons.qr_code_scanner,
+                onPressed: ready
+                    ? () => _start(
+                        () => Navigator.of(
+                          context,
+                        ).push(ScanPage.route(Purpose.send)),
+                      )
+                    : null,
+              ),
+              Secondary(
+                'Show a code instead',
+                onPressed: ready
+                    ? () => _start(() async => null, show: true)
+                    : null,
+              ),
+              Center(
+                child: Ghost(
+                  'Type a code',
+                  icon: Icons.keyboard_outlined,
+                  onPressed: ready
+                      ? () => _start(
+                          () =>
+                              Navigator.of(context).push(TypeCodePage.route()),
+                        )
+                      : null,
+                ),
+              ),
+            ],
     );
   }
 }
@@ -264,10 +228,7 @@ class _Hint extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Text(
-        text,
-        style: TextStyle(color: Theme.of(context).colorScheme.error),
-      ),
+      child: Text(text, style: const TextStyle(color: Palette.error)),
     );
   }
 }

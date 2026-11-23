@@ -224,7 +224,7 @@ class TransferController extends ChangeNotifier {
   bool get verified =>
       phase == Phase.done && job is! SendText && offer?.kind != OfferKind.text;
 
-  List<({String path, bool done})> get files {
+  List<({String path, bool done, double? progress})> get files {
     if (job case SendTree(:final entries)) {
       final fraction = phase == Phase.done
           ? 1.0
@@ -232,18 +232,34 @@ class TransferController extends ChangeNotifier {
           ? bytes / total
           : 0.0;
       final size = entries.fold<int>(0, (sum, e) => sum + e.file.size);
+      final moved = fraction * size;
       var before = 0;
       return [
         for (final entry in entries)
-          (
-            path: entry.path,
-            done: size == 0 || (before += entry.file.size) <= fraction * size,
-          ),
+          () {
+            final start = before;
+            before += entry.file.size;
+            final done = size == 0 || before <= moved;
+            final length = entry.file.size;
+            return (
+              path: entry.path,
+              done: done,
+              progress: done
+                  ? 1.0
+                  : length == 0
+                  ? 0.0
+                  : ((moved - start) / length).clamp(0.0, 1.0),
+            );
+          }(),
       ];
     }
     return [
       for (final (index, path) in _paths.indexed)
-        (path: path, done: phase == Phase.done || index < _paths.length - 1),
+        (
+          path: path,
+          done: phase == Phase.done || index < _paths.length - 1,
+          progress: null,
+        ),
     ];
   }
 
