@@ -12,6 +12,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Settings defaultSettings() =>
     RustLib.instance.api.crateApiTypesDefaultSettings();
 
+void checkSettings({required Settings settings}) =>
+    RustLib.instance.api.crateApiTypesCheckSettings(settings: settings);
+
 List<String> completions({required String typed}) =>
     RustLib.instance.api.crateApiTypesCompletions(typed: typed);
 

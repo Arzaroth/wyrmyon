@@ -21,6 +21,16 @@ pub fn default_settings() -> Settings {
     }
 }
 
+#[frb(sync)]
+pub fn check_settings(settings: Settings) -> anyhow::Result<()> {
+    let options = settings.options()?;
+    anyhow::ensure!(
+        options.relay_url.starts_with("ws://") || options.relay_url.starts_with("wss://"),
+        "the mailbox: a ws:// or wss:// address"
+    );
+    Ok(())
+}
+
 impl Settings {
     pub(crate) fn options(&self) -> anyhow::Result<Options> {
         Ok(Options {
