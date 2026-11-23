@@ -6,6 +6,12 @@ done.
 
 ## Small work
 
+- [ ] From the Android emulator, a phone-to-computer send over iroh stalls:
+      the path flips between direct and the relay and the data barely moves
+      (a 500 KB file waits about 25 s at 100%, a 320 MB folder never
+      starts), while the other way runs direct at 10 to 30 MB/s and classic
+      transit is fine both ways. Check on a real phone whether it is the
+      emulator's NAT or the phone serving blobs.
 - [ ] Tests for out-of-order and duplicate phases: needs a way to make the fake
       mailbox reorder deliveries.
 - [ ] Mailbox reconnection after a dropped connection, as the Python client

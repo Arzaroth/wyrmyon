@@ -128,6 +128,22 @@ drives the service.
   files and asks for a new code), or the text with Copy. Leaving cancels,
   and deletes what a failed or cancelled transfer had written.
 
+## The look
+
+The screens follow the mockups agreed for M11: always dark, a navy radial
+gradient behind every screen, Ubuntu and Ubuntu Mono (bundled under the Ubuntu
+Font Licence, `assets/fonts/UFL.txt`), a blue-to-cyan gradient for the main
+action and outlined cards for the rest, square icon tiles, uppercase section
+labels, a pill naming the transport (iroh with a wyrmyon peer, or classic
+transit) on the offer and during the transfer, a gradient progress ring, and
+a cyan reticle with a sweeping line over the camera. `lib/ui.dart` holds the
+palette and those pieces; the pages only compose them. Home shows the dragon
+(`assets/logo.png`, a link to the repository's) with a cyan glow, and the
+launch screen is the same navy with the launcher icon's dragon, so nothing
+flashes white while Flutter starts. The offer says how it came
+(`OfferInfo::iroh`); during a transfer the route's text gives the status line
+(direct or via relay).
+
 ## The build
 
 The Rust library is a native asset: `apps/mobile/hook/build.dart` runs
@@ -191,6 +207,7 @@ regenerated in CI.
 - [apps/mobile/lib/transfer.dart](../../apps/mobile/lib/transfer.dart)
 - [apps/mobile/lib/platform.dart](../../apps/mobile/lib/platform.dart)
 - [apps/mobile/lib/app.dart](../../apps/mobile/lib/app.dart)
+- [apps/mobile/lib/ui.dart](../../apps/mobile/lib/ui.dart)
 - [apps/mobile/lib/pages/](../../apps/mobile/lib/pages/)
 - [apps/mobile/android/app/src/main/kotlin/io/github/arzaroth/wyrmyon/](../../apps/mobile/android/app/src/main/kotlin/io/github/arzaroth/wyrmyon/)
 - [apps/mobile/android/app/src/main/AndroidManifest.xml](../../apps/mobile/android/app/src/main/AndroidManifest.xml)
