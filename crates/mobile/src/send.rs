@@ -1,7 +1,8 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use wyrmyon_transfer::protocol::{FileOffer, Offer};
-use wyrmyon_transfer::{Events, Source, Staged, offer_text, send_data};
+use wyrmyon_transfer::{Events, Source, Staged, Tree, offer_text, send_data, send_tree};
 
 use crate::Cancel;
 use crate::api::types::Settings;
@@ -13,6 +14,10 @@ pub enum Outgoing {
     File {
         name: String,
         source: Arc<dyn Source>,
+    },
+    Tree {
+        tree: Arc<Tree>,
+        scratch: PathBuf,
     },
 }
 
@@ -41,6 +46,23 @@ pub async fn send(
                 &mut staged,
                 offer,
                 &source,
+                &events,
+            )
+            .await;
+            staged.close().await;
+            sent.map(drop)
+        }
+        Outgoing::Tree { tree, scratch } => {
+            let events: Arc<dyn Events> =
+                Arc::new(Reporter::new(Arc::clone(&report), cancel.clone()));
+            let (mut staged, mut zipped) = (Staged::default(), None);
+            let sent = send_tree(
+                &mut wormhole,
+                &options,
+                &mut staged,
+                &mut zipped,
+                &tree,
+                &scratch,
                 &events,
             )
             .await;

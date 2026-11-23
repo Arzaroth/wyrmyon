@@ -21,7 +21,7 @@ pub(crate) async fn pair(
     code: Option<String>,
     report: &Report,
 ) -> anyhow::Result<Wormhole> {
-    let config = options.config_offering(&[]);
+    let config = options.config();
     let pending = if let Some(code) = code {
         let code: Code = code
             .trim()

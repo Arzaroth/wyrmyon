@@ -149,6 +149,7 @@ void main() {
         kind: OfferKind.file,
         name: 'notes.txt',
         size: BigInt.from(2000),
+        count: BigInt.from(1),
         text: '',
       )
       ..tell(Stage.offer);
@@ -196,6 +197,7 @@ void main() {
         kind: OfferKind.file,
         name: 'notes.txt',
         size: BigInt.from(2000),
+        count: BigInt.from(1),
         text: '',
       )
       ..tell(Stage.offer);
@@ -218,6 +220,7 @@ void main() {
         kind: OfferKind.file,
         name: 'notes.txt',
         size: BigInt.from(2000),
+        count: BigInt.from(1),
         text: '',
       )
       ..tell(Stage.offer);
@@ -239,6 +242,7 @@ void main() {
         kind: OfferKind.text,
         name: '',
         size: BigInt.from(5),
+        count: BigInt.from(1),
         text: 'hello',
       )
       ..tell(Stage.done)

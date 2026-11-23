@@ -4,7 +4,9 @@ use std::sync::Arc;
 use anyhow::Context;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use wyrmyon_transfer::protocol::{self, Answer, AppMessage, Offer};
-use wyrmyon_transfer::{Connection, Events, Sink, await_offer, receive_into, refuse};
+use wyrmyon_transfer::{
+    Connection, Events, Opening, Sink, await_offer, receive_into, receive_tree, refuse,
+};
 use wyrmyon_wormhole::{Mood, Wormhole};
 
 use crate::Cancel;
@@ -22,7 +24,7 @@ pub struct Incoming {
 struct Waiting {
     wormhole: Wormhole,
     connection: Connection,
-    size: u64,
+    offer: Offer,
 }
 
 pub async fn receive(
@@ -38,23 +40,40 @@ pub async fn receive(
         Ok(awaited) => awaited,
         Err(e) => return session::finish(wormhole, Err(e), &report).await,
     };
-    match (offer, connection) {
-        (Offer::File(file), Some(connection)) => Ok(Incoming {
-            info: OfferInfo {
-                kind: OfferKind::File,
-                name: file_name(&file.filename),
-                size: file.filesize,
-                text: String::new(),
-            },
+    let info = match &offer {
+        Offer::File(file) => Some(OfferInfo {
+            kind: OfferKind::File,
+            name: file_name(&file.filename),
+            size: file.filesize,
+            count: 1,
+            text: String::new(),
+        }),
+        Offer::Directory(dir) => Some(tree_info(
+            &dir.dirname,
+            dir.bundle,
+            dir.numbytes,
+            dir.numfiles,
+        )),
+        Offer::Collection(tree) => Some(tree_info(
+            &tree.name,
+            tree.bundle,
+            tree.numbytes,
+            tree.numfiles,
+        )),
+        _ => None,
+    };
+    match (info, connection) {
+        (Some(info), Some(connection)) => Ok(Incoming {
+            info,
             waiting: Some(Waiting {
                 wormhole,
                 connection,
-                size: file.filesize,
+                offer,
             }),
             report,
             cancel: cancel.clone(),
         }),
-        (offer, connection) => {
+        (_, connection) => {
             if let Some(connection) = connection {
                 connection.close().await;
             }
@@ -63,15 +82,8 @@ pub async fn receive(
                     let ack = AppMessage::Answer(Answer::MessageAck("ok".into()));
                     protocol::send(&mut wormhole, &ack).await.map(|()| text)
                 }
-                Offer::File(_) => {
+                Offer::File(_) | Offer::Directory(_) | Offer::Collection(_) => {
                     refuse(&mut wormhole, "the sender did not offer a connection").await
-                }
-                Offer::Directory(_) | Offer::Collection(_) => {
-                    refuse(
-                        &mut wormhole,
-                        "the app cannot receive folders or several files yet",
-                    )
-                    .await
                 }
                 Offer::Forward(_) | Offer::Other(_) => {
                     refuse(&mut wormhole, "the app cannot receive this kind of offer").await
@@ -83,6 +95,7 @@ pub async fn receive(
                     kind: OfferKind::Text,
                     name: String::new(),
                     size: text.len() as u64,
+                    count: 0,
                     text,
                 },
                 waiting: None,
@@ -106,11 +119,12 @@ impl Incoming {
         let Some(Waiting {
             mut wormhole,
             connection,
-            size,
+            offer: Offer::File(file),
         }) = self.waiting
         else {
-            return Ok(());
+            return self.mismatched().await;
         };
+        let size = file.filesize;
         let events: Arc<dyn Events> =
             Arc::new(Reporter::new(Arc::clone(&self.report), self.cancel.clone()));
         let result = async {
@@ -122,6 +136,39 @@ impl Incoming {
         }
         .await;
         session::finish(wormhole, result, &self.report).await
+    }
+
+    pub async fn accept_tree(
+        self,
+        open: &mut (dyn FnMut(&str, u32) -> Opening + Send),
+        cache: PathBuf,
+    ) -> anyhow::Result<()> {
+        let Some(Waiting {
+            mut wormhole,
+            connection,
+            offer: offer @ (Offer::Directory(_) | Offer::Collection(_)),
+        }) = self.waiting
+        else {
+            return self.mismatched().await;
+        };
+        let events: Arc<dyn Events> =
+            Arc::new(Reporter::new(Arc::clone(&self.report), self.cancel.clone()));
+        let result = async {
+            let received =
+                receive_tree(&mut wormhole, connection, &offer, &cache, open, &events).await?;
+            received.complete(Ok(())).await
+        }
+        .await;
+        session::finish(wormhole, result, &self.report).await
+    }
+
+    async fn mismatched(self) -> anyhow::Result<()> {
+        if self.waiting.is_none() {
+            return Ok(());
+        }
+        let accepted = self.info.kind;
+        self.refuse().await?;
+        anyhow::bail!("this offer ({accepted:?}) is accepted another way")
     }
 
     pub async fn refuse(self) -> anyhow::Result<()> {
@@ -137,6 +184,20 @@ impl Incoming {
         let refused = protocol::send_error(&mut wormhole, "transfer rejected").await;
         wormhole.close(Mood::Happy).await;
         refused
+    }
+}
+
+fn tree_info(name: &str, bundle: bool, size: u64, count: u64) -> OfferInfo {
+    OfferInfo {
+        kind: if bundle {
+            OfferKind::Files
+        } else {
+            OfferKind::Folder
+        },
+        name: file_name(name),
+        size,
+        count,
+        text: String::new(),
     }
 }
 

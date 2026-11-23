@@ -39,6 +39,28 @@ Stream<Update> sendFile({
   transfer: transfer,
 );
 
+Stream<Update> sendFiles({
+  required Settings settings,
+  String? code,
+  required String name,
+  required bool bundle,
+  required List<Picked> files,
+  required List<String> dirs,
+  required FutureOr<int> Function(int) open,
+  required String cacheDir,
+  required Transfer transfer,
+}) => RustLib.instance.api.crateApiBridgeSendFiles(
+  settings: settings,
+  code: code,
+  name: name,
+  bundle: bundle,
+  files: files,
+  dirs: dirs,
+  open: open,
+  cacheDir: cacheDir,
+  transfer: transfer,
+);
+
 Stream<Update> receive({
   required Settings settings,
   String? code,
@@ -59,6 +81,16 @@ Future<void> accept({
   cacheDir: cacheDir,
 );
 
+Future<void> acceptFiles({
+  required Transfer transfer,
+  required FutureOr<int> Function(String) open,
+  required String cacheDir,
+}) => RustLib.instance.api.crateApiBridgeAcceptFiles(
+  transfer: transfer,
+  open: open,
+  cacheDir: cacheDir,
+);
+
 Future<void> refuse({required Transfer transfer}) =>
     RustLib.instance.api.crateApiBridgeRefuse(transfer: transfer);
 
@@ -69,4 +101,22 @@ abstract class Transfer implements RustOpaqueInterface {
   factory Transfer() => RustLib.instance.api.crateApiBridgeTransferNew();
 
   OfferInfo? offer();
+}
+
+class Picked {
+  final String path;
+  final BigInt size;
+
+  const Picked({required this.path, required this.size});
+
+  @override
+  int get hashCode => path.hashCode ^ size.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Picked &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          size == other.size;
 }

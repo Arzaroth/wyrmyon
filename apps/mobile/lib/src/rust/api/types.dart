@@ -24,18 +24,24 @@ class OfferInfo {
   final OfferKind kind;
   final String name;
   final BigInt size;
+  final BigInt count;
   final String text;
 
   const OfferInfo({
     required this.kind,
     required this.name,
     required this.size,
+    required this.count,
     required this.text,
   });
 
   @override
   int get hashCode =>
-      kind.hashCode ^ name.hashCode ^ size.hashCode ^ text.hashCode;
+      kind.hashCode ^
+      name.hashCode ^
+      size.hashCode ^
+      count.hashCode ^
+      text.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -45,10 +51,11 @@ class OfferInfo {
           kind == other.kind &&
           name == other.name &&
           size == other.size &&
+          count == other.count &&
           text == other.text;
 }
 
-enum OfferKind { text, file }
+enum OfferKind { text, file, folder, files }
 
 class Scanned {
   final String code;

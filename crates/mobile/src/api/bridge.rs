@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use flutter_rust_bridge::{DartFnFuture, frb};
-use wyrmyon_transfer::{Opened, Reader, Source};
+use wyrmyon_transfer::{Member, Opened, Opening, Reader, Source, Tree, Writer};
 
 use crate::api::types::{OfferInfo, Settings, Stage, Update};
 use crate::frb_generated::StreamSink;
@@ -86,6 +86,64 @@ pub async fn send_file(
     ended(&report, sent);
 }
 
+pub struct Picked {
+    pub path: String,
+    pub size: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn send_files(
+    settings: Settings,
+    code: Option<String>,
+    name: String,
+    bundle: bool,
+    files: Vec<Picked>,
+    dirs: Vec<String>,
+    open: impl Fn(u32) -> DartFnFuture<i32> + Send + Sync + 'static,
+    cache_dir: String,
+    transfer: &Transfer,
+    updates: StreamSink<Update>,
+) {
+    let report = reporting(updates);
+    let open: Arc<OpenMember> = Arc::new(open);
+    let members = files
+        .into_iter()
+        .zip(0u32..)
+        .map(|(file, index)| {
+            let open = Arc::clone(&open);
+            Member {
+                name: file.path,
+                mode: 0o644,
+                source: Arc::new(Descriptor {
+                    size: file.size,
+                    open: Box::new(move || open(index)),
+                }),
+            }
+        })
+        .collect();
+    let tree = Arc::new(Tree {
+        name,
+        bundle,
+        members,
+        dirs,
+    });
+    let outgoing = Outgoing::Tree {
+        tree,
+        scratch: PathBuf::from(cache_dir),
+    };
+    let sent = crate::send(
+        &settings,
+        code,
+        outgoing,
+        Arc::clone(&report),
+        &transfer.cancel,
+    )
+    .await;
+    ended(&report, sent);
+}
+
+type OpenMember = dyn Fn(u32) -> DartFnFuture<i32> + Send + Sync;
+
 pub async fn receive(
     settings: Settings,
     code: Option<String>,
@@ -123,6 +181,29 @@ pub async fn accept(transfer: &Transfer, fd: i32, cache_dir: String) {
             Err(e)
         }
     };
+    ended(&report, accepted);
+}
+
+pub async fn accept_files(
+    transfer: &Transfer,
+    open: impl Fn(String) -> DartFnFuture<i32> + Send + Sync + 'static,
+    cache_dir: String,
+) {
+    let Some((incoming, report)) = transfer.slot().take() else {
+        return;
+    };
+    let open = Arc::new(open);
+    let mut opening = move |path: &str, _mode: u32| -> Opening {
+        let (open, path) = (Arc::clone(&open), path.to_owned());
+        Box::pin(async move {
+            let fd = open(path).await;
+            let file = owned_file(fd).map_err(std::io::Error::other)?;
+            Ok(Box::new(tokio::fs::File::from_std(file)) as Writer)
+        })
+    };
+    let accepted = incoming
+        .accept_tree(&mut opening, PathBuf::from(cache_dir))
+        .await;
     ended(&report, accepted);
 }
 

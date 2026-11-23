@@ -278,7 +278,7 @@ async fn a_refused_file_tells_the_sender() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn folders_and_files_without_a_connection_are_refused() {
+async fn offers_without_a_connection_are_refused() {
     let server = MailboxServer::start().await;
     let folder = Offer::Directory(DirectoryOffer {
         mode: "zipfile/deflated".into(),
@@ -293,7 +293,8 @@ async fn folders_and_files_without_a_connection_are_refused() {
         filename: "photo.jpg".into(),
         filesize: 10,
     });
-    for (offer, says) in [(folder, "folders"), (bare, "did not offer a connection")] {
+    for offer in [folder, bare] {
+        let says = "did not offer a connection";
         let (report, mut phone) = watching();
         let receiving = {
             let settings = settings(&server);

@@ -109,6 +109,8 @@ pub struct Update {
 pub enum OfferKind {
     Text,
     File,
+    Folder,
+    Files,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,6 +118,7 @@ pub struct OfferInfo {
     pub kind: OfferKind,
     pub name: String,
     pub size: u64,
+    pub count: u64,
     pub text: String,
 }
 
