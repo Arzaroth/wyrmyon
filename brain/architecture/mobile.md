@@ -5,8 +5,8 @@
 whole transfer through the transfer library ([transfer.md](transfer.md)); Dart
 picks files, scans codes, shows progress and saves what arrives; a little
 Kotlin reaches what Flutter does not (the picker, MediaStore, intents, the
-foreground service). One file or one text at a time: several files and
-folders are the last item of ROADMAP M11.
+foreground service). It sends and receives text, files, several files and
+folders.
 
 ## The bridge
 
@@ -25,13 +25,16 @@ version as the `flutter_rust_bridge` pins in `pubspec.yaml` and
 | `Transfer` | A handle per transfer: `cancel()`, and `offer()` once an offer has arrived |
 | `send_file(settings, code, name, size, open, transfer)` | Sends one file. `open` is a Dart callback returning a fresh file descriptor each time Rust opens the source (Android hands out `content://` URIs, not paths), so the source stays reopenable for hashing then sending |
 | `send_text(settings, code, text, transfer)` | Sends text |
-| `receive(settings, code, transfer)` | Pairs and waits for the offer, which the handle then holds. Text is acknowledged at once; a file waits to be accepted or refused; folders, several files and anything else are refused (`the app cannot receive folders or several files yet`). The offered name keeps only its last printable part (`../../etc/passwd` is `passwd`, an empty one `received`) |
-| `accept(transfer, fd, cache_dir)` / `refuse(transfer)` | Receives into a descriptor Dart opened for writing (a MediaStore entry), flushing before the ack, reporting on `receive`'s stream; or answers `transfer rejected` |
+| `send_files(settings, code, name, bundle, files, dirs, open, cache_dir, transfer)` | Sends a tree ([transfer.md](transfer.md)): `files` are each a relative path and a size, `open(index)` returns a descriptor for one of them, `dirs` are empty folders. `bundle` says the files go straight into the receiver's folder rather than into one named `name`. The legacy zip is built in `cache_dir` |
+| `receive(settings, code, transfer)` | Pairs and waits for the offer, which the handle then holds: text, acknowledged at once; a file; a folder or several files (`OfferKind::Folder` or `Files`, with their count). Anything else is refused. The offered name keeps only its last printable part (`../../etc/passwd` is `passwd`, an empty one `received`) |
+| `accept(transfer, fd, cache_dir)` | Receives a file into a descriptor Dart opened for writing (a MediaStore entry), flushing before the ack, reporting on `receive`'s stream |
+| `accept_files(transfer, open, cache_dir)` | Receives a folder or several files, calling `open(path)` for a descriptor per file; a collection arrives over iroh, the legacy zip is received into `cache_dir` and unpacked from there |
+| `refuse(transfer)` | Answers `transfer rejected` |
 
 With no `code`, Rust allocates one and reports it as the first update, for
-the phone to show; with one, it joins. The app advertises iroh-v1 but no
-offers (`config_offering(&[])`), so a wyrm never sends it a collection, and
-it reaches legacy clients over classic transit.
+the phone to show; with one, it joins. The app advertises iroh-v1 and
+`collection-v1`, as `wyrm` does, so a wyrm sends it folders as a collection,
+and it reaches legacy clients over classic transit with the zip.
 
 `send_*` and `receive` return a stream of `Update { stage, bytes, total,
 detail }`: `Code` (the code in `detail`), `Notice` (the server's MOTD),
@@ -64,17 +67,22 @@ Dart by `lib/platform.dart`:
 - **Picking**: `ACTION_OPEN_DOCUMENT` with several files allowed; each comes
   back as its URI, display name and size (from `OpenableColumns`, else the
   descriptor's `statSize`; a file whose size stays unknown cannot be sent).
-  `openRead` hands Rust a detached descriptor.
+  `ACTION_OPEN_DOCUMENT_TREE` picks a folder, walked off the UI thread
+  through `DocumentsContract` into its files (each with its path inside the
+  folder) and its empty folders. `openRead` hands Rust a detached
+  descriptor.
 - **Intents**: `ACTION_SEND` and `ACTION_SEND_MULTIPLE` (files, or text) and
   `ACTION_VIEW` on `wormhole-transfer:` links. The intent the app started with
   is taken once by Dart; later ones (`singleTop`) are pushed to it. A leader
   link opens Send with the code set, any other link starts receiving.
 - **Downloads** (`Downloads.kt`): a received file is inserted into
-  `MediaStore.Downloads` under `Download/wyrmyon/` with `IS_PENDING`, written
-  through a descriptor, then published, or deleted when the transfer fails.
-  MediaStore renames a clash (`notes (1).txt`). Home lists the newest entries
-  of that folder rather than a history; Android only shows an app the
-  entries it created, so files from before a reinstall are not listed.
+  `MediaStore.Downloads` under `Download/wyrmyon/` (and the folders of its
+  path, for a tree) with `IS_PENDING`, written through a descriptor, then
+  published, or deleted when the transfer fails. MediaStore renames a clash
+  (`notes (1).txt`) and holds files only, so a tree's empty folders are not
+  kept. Home lists the newest entries under that folder rather than a
+  history; Android only shows an app the entries it created, so files from
+  before a reinstall are not listed.
 - **The service** (`TransferService.kt`): a `dataSync` foreground service runs
   from the start of a transfer to its end, so it survives the screen turning
   off, with an ongoing notification showing progress (updated at most every
@@ -93,15 +101,20 @@ drives the service.
   latest received files below; a tap opens one, the share button passes it
   on. It reloads when the app resumes or a screen closes over it.
 - **Send**: the files chosen (from the picker or the share menu) or the
-  shared text, more files can be added; then scan the computer's code, type
-  it, or show a code (with `wyrm receive CODE` and its QR code) for a
-  computer to type.
+  shared text; more files and folders can be added. One file goes as a
+  file, one folder as a folder, any other mix as a bundle (which a legacy
+  receiver, knowing no bundles, unpacks into a folder named after the count,
+  `2 items`); two items with one name, or text with files, cannot be sent.
+  Then scan the computer's code, type it, or show a code (with
+  `wyrm receive CODE` and its QR code) for a computer to type.
 - **Scanner** (mobile_scanner): accepts a code meant for the current way and
   names the other screen otherwise; typing is the fallback, with the word
   list completing each word.
 - **Transfer**: the code or "waiting", the server's notice, the offer with
-  Accept and Decline, progress with the route, then Open and Share for a
-  received file, or the text with Copy. Leaving cancels.
+  Accept and Decline (a folder lands in `Download/wyrmyon/NAME`, several files
+  straight in `Download/wyrmyon`), progress with the route, then Open and
+  Share for a received file, or the text with Copy. Leaving cancels, and
+  deletes what a failed or cancelled transfer had written.
 
 ## The build
 

@@ -144,7 +144,7 @@ phone the files are chosen before the code is scanned.
       rather than kept as a history; a foreground service and a notification
       when a transfer ends; `wormhole-transfer:` links open the app in either
       role.
-- [ ] Several files and folders from streams: the collection import and the
+- [x] Several files and folders from streams: the collection import and the
       legacy zip built from sources, and a received collection or zip written
       into a sink; then folders through Android's folder picker.
 

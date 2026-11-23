@@ -6,7 +6,7 @@ the code and the phone scanning it. Its Rust side is
 built by the Dart build hook in `hook/build.dart`, so `flutter run`,
 `flutter test` and `flutter build apk` compile it for each target.
 
-Send from the share menu or the file picker, then scan the computer's code
+Send files, several files or a folder, from the share menu or the pickers, then scan the computer's code
 (`wyrm receive --new --qr`), type it, or show one; receive by scanning
 `wyrm send --qr` or typing its code. Files land in `Download/wyrmyon`. Needs
 Android 10 or newer. How it fits together: `brain/architecture/mobile.md`.
