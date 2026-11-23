@@ -3,12 +3,13 @@ use std::time::Duration;
 
 use serde_json::{Map, json};
 use tokio::sync::mpsc;
-use wyrmyon_mobile::api::types::{OfferKind, Settings, Stage, Update};
+use wyrmyon_mobile::api::types::{OfferInfo, OfferKind, Settings, Stage, Update};
 use wyrmyon_mobile::{Cancel, Outgoing, Report, receive, send};
 use wyrmyon_testkit::MailboxServer;
 use wyrmyon_transfer::protocol::{self, AppMessage, DirectoryOffer, FileOffer, Offer};
 use wyrmyon_transfer::{
-    Cancelled, Events, Opened, Options, Quiet, Reader, Source, Staged, send_data,
+    Cancelled, Events, Member, Opened, Opening, Options, Quiet, Reader, Source, Staged, Tree,
+    Writer, receive_tree, send_data, send_tree,
 };
 use wyrmyon_transport_iroh::Relays;
 use wyrmyon_wormhole::{Mood, Wormhole};
@@ -109,7 +110,11 @@ impl Seen {
 }
 
 async fn peer(server: &MailboxServer, code: String) -> Wormhole {
-    let config = classic(server).config();
+    peer_with(server, code, classic(server)).await
+}
+
+async fn peer_with(_server: &MailboxServer, code: String, options: Options) -> Wormhole {
+    let config = options.config();
     within(async {
         wyrmyon_wormhole::join(&config, code.parse().unwrap())
             .await
@@ -401,4 +406,261 @@ async fn a_phone_cancelling_while_the_receiver_decides_tells_it() {
         connection.close().await;
     }
     computer.close(Mood::Happy).await;
+}
+
+fn iroh(server: &MailboxServer) -> Options {
+    Options {
+        force_classic: false,
+        ..classic(server)
+    }
+}
+
+fn album(bundle: bool) -> Arc<Tree> {
+    Arc::new(Tree {
+        name: "album".into(),
+        bundle,
+        members: vec![
+            Member {
+                name: "a.jpg".into(),
+                mode: 0o644,
+                source: Arc::new(Memory(data(200_000))),
+            },
+            Member {
+                name: "day 2/b.jpg".into(),
+                mode: 0o644,
+                source: Arc::new(Memory(data(1000))),
+            },
+        ],
+        dirs: Vec::new(),
+    })
+}
+
+fn into_dir(dir: &std::path::Path) -> impl FnMut(&str, u32) -> Opening + Send + use<> {
+    let dir = dir.to_owned();
+    move |name: &str, _| {
+        let target = dir.join(name);
+        Box::pin(async move {
+            tokio::fs::create_dir_all(target.parent().unwrap()).await?;
+            Ok(Box::new(tokio::fs::File::create(target).await?) as Writer)
+        })
+    }
+}
+
+fn assert_album(dir: &std::path::Path) {
+    assert_eq!(std::fs::read(dir.join("a.jpg")).unwrap(), data(200_000));
+    assert_eq!(std::fs::read(dir.join("day 2/b.jpg")).unwrap(), data(1000));
+}
+
+async fn tree_to_phone(options: Options, bundle: bool) -> OfferInfo {
+    let server_options = options;
+    let (report, mut phone) = watching();
+    let settings = Settings {
+        mailbox: server_options.relay_url.clone(),
+        transit_helper: "tcp:127.0.0.1:9".into(),
+        iroh_relays: "disabled".into(),
+    };
+    let receiving =
+        tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await });
+    let code = phone.code().await;
+    let config = server_options.config();
+    let sending = tokio::spawn(async move {
+        let mut wormhole = wyrmyon_wormhole::join(&config, code.parse().unwrap())
+            .await
+            .unwrap()
+            .pair()
+            .await
+            .unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let (mut staged, mut zipped) = (Staged::default(), None);
+        let events: Arc<dyn Events> = Arc::new(Quiet);
+        let sent = send_tree(
+            &mut wormhole,
+            &server_options,
+            &mut staged,
+            &mut zipped,
+            &album(bundle),
+            scratch.path(),
+            &events,
+        )
+        .await;
+        wormhole.close(Mood::Happy).await;
+        staged.close().await;
+        sent
+    });
+    let incoming = within(receiving).await.unwrap().unwrap();
+    let info = incoming.info();
+    let (cache, out) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    within(Box::pin(incoming.accept_tree(
+        &mut into_dir(out.path()),
+        cache.path().to_owned(),
+    )))
+    .await
+    .unwrap();
+    within(sending).await.unwrap().unwrap();
+    assert_album(out.path());
+    assert_eq!(phone.stages().last(), Some(&Stage::Done));
+    info
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_from_a_wyrm_arrives_as_a_collection() {
+    let server = MailboxServer::start().await;
+    let info = Box::pin(tree_to_phone(iroh(&server), false)).await;
+    assert_eq!(
+        (info.kind, info.name.as_str(), info.count, info.size),
+        (OfferKind::Folder, "album", 2, 201_000)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn files_from_a_legacy_sender_arrive_from_its_zip() {
+    let server = MailboxServer::start().await;
+    let info = Box::pin(tree_to_phone(classic(&server), false)).await;
+    assert_eq!((info.kind, info.count), (OfferKind::Folder, 2));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn several_files_are_offered_as_a_bundle() {
+    let server = MailboxServer::start().await;
+    let info = Box::pin(tree_to_phone(iroh(&server), true)).await;
+    assert_eq!((info.kind, info.count), (OfferKind::Files, 2));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_phone_sends_a_folder_to_a_wyrm() {
+    let server = MailboxServer::start().await;
+    let settings = settings(&server);
+    let (report, mut phone) = watching();
+    let scratch = tempfile::tempdir().unwrap();
+    let outgoing = Outgoing::Tree {
+        tree: album(false),
+        scratch: scratch.path().to_owned(),
+    };
+    let sending =
+        tokio::spawn(async move { send(&settings, None, outgoing, report, &Cancel::new()).await });
+    let mut computer = peer_with(&server, phone.code().await, iroh(&server)).await;
+    let options = iroh(&server);
+    let (offer, connection) = within(Box::pin(wyrmyon_transfer::await_offer(
+        &mut computer,
+        &options,
+    )))
+    .await
+    .unwrap();
+    assert!(matches!(offer, Offer::Collection(_)), "{offer:?}");
+    let (cache, out) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let events: Arc<dyn Events> = Arc::new(Quiet);
+    let received = within(Box::pin(receive_tree(
+        &mut computer,
+        connection.unwrap(),
+        &offer,
+        cache.path(),
+        &mut into_dir(out.path()),
+        &events,
+    )))
+    .await
+    .unwrap();
+    within(received.complete(Ok(()))).await.unwrap();
+    computer.close(Mood::Happy).await;
+    within(sending).await.unwrap().unwrap();
+    assert_album(out.path());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_accepted_as_a_file_is_refused() {
+    let server = MailboxServer::start().await;
+    let (report, mut phone) = watching();
+    let receiving = {
+        let settings = settings(&server);
+        tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await })
+    };
+    let code = phone.code().await;
+    let options = classic(&server);
+    let sending = tokio::spawn(async move {
+        let config = options.config();
+        let mut wormhole = wyrmyon_wormhole::join(&config, code.parse().unwrap())
+            .await
+            .unwrap()
+            .pair()
+            .await
+            .unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let events: Arc<dyn Events> = Arc::new(Quiet);
+        let sent = send_tree(
+            &mut wormhole,
+            &options,
+            &mut Staged::default(),
+            &mut None,
+            &album(false),
+            scratch.path(),
+            &events,
+        )
+        .await;
+        wormhole.close(Mood::Happy).await;
+        sent
+    });
+    let incoming = within(receiving).await.unwrap().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let mut sink = Vec::new();
+    let refused = within(incoming.accept(&mut sink, cache.path().to_owned())).await;
+    assert!(
+        refused
+            .unwrap_err()
+            .to_string()
+            .contains("accepted another way")
+    );
+    let told = within(sending).await.unwrap().unwrap_err();
+    assert!(
+        format!("{told:#}").contains("transfer rejected"),
+        "{told:#}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_accepted_as_a_folder_is_refused() {
+    let server = MailboxServer::start().await;
+    let (report, mut phone) = watching();
+    let receiving = {
+        let settings = settings(&server);
+        tokio::spawn(async move { receive(&settings, None, report, &Cancel::new()).await })
+    };
+    let code = phone.code().await;
+    let options = classic(&server);
+    let sending = tokio::spawn(async move {
+        let mut wormhole = wyrmyon_wormhole::join(&options.config(), code.parse().unwrap())
+            .await
+            .unwrap()
+            .pair()
+            .await
+            .unwrap();
+        let source: Arc<dyn Source> = Arc::new(Memory(data(10)));
+        let events: Arc<dyn Events> = Arc::new(Quiet);
+        let offer = Offer::File(FileOffer {
+            filename: "photo.jpg".into(),
+            filesize: 10,
+        });
+        let sent = send_data(
+            &mut wormhole,
+            &options,
+            &mut Staged::default(),
+            offer,
+            &source,
+            &events,
+        )
+        .await;
+        wormhole.close(Mood::Happy).await;
+        sent
+    });
+    let incoming = within(receiving).await.unwrap().unwrap();
+    let (cache, out) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let refused = within(Box::pin(
+        incoming.accept_tree(&mut into_dir(out.path()), cache.path().to_owned()),
+    ))
+    .await;
+    assert!(
+        refused
+            .unwrap_err()
+            .to_string()
+            .contains("accepted another way")
+    );
+    assert!(within(sending).await.unwrap().is_err());
 }
