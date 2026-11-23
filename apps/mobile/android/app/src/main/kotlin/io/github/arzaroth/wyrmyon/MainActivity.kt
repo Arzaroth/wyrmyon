@@ -1,6 +1,7 @@
 package io.github.arzaroth.wyrmyon
 
 import android.Manifest
+import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -58,6 +59,10 @@ class MainActivity : FlutterActivity() {
                 "recentDownloads" -> result.success(Downloads.recent(this, call.argument<Int>("limit")!!))
                 "openDownload" -> result.success(view(Uri.parse(call.argument<String>("uri"))))
                 "shareDownload" -> result.success(share(Uri.parse(call.argument<String>("uri"))))
+                "shareDownloads" -> result.success(
+                    shareAll(call.argument<List<String>>("uris")!!.map(Uri::parse)),
+                )
+                "showDownloads" -> result.success(launch(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)))
                 "transferStarted" -> {
                     askForNotifications()
                     TransferService.start(this, call.argument<String>("title")!!)
@@ -270,6 +275,14 @@ class MainActivity : FlutterActivity() {
         val intent = Intent(Intent.ACTION_SEND)
             .setType(contentResolver.getType(uri) ?: "application/octet-stream")
             .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return launch(Intent.createChooser(intent, null))
+    }
+
+    private fun shareAll(uris: List<Uri>): Boolean {
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE)
+            .setType("*/*")
+            .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         return launch(Intent.createChooser(intent, null))
     }

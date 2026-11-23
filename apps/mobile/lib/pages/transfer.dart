@@ -8,6 +8,7 @@ import '../app.dart';
 import '../engine.dart';
 import '../format.dart';
 import '../transfer.dart';
+import 'send.dart';
 
 class TransferPage extends StatefulWidget {
   const TransferPage({super.key, required this.job, this.code});
@@ -231,12 +232,33 @@ class _Body extends StatelessWidget {
       const SizedBox(height: 8),
       if (total > 0)
         Text('${formatBytes(transfer.bytes)} of ${formatBytes(total)}'),
+      if (transfer.speed case final speed? when !hashing)
+        Text('${formatBytes(speed.round())}/s'),
       if (route != null && !hashing) ...[
         const SizedBox(height: 8),
         Text(route, style: text.bodySmall),
       ],
+      ..._files(context),
       const SizedBox(height: 32),
       _cancel(context),
+    ];
+  }
+
+  List<Widget> _files(BuildContext context) {
+    final files = transfer.files;
+    if (files.length < 2) return const [];
+    return [
+      const SizedBox(height: 16),
+      for (final file in files.take(50))
+        ListTile(
+          dense: true,
+          leading: Icon(
+            file.done ? Icons.check : Icons.hourglass_empty,
+            color: file.done ? Colors.green : null,
+          ),
+          title: Text(file.path, overflow: TextOverflow.ellipsis),
+        ),
+      if (files.length > 50) Text('and ${files.length - 50} more'),
     ];
   }
 
@@ -254,6 +276,22 @@ class _Body extends StatelessWidget {
           style: text.headlineMedium,
         ),
       ),
+      if (transfer.took case final took?)
+        Center(child: Text('in ${formatDuration(took)}')),
+      if (transfer.verified)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 4,
+              children: [
+                Icon(Icons.verified_outlined, size: 18),
+                Text('Verified end to end'),
+              ],
+            ),
+          ),
+        ),
       const SizedBox(height: 16),
       if (offer != null && offer.kind == OfferKind.text) ...[
         Card.outlined(
@@ -305,6 +343,41 @@ class _Body extends StatelessWidget {
           label: const Text('Share'),
         ),
         const SizedBox(height: 8),
+      ],
+      if (transfer.savedUris.length > 1) ...[
+        FilledButton.icon(
+          onPressed: () => platform.shareDownloads(transfer.savedUris),
+          icon: const Icon(Icons.share),
+          label: const Text('Share all'),
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (!transfer.sending && offer?.kind != OfferKind.text) ...[
+        OutlinedButton.icon(
+          onPressed: platform.showDownloads,
+          icon: const Icon(Icons.folder_open_outlined),
+          label: const Text('Show in folder'),
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (transfer.sending) ...[
+        OutlinedButton.icon(
+          onPressed: () async {
+            final navigator = Navigator.of(context);
+            final files = await platform.pickFiles();
+            if (files.isEmpty) return;
+            await navigator.pushReplacement(SendPage.route(files: files));
+          },
+          icon: const Icon(Icons.add),
+          label: const Text('Send more'),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(
+            'Each code works once: the computer shows a new one.',
+            textAlign: TextAlign.center,
+          ),
+        ),
       ],
       TextButton(
         onPressed: () => Navigator.of(context).pop(),

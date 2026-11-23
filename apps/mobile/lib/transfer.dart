@@ -42,6 +42,8 @@ class Receive extends Job {
   const Receive();
 }
 
+DateTime Function() clock = DateTime.now;
+
 enum Phase { waiting, offered, running, done, failed, cancelled }
 
 class TransferController extends ChangeNotifier {
@@ -154,12 +156,15 @@ class TransferController extends ChangeNotifier {
         phase = Phase.running;
         bytes = update.bytes.toInt();
         total = update.total.toInt();
+        if (update.stage == Stage.moving) _measure();
         _progress();
       case Stage.connected:
         phase = Phase.running;
         route = update.detail;
         bytes = 0;
         total = update.total.toInt();
+        _moving = clock();
+        _sample = (at: _moving!, bytes: 0);
       case Stage.offer:
         offer = _running!.offer();
         if (offer?.kind == OfferKind.text) {
@@ -201,8 +206,54 @@ class TransferController extends ChangeNotifier {
     );
   }
 
+  DateTime? _moving;
+  Duration? took;
+  double? speed;
+  ({DateTime at, int bytes})? _sample;
+
+  void _measure() {
+    final now = clock();
+    final sample = _sample;
+    if (sample == null) return;
+    final elapsed = now.difference(sample.at);
+    if (elapsed < const Duration(seconds: 1)) return;
+    speed = (bytes - sample.bytes) / (elapsed.inMicroseconds / 1e6);
+    _sample = (at: now, bytes: bytes);
+  }
+
+  bool get verified =>
+      phase == Phase.done && job is! SendText && offer?.kind != OfferKind.text;
+
+  List<({String path, bool done})> get files {
+    if (job case SendTree(:final entries)) {
+      final fraction = phase == Phase.done
+          ? 1.0
+          : total > 0
+          ? bytes / total
+          : 0.0;
+      final size = entries.fold<int>(0, (sum, e) => sum + e.file.size);
+      var before = 0;
+      return [
+        for (final entry in entries)
+          (
+            path: entry.path,
+            done: size == 0 || (before += entry.file.size) <= fraction * size,
+          ),
+      ];
+    }
+    return [
+      for (final (index, path) in _paths.indexed)
+        (path: path, done: phase == Phase.done || index < _paths.length - 1),
+    ];
+  }
+
+  final _paths = <String>[];
+
   void _end(Phase ended, String? told) {
     phase = ended;
+    if (ended == Phase.done && _moving != null) {
+      took = clock().difference(_moving!);
+    }
     final download = _download;
     if (download != null) {
       unawaited(
@@ -219,6 +270,8 @@ class TransferController extends ChangeNotifier {
   bool _accepted = false;
 
   int get saved => _downloads.length;
+
+  List<String> get savedUris => List.unmodifiable(_downloads);
 
   Future<void> accept() async {
     if (phase != Phase.offered) return;
@@ -253,6 +306,8 @@ class TransferController extends ChangeNotifier {
           return -1;
         }
         _downloads.add(download.uri);
+        _paths.add(path);
+        _changed();
         return download.fd;
       }, '$cache/received');
     } on Object catch (e) {

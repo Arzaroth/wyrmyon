@@ -82,6 +82,8 @@ abstract class Platform {
   Future<List<Download>> recentDownloads(int limit);
   Future<bool> openDownload(String uri);
   Future<bool> shareDownload(String uri);
+  Future<bool> shareDownloads(List<String> uris);
+  Future<bool> showDownloads();
   Future<void> transferStarted(String title);
   Future<void> transferProgress(
     String title,
@@ -199,6 +201,15 @@ class AndroidPlatform implements Platform {
   @override
   Future<bool> shareDownload(String uri) async =>
       await _channel.invokeMethod<bool>('shareDownload', {'uri': uri}) ?? false;
+
+  @override
+  Future<bool> shareDownloads(List<String> uris) async =>
+      await _channel.invokeMethod<bool>('shareDownloads', {'uris': uris}) ??
+      false;
+
+  @override
+  Future<bool> showDownloads() async =>
+      await _channel.invokeMethod<bool>('showDownloads') ?? false;
 
   @override
   Future<void> transferStarted(String title) =>

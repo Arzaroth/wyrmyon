@@ -18,3 +18,11 @@ String formatAge(DateTime then, DateTime now) {
   if (age.inDays == 1) return 'yesterday';
   return '${age.inDays} days ago';
 }
+
+String formatDuration(Duration took) {
+  final seconds = took.inSeconds;
+  final minutes = seconds ~/ 60;
+  final rest = (seconds % 60).toString().padLeft(2, '0');
+  if (minutes < 60) return '$minutes:$rest';
+  return '${minutes ~/ 60}:${(minutes % 60).toString().padLeft(2, '0')}:$rest';
+}

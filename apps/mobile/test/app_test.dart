@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wyrmyon/app.dart';
 import 'package:wyrmyon/engine.dart';
 import 'package:wyrmyon/platform.dart';
+import 'package:wyrmyon/settings.dart';
 
 import 'fakes.dart';
 
@@ -23,13 +24,17 @@ Future<void> settle(WidgetTester tester) async {
 Future<(FakeEngine, FakePlatform)> launch(
   WidgetTester tester, {
   Shared? shared,
+  SettingsStore? settings,
   List<Download> downloads = const [],
 }) async {
   final engine = FakeEngine();
+  settings ??= FakeSettingsStore();
   final platform = FakePlatform()
     ..initial = shared
     ..downloads = downloads;
-  await tester.pumpWidget(WyrmyonApp(engine: engine, platform: platform));
+  await tester.pumpWidget(
+    WyrmyonApp(engine: engine, platform: platform, settings: settings),
+  );
   await settle(tester);
   return (engine, platform);
 }

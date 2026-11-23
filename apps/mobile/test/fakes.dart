@@ -2,6 +2,27 @@ import 'dart:async';
 
 import 'package:wyrmyon/engine.dart';
 import 'package:wyrmyon/platform.dart';
+import 'package:wyrmyon/settings.dart';
+
+const publicSettings = Settings(
+  mailbox: 'ws://relay.magic-wormhole.io:4000/v1',
+  transitHelper: 'tcp:transit.magic-wormhole.io:4001',
+  irohRelays: 'default',
+);
+
+class FakeSettingsStore implements SettingsStore {
+  Settings? kept;
+  var saves = 0;
+
+  @override
+  Future<Settings?> load() async => kept;
+
+  @override
+  Future<void> save(Settings? settings) async {
+    kept = settings;
+    saves++;
+  }
+}
 
 class FakeRunning implements Running {
   final _updates = StreamController<Update>();
@@ -54,6 +75,17 @@ class FakeEngine implements Engine {
   List<TreeFile> sentFiles = const [];
   List<String> sentDirs = const [];
   final running = FakeRunning();
+
+  @override
+  Settings get defaults => publicSettings;
+
+  @override
+  Settings settings = publicSettings;
+
+  @override
+  String? check(Settings settings) => settings.mailbox.startsWith('ws')
+      ? null
+      : 'the mailbox: a ws:// or wss:// address';
 
   @override
   Scanned? scan(String text) {
@@ -166,6 +198,18 @@ class FakePlatform implements Platform {
   @override
   Future<bool> shareDownload(String uri) async {
     calls.add('share $uri');
+    return true;
+  }
+
+  @override
+  Future<bool> shareDownloads(List<String> uris) async {
+    calls.add('share ${uris.join(' ')}');
+    return true;
+  }
+
+  @override
+  Future<bool> showDownloads() async {
+    calls.add('show downloads');
     return true;
   }
 

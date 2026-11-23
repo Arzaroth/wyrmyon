@@ -3,7 +3,7 @@ import 'src/rust/api/types.dart';
 import 'src/rust/api/types.dart' as rust;
 
 export 'src/rust/api/types.dart'
-    show Direction, OfferInfo, OfferKind, Scanned, Stage, Update;
+    show Direction, OfferInfo, OfferKind, Scanned, Settings, Stage, Update;
 
 abstract class Running {
   Stream<Update> get updates;
@@ -20,6 +20,10 @@ abstract class Running {
 typedef TreeFile = ({String path, int size});
 
 abstract class Engine {
+  Settings get defaults;
+  Settings get settings;
+  set settings(Settings settings);
+  String? check(Settings settings);
   Scanned? scan(String text);
   List<String> completions(String typed);
   Running sendFile({
@@ -42,9 +46,21 @@ abstract class Engine {
 }
 
 class RustEngine implements Engine {
-  RustEngine() : _settings = rust.defaultSettings();
+  @override
+  Settings get defaults => rust.defaultSettings();
 
-  final Settings _settings;
+  @override
+  Settings settings = rust.defaultSettings();
+
+  @override
+  String? check(Settings settings) {
+    try {
+      rust.checkSettings(settings: settings);
+      return null;
+    } on Object catch (e) {
+      return '$e';
+    }
+  }
 
   @override
   Scanned? scan(String text) {
@@ -69,7 +85,7 @@ class RustEngine implements Engine {
     return _Running(
       transfer,
       bridge.sendFile(
-        settings: _settings,
+        settings: settings,
         code: code,
         name: name,
         size: BigInt.from(size),
@@ -85,7 +101,7 @@ class RustEngine implements Engine {
     return _Running(
       transfer,
       bridge.sendText(
-        settings: _settings,
+        settings: settings,
         code: code,
         text: text,
         transfer: transfer,
@@ -107,7 +123,7 @@ class RustEngine implements Engine {
     return _Running(
       transfer,
       bridge.sendFiles(
-        settings: _settings,
+        settings: settings,
         code: code,
         name: name,
         bundle: bundle,
@@ -128,7 +144,7 @@ class RustEngine implements Engine {
     final transfer = bridge.Transfer();
     return _Running(
       transfer,
-      bridge.receive(settings: _settings, code: code, transfer: transfer),
+      bridge.receive(settings: settings, code: code, transfer: transfer),
     );
   }
 }

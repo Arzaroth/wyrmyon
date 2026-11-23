@@ -3,11 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app.dart';
-import '../format.dart';
 import '../platform.dart';
 import '../transfer.dart';
+import 'received.dart';
 import 'scan.dart';
 import 'send.dart';
+import 'settings.dart';
 import 'transfer.dart';
 
 class HomePage extends StatefulWidget {
@@ -78,7 +79,16 @@ class _HomePageState extends State<HomePage>
   Widget build(BuildContext context) {
     final recent = _recent;
     return Scaffold(
-      appBar: AppBar(title: const Text('wyrmyon')),
+      appBar: AppBar(
+        title: const Text('wyrmyon'),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push(SettingsPage.route()),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -96,9 +106,21 @@ class _HomePageState extends State<HomePage>
             onTap: _receive,
           ),
           const SizedBox(height: 24),
-          Text(
-            'Latest received',
-            style: Theme.of(context).textTheme.titleMedium,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Latest received',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (recent != null && recent.isNotEmpty)
+                TextButton(
+                  onPressed: () =>
+                      Navigator.of(context).push(ReceivedPage.route()),
+                  child: const Text('All ›'),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           if (recent == null)
@@ -109,7 +131,7 @@ class _HomePageState extends State<HomePage>
               subtitle: Text('Received files land in Download/wyrmyon'),
             )
           else
-            for (final download in recent) _Received(download),
+            for (final download in recent) ReceivedTile(download),
         ],
       ),
     );
@@ -139,39 +161,6 @@ class _Action extends StatelessWidget {
         title: Text(title),
         subtitle: Text(subtitle),
         onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _Received extends StatelessWidget {
-  const _Received(this.download);
-
-  final Download download;
-
-  @override
-  Widget build(BuildContext context) {
-    final platform = Services.of(context).platform;
-    final messenger = ScaffoldMessenger.of(context);
-    return ListTile(
-      leading: const Icon(Icons.insert_drive_file_outlined),
-      title: Text(download.name, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${download.folder.isEmpty ? '' : '${download.folder}/ · '}'
-        '${formatAge(download.modified, DateTime.now())} · '
-        '${formatBytes(download.size)}',
-      ),
-      onTap: () async {
-        if (!await platform.openDownload(download.uri)) {
-          messenger.showSnackBar(
-            const SnackBar(content: Text('No app can open this file')),
-          );
-        }
-      },
-      trailing: IconButton(
-        tooltip: 'Share',
-        icon: const Icon(Icons.share),
-        onPressed: () => platform.shareDownload(download.uri),
       ),
     );
   }
