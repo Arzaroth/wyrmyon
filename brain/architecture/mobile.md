@@ -3,9 +3,10 @@
 `apps/mobile` is a Flutter project, Android only for now, over
 `crates/mobile` (package `wyrmyon-mobile`), the app's Rust side. Rust does the
 whole transfer through the transfer library ([transfer.md](transfer.md)); Dart
-picks files, scans codes, shows progress and saves what arrives. The flows
-(the share menu, the scanner, saving into `Download/wyrmyon`) are the next
-step of ROADMAP M11; for now the home screen shows Send and Receive, disabled.
+picks files, scans codes, shows progress and saves what arrives; a little
+Kotlin reaches what Flutter does not (the picker, MediaStore, intents, the
+foreground service). One file or one text at a time: several files and
+folders are the last item of ROADMAP M11.
 
 ## The bridge
 
@@ -20,24 +21,33 @@ version as the `flutter_rust_bridge` pins in `pubspec.yaml` and
 | --- | --- |
 | `default_settings()` | The public mailbox and transit relay, n0's iroh relays |
 | `scan(text)` | A scanned `wormhole-transfer:CODE` link, or a typed code, into the code and what the phone does: send for `?role=leader` (`wyrm receive --new --qr`), receive otherwise; anything else is `this is not a wormhole code` |
-| `send_file(settings, code, name, size, open, updates)` | Sends one file. `open` is a Dart callback returning a fresh file descriptor each time Rust opens the source (Android hands out `content://` URIs, not paths), so the source stays reopenable for hashing then sending |
-| `send_text(settings, code, text, updates)` | Sends text |
-| `receive(settings, code, updates)` | Pairs and waits for the offer. Text is acknowledged at once and the transfer ends; a file comes back as an `Incoming` to accept or refuse; folders, several files and anything else are refused (`the app cannot receive folders or several files yet`) |
-| `offer_info(incoming)` | The offer: text, or a file's name and size. The name keeps only its last printable part (`../../etc/passwd` is `passwd`, an empty one `received`) |
-| `accept(incoming, fd, cache_dir)` / `refuse(incoming)` | Receives into a descriptor Dart opened for writing (a MediaStore entry), flushing before the ack; or answers `transfer rejected` |
+| `completions(typed)` | The words of the PGP word list that complete a typed code, as `wormhole receive` offers on Tab (two-word codes) |
+| `Transfer` | A handle per transfer: `cancel()`, and `offer()` once an offer has arrived |
+| `send_file(settings, code, name, size, open, transfer)` | Sends one file. `open` is a Dart callback returning a fresh file descriptor each time Rust opens the source (Android hands out `content://` URIs, not paths), so the source stays reopenable for hashing then sending |
+| `send_text(settings, code, text, transfer)` | Sends text |
+| `receive(settings, code, transfer)` | Pairs and waits for the offer, which the handle then holds. Text is acknowledged at once; a file waits to be accepted or refused; folders, several files and anything else are refused (`the app cannot receive folders or several files yet`). The offered name keeps only its last printable part (`../../etc/passwd` is `passwd`, an empty one `received`) |
+| `accept(transfer, fd, cache_dir)` / `refuse(transfer)` | Receives into a descriptor Dart opened for writing (a MediaStore entry), flushing before the ack, reporting on `receive`'s stream; or answers `transfer rejected` |
 
 With no `code`, Rust allocates one and reports it as the first update, for
 the phone to show; with one, it joins. The app advertises iroh-v1 but no
 offers (`config_offering(&[])`), so a wyrm never sends it a collection, and
 it reaches legacy clients over classic transit.
 
-Every call streams `Update { stage, bytes, total, detail }` to Dart:
-`Code` (the code in `detail`), `Notice` (the server's MOTD), `Paired`,
-`Hashing`, `Connected` (the route in `detail`), `Moving`, `AwaitingAck`
-(classic transit only), `Done`. Progress is sent at most every 100 ms, and
-always when the count reaches the total. A plain struct with a simple enum,
-because frb turns enums with data into freezed classes, which would add a
-Dart code generator.
+`send_*` and `receive` return a stream of `Update { stage, bytes, total,
+detail }`: `Code` (the code in `detail`), `Notice` (the server's MOTD),
+`Paired`, `Hashing`, `Connected` (the route in `detail`), `Moving`,
+`AwaitingAck` (classic transit only), then `Offer`, `Done` or `Failed` (the
+error in `detail`). Every outcome travels on the stream because frb drops
+both the return value and the error of a function that also takes a
+`StreamSink`. Progress is sent at most every 100 ms, and always when the
+count reaches the total. A plain struct with a simple enum, because frb turns
+enums with data into freezed classes, which would add a Dart code generator.
+
+Cancelling goes through the transfer library's `Events::cancelled`
+([transfer.md](transfer.md)) once the peers are paired, so a pipe or an iroh
+endpoint is closed rather than dropped; before that (waiting for the peer or
+for the offer) the pending future is dropped. Either way the peer is sent
+`transfer cancelled` once the wormhole is open.
 
 The core (`send.rs`, `receive.rs`, `report.rs`, `session.rs`) takes a
 `wyrmyon_transfer::Source`, any writer and a callback, so it is tested in
@@ -45,6 +55,53 @@ Rust against the in-process mailbox; `api/bridge.rs` only turns descriptors
 and Dart callbacks into those, and is left out of coverage with the generated
 code. Descriptors are Unix only: elsewhere `accept` and a descriptor source
 fail, so the crate still builds in the desktop CI jobs.
+
+## The Android side
+
+`MainActivity.kt` serves the `wyrmyon/platform` method channel, wrapped in
+Dart by `lib/platform.dart`:
+
+- **Picking**: `ACTION_OPEN_DOCUMENT` with several files allowed; each comes
+  back as its URI, display name and size (from `OpenableColumns`, else the
+  descriptor's `statSize`; a file whose size stays unknown cannot be sent).
+  `openRead` hands Rust a detached descriptor.
+- **Intents**: `ACTION_SEND` and `ACTION_SEND_MULTIPLE` (files, or text) and
+  `ACTION_VIEW` on `wormhole-transfer:` links. The intent the app started with
+  is taken once by Dart; later ones (`singleTop`) are pushed to it. A leader
+  link opens Send with the code set, any other link starts receiving.
+- **Downloads** (`Downloads.kt`): a received file is inserted into
+  `MediaStore.Downloads` under `Download/wyrmyon/` with `IS_PENDING`, written
+  through a descriptor, then published, or deleted when the transfer fails.
+  MediaStore renames a clash (`notes (1).txt`). Home lists the newest entries
+  of that folder rather than a history; Android only shows an app the
+  entries it created, so files from before a reinstall are not listed.
+- **The service** (`TransferService.kt`): a `dataSync` foreground service runs
+  from the start of a transfer to its end, so it survives the screen turning
+  off, with an ongoing notification showing progress (updated at most every
+  second); a finished or failed transfer posts a notification that opens the
+  app. Notifications are asked for at the first transfer (Android 13+).
+
+## The flows
+
+`lib/engine.dart` wraps the bridge behind `Engine` and `Running`, so the
+widget tests drive every screen with a fake. `TransferController`
+(`lib/transfer.dart`) turns the updates into a phase (waiting, offered,
+running, done, failed, cancelled), creates and finishes the download, and
+drives the service.
+
+- **Home**: Send files (the picker, then Send) and Receive (the scanner), the
+  latest received files below; a tap opens one, the share button passes it
+  on. It reloads when the app resumes or a screen closes over it.
+- **Send**: the files chosen (from the picker or the share menu) or the
+  shared text, more files can be added; then scan the computer's code, type
+  it, or show a code (with `wyrm receive CODE` and its QR code) for a
+  computer to type.
+- **Scanner** (mobile_scanner): accepts a code meant for the current way and
+  names the other screen otherwise; typing is the fallback, with the word
+  list completing each word.
+- **Transfer**: the code or "waiting", the server's notice, the offer with
+  Accept and Decline, progress with the route, then Open and Share for a
+  received file, or the text with Copy. Leaving cancels.
 
 ## The build
 
@@ -65,11 +122,12 @@ and its scripts into the repository. The hook requires, in `crates/mobile`:
   workspace root keep using the root `rust-toolchain.toml`, so the Android
   targets are only downloaded for the app.
 
-The NDK, compile and minimum SDK are Flutter's defaults (NDK 28.2, SDK 36,
-min 24). Gradle 9.1 cannot run on Java newer than 25, so `.mise.toml` pins
+The NDK and compile SDK are Flutter's defaults (NDK 28.2, SDK 36); the
+minimum is Android 10 (SDK 29), the first with `MediaStore.Downloads`. Gradle 9.1 cannot run on Java newer than 25, so `.mise.toml` pins
 Temurin 21 beside Flutter 3.44.6. The release APK carries
-`libwyrmyon_mobile.so` for the three ABIs, about 20 MB each, and is still
-signed with the debug key. The manifest asks for `INTERNET` only.
+`libwyrmyon_mobile.so` for the three ABIs, about 20 MB each, and
+mobile_scanner's bundled ML Kit barcode model (so scanning works without
+Google Play services); about 120 MB in all, still signed with the debug key.
 
 CI's `android` job installs Flutter and Java through mise, then runs
 `flutter analyze`, `flutter test` and `flutter build apk --release`, and
@@ -87,6 +145,13 @@ regenerated in CI.
 - [crates/mobile/rust-toolchain.toml](../../crates/mobile/rust-toolchain.toml)
 - [apps/mobile/hook/build.dart](../../apps/mobile/hook/build.dart)
 - [apps/mobile/flutter_rust_bridge.yaml](../../apps/mobile/flutter_rust_bridge.yaml)
-- [apps/mobile/lib/main.dart](../../apps/mobile/lib/main.dart)
+- [crates/mobile/src/cancel.rs](../../crates/mobile/src/cancel.rs)
+- [apps/mobile/lib/engine.dart](../../apps/mobile/lib/engine.dart)
+- [apps/mobile/lib/transfer.dart](../../apps/mobile/lib/transfer.dart)
+- [apps/mobile/lib/platform.dart](../../apps/mobile/lib/platform.dart)
+- [apps/mobile/lib/app.dart](../../apps/mobile/lib/app.dart)
+- [apps/mobile/lib/pages/](../../apps/mobile/lib/pages/)
+- [apps/mobile/android/app/src/main/kotlin/io/github/arzaroth/wyrmyon/](../../apps/mobile/android/app/src/main/kotlin/io/github/arzaroth/wyrmyon/)
+- [apps/mobile/android/app/src/main/AndroidManifest.xml](../../apps/mobile/android/app/src/main/AndroidManifest.xml)
 - [.mise.toml](../../.mise.toml)
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml)

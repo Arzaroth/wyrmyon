@@ -20,7 +20,7 @@ progress bars, prompts, destinations, zips, merges and partial files.
 | `send_data` / `send_over` / `offer_text` | Send a file (or any source) with its offer, over iroh when the peer can, otherwise classic transit; the text offer |
 | `await_offer` | Reads the sender's messages up to the offer, answering its `transit` or `wyrmyon-iroh-v1` with ours on the way, and returns the offer with the `Connection` |
 | `receive_into(..., Sink, ...)` | Sends the `file_ack`, connects and receives into a `Sink`, then `Received::complete` acks once the caller has put the data in place (or aborts) |
-| `Events` | What a transfer reports: hashing, connected (with the pipe), bytes moved, settle, awaiting the ack, stopped. `Quiet` reports nothing; the CLI's `transfer::terminal` draws bars and prints the lines the brain's feature docs quote |
+| `Events` | What a transfer reports: hashing, connected (with the pipe), bytes moved, settle, awaiting the ack, stopped. `cancelled()` is the other way: a future that, once it resolves, stops the hashing, the wait for the receiver's answer or the data with `Cancelled`, closing the pipe (the sender tells a receiver still waiting for the offer `the sender cancelled`); by default it never does. `Quiet` reports nothing; the CLI's `transfer::terminal` draws bars and prints the lines the brain's feature docs quote |
 
 ## Streams, and the copies left
 

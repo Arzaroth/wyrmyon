@@ -137,7 +137,7 @@ phone the files are chosen before the code is scanned.
       code, an offer to accept, progress events) over the existing crates.
 - [x] `apps/mobile`: the Flutter project, Android only; Flutter, Java and the
       Android Rust targets pinned; a CI job for `flutter test` and the APK.
-- [ ] The flows: the share menu and the picker into Send, then the scanner
+- [x] The flows: the share menu and the picker into Send, then the scanner
       (or typing the code, or showing one); Receive by scanning or typing,
       with the offer to accept; files saved to `Download/wyrmyon` through
       MediaStore and the newest of them listed on Home, read from the folder
