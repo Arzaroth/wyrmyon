@@ -15,7 +15,21 @@ pub trait Events: Send + Sync {
     }
     fn awaiting_ack(&self) {}
     fn stopped(&self) {}
+    fn cancelled(&self) -> Settled<'_> {
+        Box::pin(std::future::pending())
+    }
 }
+
+#[derive(Debug)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the transfer was cancelled")
+    }
+}
+
+impl std::error::Error for Cancelled {}
 
 pub struct Quiet;
 

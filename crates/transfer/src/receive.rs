@@ -7,7 +7,7 @@ use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, Role as IrohRole, Traffic};
 use wyrmyon_wormhole::Wormhole;
 
-use crate::events::Events;
+use crate::events::{Cancelled, Events};
 use crate::protocol::{self, Answer, AppMessage, Offer};
 use crate::{Options, Pipe, receive_stream, send_ack};
 
@@ -153,8 +153,11 @@ pub async fn receive_into(
                 Ok(Some(digest))
             }
         }
-    }
-    .await;
+    };
+    let received = tokio::select! {
+        received = received => received,
+        () = events.cancelled() => Err(Cancelled.into()),
+    };
     match received {
         Ok(digest) => Ok(Received { digest, pipe }),
         Err(e) => {

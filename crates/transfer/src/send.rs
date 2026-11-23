@@ -9,7 +9,7 @@ use wyrmyon_transport_iroh::{
 };
 use wyrmyon_wormhole::Wormhole;
 
-use crate::events::Events;
+use crate::events::{Cancelled, Events};
 use crate::protocol::{self, Answer, AppMessage, CollectionOffer, Offer};
 use crate::source::Source;
 use crate::{Options, Pipe, await_ack, send_stream};
@@ -104,6 +104,10 @@ impl<T: Send + 'static> Hashing<T> {
                 tokio::select! {
                     joined = &mut task => break joined,
                     _ = tick.tick() => events.hashed(self.hashed.load(Ordering::Relaxed)),
+                    () = events.cancelled() => {
+                        events.hashing_done();
+                        return Err(Cancelled.into());
+                    }
                 }
             };
             events.hashing_done();
@@ -189,7 +193,12 @@ pub async fn send_data(
         match hashing.finish(events.as_ref()).await {
             Ok(offered) => staged.blob = Some(offered),
             Err(e) => {
-                protocol::send_error(wormhole, "the sender could not read its data").await?;
+                let why = if e.is::<Cancelled>() {
+                    "the sender cancelled"
+                } else {
+                    "the sender could not read its data"
+                };
+                protocol::send_error(wormhole, why).await?;
                 return Err(e);
             }
         }
@@ -263,8 +272,11 @@ pub async fn send_over(
                 _ => {}
             }
         }
-    }
-    .await;
+    };
+    let answered = tokio::select! {
+        answered = answered => answered,
+        () = events.cancelled() => Err(Cancelled.into()),
+    };
     let mut pipe = match (answered, prepared) {
         (Ok((Some(theirs), _)), Prepared::Iroh(iroh)) => {
             Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
@@ -308,8 +320,11 @@ pub async fn send_over(
         }
         events.stopped();
         acked
-    }
-    .await;
+    };
+    let sent = tokio::select! {
+        sent = sent => sent,
+        () = events.cancelled() => Err(Cancelled.into()),
+    };
     if let Err(e) = sent {
         events.stopped();
         pipe.abort().await;
