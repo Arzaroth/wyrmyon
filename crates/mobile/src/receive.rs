@@ -40,6 +40,7 @@ pub async fn receive(
         Ok(awaited) => awaited,
         Err(e) => return session::finish(wormhole, Err(e), &report).await,
     };
+    let iroh = connection.as_ref().is_some_and(|c| !c.is_classic());
     let info = match &offer {
         Offer::File(file) => Some(OfferInfo {
             kind: OfferKind::File,
@@ -47,18 +48,21 @@ pub async fn receive(
             size: file.filesize,
             count: 1,
             text: String::new(),
+            iroh,
         }),
         Offer::Directory(dir) => Some(tree_info(
             &dir.dirname,
             dir.bundle,
             dir.numbytes,
             dir.numfiles,
+            iroh,
         )),
         Offer::Collection(tree) => Some(tree_info(
             &tree.name,
             tree.bundle,
             tree.numbytes,
             tree.numfiles,
+            iroh,
         )),
         _ => None,
     };
@@ -97,6 +101,7 @@ pub async fn receive(
                     size: text.len() as u64,
                     count: 0,
                     text,
+                    iroh: false,
                 },
                 waiting: None,
                 report,
@@ -187,7 +192,7 @@ impl Incoming {
     }
 }
 
-fn tree_info(name: &str, bundle: bool, size: u64, count: u64) -> OfferInfo {
+fn tree_info(name: &str, bundle: bool, size: u64, count: u64, iroh: bool) -> OfferInfo {
     OfferInfo {
         kind: if bundle {
             OfferKind::Files
@@ -198,6 +203,7 @@ fn tree_info(name: &str, bundle: bool, size: u64, count: u64) -> OfferInfo {
         size,
         count,
         text: String::new(),
+        iroh,
     }
 }
 

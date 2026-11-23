@@ -906,14 +906,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   OfferInfo dco_decode_offer_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return OfferInfo(
       kind: dco_decode_offer_kind(arr[0]),
       name: dco_decode_String(arr[1]),
       size: dco_decode_u_64(arr[2]),
       count: dco_decode_u_64(arr[3]),
       text: dco_decode_String(arr[4]),
+      iroh: dco_decode_bool(arr[5]),
     );
   }
 
@@ -1163,12 +1164,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_size = sse_decode_u_64(deserializer);
     var var_count = sse_decode_u_64(deserializer);
     var var_text = sse_decode_String(deserializer);
+    var var_iroh = sse_decode_bool(deserializer);
     return OfferInfo(
       kind: var_kind,
       name: var_name,
       size: var_size,
       count: var_count,
       text: var_text,
+      iroh: var_iroh,
     );
   }
 
@@ -1483,6 +1486,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.size, serializer);
     sse_encode_u_64(self.count, serializer);
     sse_encode_String(self.text, serializer);
+    sse_encode_bool(self.iroh, serializer);
   }
 
   @protected

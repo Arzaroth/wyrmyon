@@ -29,6 +29,7 @@ class OfferInfo {
   final BigInt size;
   final BigInt count;
   final String text;
+  final bool iroh;
 
   const OfferInfo({
     required this.kind,
@@ -36,6 +37,7 @@ class OfferInfo {
     required this.size,
     required this.count,
     required this.text,
+    required this.iroh,
   });
 
   @override
@@ -44,7 +46,8 @@ class OfferInfo {
       name.hashCode ^
       size.hashCode ^
       count.hashCode ^
-      text.hashCode;
+      text.hashCode ^
+      iroh.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -55,7 +58,8 @@ class OfferInfo {
           name == other.name &&
           size == other.size &&
           count == other.count &&
-          text == other.text;
+          text == other.text &&
+          iroh == other.iroh;
 }
 
 enum OfferKind { text, file, folder, files }

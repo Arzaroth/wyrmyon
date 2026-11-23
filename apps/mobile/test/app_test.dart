@@ -204,6 +204,7 @@ void main() {
         size: BigInt.from(2000),
         count: BigInt.from(1),
         text: '',
+        iroh: false,
       )
       ..tell(Stage.offer);
     await tester.pump();
@@ -252,6 +253,7 @@ void main() {
         size: BigInt.from(2000),
         count: BigInt.from(1),
         text: '',
+        iroh: false,
       )
       ..tell(Stage.offer);
     await tester.pump();
@@ -275,6 +277,7 @@ void main() {
         size: BigInt.from(2000),
         count: BigInt.from(1),
         text: '',
+        iroh: false,
       )
       ..tell(Stage.offer);
     await tester.pump();
@@ -297,6 +300,7 @@ void main() {
         size: BigInt.from(5),
         count: BigInt.from(1),
         text: 'hello',
+        iroh: false,
       )
       ..tell(Stage.done)
       ..tell(Stage.offer);
@@ -348,6 +352,7 @@ void main() {
         size: BigInt.from(3000),
         count: BigInt.from(2),
         text: '',
+        iroh: false,
       )
       ..tell(Stage.offer);
     await tester.pump();
@@ -385,6 +390,7 @@ void main() {
         size: BigInt.from(3000),
         count: BigInt.from(2),
         text: '',
+        iroh: false,
       )
       ..tell(Stage.offer);
     await tester.pump();
@@ -513,6 +519,7 @@ void main() {
         size: BigInt.from(30),
         count: BigInt.from(2),
         text: '',
+        iroh: false,
       )
       ..tell(Stage.offer);
     await tester.pump();

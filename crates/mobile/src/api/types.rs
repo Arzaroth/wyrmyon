@@ -130,6 +130,7 @@ pub struct OfferInfo {
     pub size: u64,
     pub count: u64,
     pub text: String,
+    pub iroh: bool,
 }
 
 #[cfg(test)]

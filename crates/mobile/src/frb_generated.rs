@@ -1024,12 +1024,14 @@ impl SseDecode for crate::api::types::OfferInfo {
         let mut var_size = <u64>::sse_decode(deserializer);
         let mut var_count = <u64>::sse_decode(deserializer);
         let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_iroh = <bool>::sse_decode(deserializer);
         return crate::api::types::OfferInfo {
             kind: var_kind,
             name: var_name,
             size: var_size,
             count: var_count,
             text: var_text,
+            iroh: var_iroh,
         };
     }
 }
@@ -1260,6 +1262,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::OfferInfo {
             self.size.into_into_dart().into_dart(),
             self.count.into_into_dart().into_dart(),
             self.text.into_into_dart().into_dart(),
+            self.iroh.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1512,6 +1515,7 @@ impl SseEncode for crate::api::types::OfferInfo {
         <u64>::sse_encode(self.size, serializer);
         <u64>::sse_encode(self.count, serializer);
         <String>::sse_encode(self.text, serializer);
+        <bool>::sse_encode(self.iroh, serializer);
     }
 }
 
