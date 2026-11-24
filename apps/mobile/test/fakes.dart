@@ -154,6 +154,8 @@ class FakePlatform implements Platform {
   List<PickedFile> picked = const [];
   PickedFolder? folder;
   var created = 0;
+  Completer<void>? creating;
+  Object? createFails;
   List<Download> downloads = const [];
 
   @override
@@ -177,6 +179,8 @@ class FakePlatform implements Platform {
   @override
   Future<({String uri, int fd})> createDownload(String path) async {
     calls.add('create $path');
+    await creating?.future;
+    if (createFails case final error?) throw error;
     created++;
     return (uri: 'content://downloads/$created', fd: 6 + created);
   }

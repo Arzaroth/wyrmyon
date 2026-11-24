@@ -492,7 +492,7 @@ async fn tree_to_phone(options: Options, bundle: bool) -> OfferInfo {
     let (cache, out) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     within(Box::pin(incoming.accept_tree(
         &mut into_dir(out.path()),
-        cache.path().to_owned(),
+        cache.path().join("received"),
     )))
     .await
     .unwrap();

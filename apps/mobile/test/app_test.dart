@@ -495,12 +495,12 @@ void main() {
       engine.running.tell(Stage.moving, bytes: 1200000, total: 2000000);
       await tester.pump();
       expect(find.text('600 KB/s'), findsOneWidget);
-    expect(
-      tester
-          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
-          .widthFactor,
-      closeTo(0.2, 0.001),
-    );
+      expect(
+        tester
+            .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
+            .widthFactor,
+        closeTo(0.2, 0.001),
+      );
       expect(find.byIcon(Icons.check), findsOneWidget);
       expect(find.text('b.jpg'), findsOneWidget);
       now = now.add(const Duration(seconds: 5));

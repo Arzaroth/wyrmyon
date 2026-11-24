@@ -242,6 +242,8 @@ async fn a_source_that_shrank_fails_the_zip() {
 
 #[test]
 fn only_plain_relative_paths_are_usable() {
+    assert!(!usable_path("invoice\u{202e}fdp.apk"));
+    assert!(!usable_path("a\u{2066}b"));
     for good in ["a", "a/b.txt", "trip/2024/c d.jpg"] {
         assert!(usable_path(good), "{good}");
     }
@@ -255,6 +257,11 @@ fn crafted_zip(dir: &Path, entries: &[(&str, &[u8])]) -> (PathBuf, u64) {
     let path = dir.join("crafted.zip");
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
     for (name, data) in entries {
+        if name.ends_with('/') {
+            zip.add_directory(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            continue;
+        }
         zip.start_file(*name, zip::write::SimpleFileOptions::default())
             .unwrap();
         zip.write_all(data).unwrap();
@@ -264,18 +271,50 @@ fn crafted_zip(dir: &Path, entries: &[(&str, &[u8])]) -> (PathBuf, u64) {
     (path, size)
 }
 
+struct Crafted<'a> {
+    entries: &'a [(&'a str, &'a [u8])],
+    numbytes: u64,
+    numfiles: u64,
+    mode: &'a str,
+    force_classic: bool,
+}
+
 async fn offer_crafted(
     entries: &[(&str, &[u8])],
     numbytes: u64,
     numfiles: u64,
     mode: &str,
 ) -> anyhow::Error {
+    let out = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let crafted = Crafted {
+        entries,
+        numbytes,
+        numfiles,
+        mode,
+        force_classic: true,
+    };
+    let (sent, received) = Box::pin(send_crafted(&crafted, cache.path(), out.path())).await;
+    assert!(sent.is_err());
+    received.expect_err("the zip was refused")
+}
+
+async fn send_crafted(
+    crafted: &Crafted<'_>,
+    cache: &Path,
+    out: &Path,
+) -> (anyhow::Result<()>, anyhow::Result<()>) {
+    let Crafted {
+        entries,
+        numbytes,
+        numfiles,
+        mode,
+        force_classic,
+    } = *crafted;
     let server = MailboxServer::start().await;
-    let options = options(&server, true);
+    let options = options(&server, force_classic);
     let scratch = tempfile::tempdir().unwrap();
     let (zip, zipsize) = crafted_zip(scratch.path(), entries);
-    let cache = tempfile::tempdir().unwrap();
-    let out = tempfile::tempdir().unwrap();
     let (mut wormhole, sender) = paired(&options).await;
     let offer = DirectoryOffer {
         mode: mode.into(),
@@ -302,25 +341,61 @@ async fn offer_crafted(
             )
             .await;
             wormhole.close(Mood::Happy).await;
-            sent
+            sent.map(drop)
         })
     };
     let (offer, connection) = within(Box::pin(await_offer(&mut wormhole, &options)))
         .await
         .unwrap();
     let events: Arc<dyn Events> = Arc::new(Quiet);
-    let received = within(Box::pin(receive_tree(
-        &mut wormhole,
-        connection.unwrap(),
-        &offer,
-        cache.path(),
-        &mut opener(out.path()),
-        &events,
-    )))
-    .await;
+    let received = async {
+        let received = Box::pin(receive_tree(
+            &mut wormhole,
+            connection.unwrap(),
+            &offer,
+            cache,
+            &mut opener(out),
+            &events,
+        ))
+        .await?;
+        received.complete(Ok(())).await
+    };
+    let received = within(received).await;
     wormhole.close(Mood::Happy).await;
-    assert!(within(sender).await.unwrap().is_err());
-    received.err().expect("the zip was refused")
+    (within(sender).await.unwrap(), received)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_zip_over_iroh_unpacks_into_a_cache_made_on_the_way() {
+    let out = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let crafted = Crafted {
+        entries: &[
+            ("./", b""),
+            ("a.txt", b"hello"),
+            ("sub/", b""),
+            ("sub/b.txt", b"there"),
+        ],
+        numbytes: 10,
+        numfiles: 2,
+        mode: ZIP_MODE,
+        force_classic: false,
+    };
+    let (sent, received) = Box::pin(send_crafted(
+        &crafted,
+        &cache.path().join("not/yet"),
+        out.path(),
+    ))
+    .await;
+    received.unwrap();
+    sent.unwrap();
+    assert_eq!(
+        read_tree(out.path()),
+        BTreeMap::from([
+            ("a.txt".to_owned(), b"hello".to_vec()),
+            ("sub/b.txt".to_owned(), b"there".to_vec()),
+        ])
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
