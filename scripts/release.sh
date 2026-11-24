@@ -2,8 +2,9 @@
 # Usage: scripts/release.sh <x.y.z> [--dry-run]
 #
 # Moves CHANGELOG.md's [Unreleased] into a dated section, bumps Cargo.toml,
-# Cargo.lock and the PKGBUILDs, runs the gate, commits, tags vX.Y.Z and
-# pushes. The tag push is what starts .github/workflows/release.yml.
+# Cargo.lock, the PKGBUILDs and the Android app's version, runs the gate,
+# commits, tags vX.Y.Z and pushes. The tag push is what starts
+# .github/workflows/release.yml.
 
 set -euo pipefail
 
@@ -62,7 +63,7 @@ if $dry_run; then
 fi
 
 restore() {
-  git checkout -- CHANGELOG.md Cargo.toml Cargo.lock packaging/arch
+  git checkout -- CHANGELOG.md Cargo.toml Cargo.lock packaging/arch apps/mobile/pubspec.yaml
   echo "release: the gate failed, the bump was undone" >&2
 }
 trap restore ERR
@@ -75,6 +76,8 @@ mv CHANGELOG.md.new CHANGELOG.md
 sed -i "0,/^version = \".*\"/s//version = \"$version\"/" Cargo.toml
 cargo update -q --workspace --offline
 sed -i "s/^pkgver=.*/pkgver=$version/" packaging/arch/*/PKGBUILD
+IFS=. read -r major minor patch <<<"$version"
+sed -i "s/^version: .*/version: $version+$((major * 10000 + minor * 100 + patch))/" apps/mobile/pubspec.yaml
 
 cargo fmt --all --check
 cargo clippy -q --all-targets --locked -- -D warnings
@@ -86,7 +89,7 @@ if [[ $printed != "wyrmyon $version" ]]; then
 fi
 trap - ERR
 
-git add CHANGELOG.md Cargo.toml Cargo.lock packaging/arch
+git add CHANGELOG.md Cargo.toml Cargo.lock packaging/arch apps/mobile/pubspec.yaml
 git commit -q -m "[master] chore(release): $version"
 git tag -a "v$version" -m "wyrmyon $version"
 git push -q --atomic origin master "v$version"

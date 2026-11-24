@@ -25,3 +25,40 @@ for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
   ls -lh "$apk"
 done
 '''
+
+[tasks.apk-publish]
+description = "Attach the release APKs and their checksums to the GitHub release of the app's version"
+dir = "{{ config_root }}/apps/mobile"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+version=$(sed -n 's/^version: \([0-9.]*\)+.*/\1/p' pubspec.yaml)
+tag="v$version"
+if ! gh release view "$tag" -R Arzaroth/wyrmyon >/dev/null 2>&1; then
+  echo "apk-publish: there is no GitHub release $tag yet. Let the Release workflow finish first." >&2
+  exit 1
+fi
+sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+tools=$(ls -d "$sdk"/build-tools/* | sort -V | tail -1)
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
+for abi in arm64-v8a armeabi-v7a x86_64; do
+  apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
+  if [ ! -f "$apk" ]; then
+    echo "apk-publish: no $apk. Run apk-release first." >&2
+    exit 1
+  fi
+  if "$tools/apksigner" verify --print-certs "$apk" | grep -q "CN=Android Debug"; then
+    echo "apk-publish: $apk is signed with the debug key" >&2
+    exit 1
+  fi
+  built=$("$tools/aapt2" dump badging "$apk" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+  if [ "$built" != "$version" ]; then
+    echo "apk-publish: $apk is version ${built:-unknown}, not $version. Run apk-release again." >&2
+    exit 1
+  fi
+  cp "$apk" "$out/wyrmyon-$version-android-$abi.apk"
+done
+(cd "$out" && sha256sum -- *.apk > SHA256SUMS.android && cat SHA256SUMS.android)
+gh release upload "$tag" -R Arzaroth/wyrmyon "$out"/*
+'''
