@@ -5,7 +5,7 @@ use anyhow::{Context, bail};
 use tokio::io::AsyncWrite;
 use wyrmyon_transport_classic::{Role, Transit, TransitInfo};
 use wyrmyon_transport_iroh::{IrohInfo, IrohTransport, Role as IrohRole, Traffic};
-use wyrmyon_wormhole::Wormhole;
+use wyrmyon_wormhole::{Key, Wormhole};
 
 use crate::events::{Cancelled, Events};
 use crate::protocol::{self, Answer, AppMessage, Offer};
@@ -25,6 +25,35 @@ impl Connection {
         if let Self::Iroh(iroh, _) = self {
             iroh.close().await;
         }
+    }
+
+    pub async fn open(self, key: &Key, events: &dyn Events) -> anyhow::Result<Pipe> {
+        match self {
+            Self::Iroh(iroh, theirs) => {
+                match iroh.connect_unless(&theirs, key, events.cancelled()).await {
+                    Some(pipe) => Ok(Pipe::Iroh(pipe?)),
+                    None => Err(Cancelled.into()),
+                }
+            }
+            Self::Classic(transit, theirs) => tokio::select! {
+                pipe = transit.connect(&theirs) => Ok(Pipe::Classic(pipe?)),
+                () = events.cancelled() => Err(Cancelled.into()),
+            },
+        }
+    }
+
+    pub(crate) async fn accept(
+        self,
+        wormhole: &mut Wormhole,
+        events: &dyn Events,
+    ) -> anyhow::Result<Pipe> {
+        let acked =
+            protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await;
+        if let Err(e) = acked {
+            self.close().await;
+            return Err(e);
+        }
+        self.open(wormhole.key(), events).await
     }
 }
 
@@ -121,11 +150,7 @@ pub async fn receive_into(
     sink: Sink<'_>,
     events: &Arc<dyn Events>,
 ) -> anyhow::Result<Received> {
-    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
-    let mut pipe = match connection {
-        Connection::Iroh(iroh, theirs) => Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?),
-        Connection::Classic(transit, theirs) => Pipe::Classic(transit.connect(&theirs).await?),
-    };
+    let mut pipe = connection.accept(wormhole, events.as_ref()).await?;
     events.connected(&pipe, size);
     let received = async {
         match (&mut pipe, sink) {

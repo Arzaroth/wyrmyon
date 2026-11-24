@@ -13,7 +13,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::events::{Cancelled, Events};
-use crate::protocol::{self, Answer, AppMessage, CollectionOffer, DirectoryOffer, Offer};
+use crate::protocol::{self, CollectionOffer, DirectoryOffer, Offer};
 use crate::send::unreadable;
 use crate::{
     Connection, FileSource, Hashing, Options, Pipe, Received, Sink, Source, Staged, receive_into,
@@ -240,8 +240,13 @@ pub fn usable_path(path: &str) -> bool {
         && path.split('/').all(|part| {
             !matches!(part, "" | "." | "..")
                 && !part.contains('\\')
-                && !part.chars().any(char::is_control)
+                && !part.chars().any(unprintable)
         })
+}
+
+pub fn unprintable(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 
 pub async fn receive_tree(
@@ -282,8 +287,9 @@ async fn receive_collection(
         iroh.close().await;
         return refuse(wormhole, "the sender offered too many files").await;
     }
-    protocol::send(wormhole, &AppMessage::Answer(Answer::FileAck("ok".into()))).await?;
-    let mut pipe = Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?);
+    let mut pipe = Connection::Iroh(iroh, theirs)
+        .accept(wormhole, events.as_ref())
+        .await?;
     events.connected(&pipe, offer.numbytes);
     let received = async {
         let Pipe::Iroh(iroh) = &mut pipe else {
@@ -331,7 +337,13 @@ async fn receive_zip(
         connection.close().await;
         return refuse(wormhole, "unknown directory transfer mode").await;
     }
-    let zip = tempfile::NamedTempFile::new_in(cache).context("creating the zip file")?;
+    let zip = match scratch_zip(cache).await {
+        Ok(zip) => zip,
+        Err(e) => {
+            connection.close().await;
+            return Err(e);
+        }
+    };
     let file = tokio::fs::File::from_std(zip.reopen().context("opening the zip file")?);
     let sink = Sink::File {
         file,
@@ -350,9 +362,12 @@ async fn receive_zip(
         numbytes: offer.numbytes,
         numfiles: offer.numfiles,
     };
-    let unpacked = tokio::select! {
-        unpacked = unzip(zip.reopen()?, limits, open) => unpacked,
-        () = events.cancelled() => Err(Cancelled.into()),
+    let unpacked = match std::fs::File::open(zip.path()).context("opening the zip file") {
+        Ok(file) => tokio::select! {
+            unpacked = unzip(file, limits, open) => unpacked,
+            () = events.cancelled() => Err(Cancelled.into()),
+        },
+        Err(e) => Err(e),
     };
     match unpacked {
         Ok(()) => Ok(received),
@@ -361,6 +376,13 @@ async fn receive_zip(
             Err(received.complete(Err(e)).await.unwrap_err())
         }
     }
+}
+
+async fn scratch_zip(cache: &Path) -> anyhow::Result<tempfile::NamedTempFile> {
+    tokio::fs::create_dir_all(cache)
+        .await
+        .context("creating the cache")?;
+    tempfile::NamedTempFile::new_in(cache).context("creating the zip file")
 }
 
 struct Limits {
@@ -437,10 +459,13 @@ fn read_zip(
             bail!("the received files could not be written");
         }
         let mut entry = archive.by_index(index)?;
-        let name = entry
+        let enclosed = entry
             .enclosed_name()
-            .and_then(|p| p.to_str().map(|p| p.replace('\\', "/")))
-            .filter(|p| usable_path(p));
+            .and_then(|p| p.to_str().map(|p| p.replace('\\', "/")));
+        if entry.is_dir() && enclosed.as_deref() == Some("") {
+            continue;
+        }
+        let name = enclosed.filter(|p| usable_path(p));
         let Some(name) = name else {
             bail!(
                 "the zip file has an entry outside its directory or unusable here: {}",

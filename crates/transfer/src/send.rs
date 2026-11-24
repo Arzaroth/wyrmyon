@@ -13,7 +13,7 @@ use wyrmyon_wormhole::Wormhole;
 use crate::events::{Cancelled, Events};
 use crate::protocol::{self, Answer, AppMessage, CollectionOffer, Offer};
 use crate::source::Source;
-use crate::{Options, Pipe, await_ack, send_stream};
+use crate::{Connection, Options, Pipe, await_ack, send_stream};
 
 #[derive(Default)]
 pub struct Staged {
@@ -303,10 +303,14 @@ pub async fn send_over(
     };
     let mut pipe = match (answered, prepared) {
         (Ok((Some(theirs), _)), Prepared::Iroh(iroh)) => {
-            Pipe::Iroh(iroh.connect(&theirs, wormhole.key()).await?)
+            Connection::Iroh(iroh, theirs)
+                .open(wormhole.key(), events.as_ref())
+                .await?
         }
         (Ok((_, theirs)), Prepared::Classic(transit)) => {
-            Pipe::Classic(transit.connect(&theirs).await?)
+            Connection::Classic(transit, theirs)
+                .open(wormhole.key(), events.as_ref())
+                .await?
         }
         (Ok(_), Prepared::Iroh(iroh)) => {
             iroh.close().await;
