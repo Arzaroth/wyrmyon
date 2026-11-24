@@ -3,4 +3,5 @@
     <string name="transfer_running">Transfer running</string>
     <string name="channel_running">Transfers in progress</string>
     <string name="channel_ended">Finished transfers</string>
+    <string name="not_shared_content">Only files shared by another app can be sent</string>
 </resources>

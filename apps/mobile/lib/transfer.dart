@@ -104,7 +104,7 @@ class TransferController extends ChangeNotifier {
         code: code,
         name: file.name,
         size: file.size,
-        open: () => platform.openRead(file.uri),
+        open: () => _descriptor(() => platform.openRead(file.uri)),
       ),
       SendText(:final text) => engine.sendText(code: code, text: text),
       SendTree() => null,
@@ -130,7 +130,8 @@ class TransferController extends ChangeNotifier {
             (path: entry.path, size: entry.file.size),
         ],
         dirs: tree.dirs,
-        open: (index) => platform.openRead(tree.entries[index].file.uri),
+        open: (index) =>
+            _descriptor(() => platform.openRead(tree.entries[index].file.uri)),
         cacheDir: cacheDir,
       ),
     );
@@ -299,12 +300,17 @@ class TransferController extends ChangeNotifier {
       final name = offer!.name;
       final cache = await platform.cacheDir();
       final download = await platform.createDownload(name);
-      _download = download;
+      if (ended) {
+        await platform.finishDownload(download.uri, kept: false);
+      } else {
+        _download = download;
+      }
       await _running!.accept(download.fd, '$cache/received');
     } on Object catch (e) {
       if (ended) return;
       error = '$e';
       if (_download == null) await _running!.refuse();
+      if (ended) return;
       _end(Phase.failed, error);
       _changed();
     }
@@ -314,18 +320,21 @@ class TransferController extends ChangeNotifier {
     final base = offer!.kind == OfferKind.folder ? '${offer!.name}/' : '';
     try {
       final cache = await platform.cacheDir();
-      await _running!.acceptFiles((path) async {
-        if (ended) return -1;
-        final download = await platform.createDownload('$base$path');
-        if (ended) {
-          await platform.finishDownload(download.uri, kept: false);
-          return -1;
-        }
-        _downloads.add(download.uri);
-        _paths.add(path);
-        _changed();
-        return download.fd;
-      }, '$cache/received');
+      await _running!.acceptFiles(
+        (path) => _descriptor(() async {
+          if (ended) return -1;
+          final download = await platform.createDownload('$base$path');
+          if (ended) {
+            await platform.finishDownload(download.uri, kept: false);
+          } else {
+            _downloads.add(download.uri);
+            _paths.add(path);
+            _changed();
+          }
+          return download.fd;
+        }),
+        '$cache/received',
+      );
     } on Object catch (e) {
       if (ended) return;
       error = '$e';
@@ -343,11 +352,19 @@ class TransferController extends ChangeNotifier {
 
   void cancel() {
     if (ended) return;
-    final offered = phase == Phase.offered;
+    final answered = phase == Phase.running;
     _running?.cancel();
     _end(Phase.cancelled, null);
-    if (offered) unawaited(_running!.refuse());
+    if (!answered) unawaited(_running?.refuse());
     _changed();
+  }
+
+  Future<int> _descriptor(Future<int> Function() open) async {
+    try {
+      return await open();
+    } on Object {
+      return -1;
+    }
   }
 
   void _changed() {

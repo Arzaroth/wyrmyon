@@ -293,8 +293,9 @@ class _Offered extends StatelessWidget {
           'Decline',
           onPressed: () async {
             final navigator = Navigator.of(context);
+            final route = ModalRoute.of(context);
             await transfer.decline();
-            navigator.pop();
+            if (route?.isCurrent ?? false) navigator.pop();
           },
         ),
       ],

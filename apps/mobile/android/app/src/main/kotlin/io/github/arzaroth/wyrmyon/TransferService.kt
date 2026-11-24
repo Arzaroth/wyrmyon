@@ -20,6 +20,10 @@ class TransferService : Service() {
             Notifications.ongoing(this, title, null, 0, 0),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
+        if (intent?.action == STOP && running == 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
         return START_NOT_STICKY
     }
 
@@ -29,8 +33,11 @@ class TransferService : Service() {
 
     companion object {
         private const val TITLE = "title"
+        private const val STOP = "stop"
+        private var running = 0
 
         fun start(context: Context, title: String) {
+            running++
             context.startForegroundService(Intent(context, TransferService::class.java).putExtra(TITLE, title))
         }
 
@@ -40,11 +47,27 @@ class TransferService : Service() {
         }
 
         fun stop(context: Context, title: String, text: String?) {
-            context.stopService(Intent(context, TransferService::class.java))
-            Notifications.manager(context).cancel(Notifications.ONGOING)
+            running = maxOf(0, running - 1)
+            if (running == 0) halt(context, title)
             if (text != null) {
                 Notifications.manager(context).notify(Notifications.ENDED, Notifications.ended(context, title, text))
             }
+        }
+
+        fun forget(context: Context) {
+            if (running == 0) return
+            running = 0
+            halt(context, context.getString(R.string.transfer_running))
+        }
+
+        private fun halt(context: Context, title: String) {
+            val stopping = Intent(context, TransferService::class.java).setAction(STOP).putExtra(TITLE, title)
+            try {
+                context.startService(stopping)
+            } catch (e: IllegalStateException) {
+                context.stopService(stopping)
+            }
+            Notifications.manager(context).cancel(Notifications.ONGOING)
         }
     }
 }

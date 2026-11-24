@@ -3,6 +3,7 @@ package io.github.arzaroth.wyrmyon
 import android.Manifest
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
+import android.content.ContentResolver
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -32,6 +33,11 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "wyrmyon/platform")
         channel.setMethodCallHandler(::handle)
+    }
+
+    override fun onDestroy() {
+        TransferService.forget(this)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -91,18 +97,20 @@ class MainActivity : FlutterActivity() {
 
     private fun pickFiles(result: MethodChannel.Result) {
         picking?.success(null)
-        picking = result
+        picking = null
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .setType("*/*")
             .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         startActivityForResult(intent, PICK_FILES)
+        picking = result
     }
 
     private fun pickFolder(result: MethodChannel.Result) {
         picking?.success(null)
-        picking = result
+        picking = null
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER)
+        picking = result
     }
 
     private fun folder(tree: Uri): Map<String, Any> {
@@ -214,6 +222,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun files(uris: List<Uri>): Map<String, Any>? = try {
+        require(uris.all { it.scheme == ContentResolver.SCHEME_CONTENT }) {
+            getString(R.string.not_shared_content)
+        }
         mapOf("kind" to "files", "files" to uris.map(::item))
     } catch (e: Exception) {
         mapOf("kind" to "error", "error" to (e.message ?: e.javaClass.simpleName))
