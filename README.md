@@ -11,7 +11,7 @@ QUIC with hole-punching, relay fallback, one stream per file, verified and
 resumable transfers. You never pick a protocol or a server, and codes keep the
 familiar `7-guitarist-revenge` shape.
 
-**Status: 0.7.0.** Text, files,
+**Status: 0.9.0.** Text, files,
 directories and several paths at once work with any magic-wormhole client,
 directly or through the transit relay, and over iroh between two wyrms,
 verified chunk by chunk and resumable after an interruption, on Linux, macOS
@@ -21,7 +21,10 @@ Run as `wormhole` (`wyrm shim` links it), wyrmyon takes the Python client's
 command line, and the packages are signed. `wyrm ssh` hands an SSH public key
 over, with the Python client on either side, `wyrm send --delete-source`
 deletes what was sent once the receiver confirms it, and `wyrm forward`
-carries TCP ports from one wyrm to another until either side stops it.
+carries TCP ports from one wyrm to another until either side stops it. An
+Android app sends and receives the same way, over iroh with a wyrm and over
+classic transit with any other client, and scans or shows the codes as QR
+codes.
 
 ## Usage
 
