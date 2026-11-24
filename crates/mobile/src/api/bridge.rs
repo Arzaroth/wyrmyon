@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use flutter_rust_bridge::{DartFnFuture, frb};
-use wyrmyon_transfer::{Member, Opened, Opening, Reader, Source, Tree, Writer};
+use wyrmyon_transfer::{Cancelled, Member, Opened, Opening, Reader, Source, Tree, Writer};
 
 use crate::api::types::{OfferInfo, Settings, Stage, Update};
 use crate::frb_generated::StreamSink;
@@ -160,18 +160,33 @@ pub async fn receive(
     .await;
     match received {
         Ok(incoming) => {
-            *transfer.slot() = Some((incoming, Arc::clone(&report)));
-            tell(&report, Stage::Offer, String::new());
+            let late = {
+                let mut slot = transfer.slot();
+                if transfer.cancel.is_cancelled() {
+                    Some(incoming)
+                } else {
+                    *slot = Some((incoming, Arc::clone(&report)));
+                    None
+                }
+            };
+            match late {
+                Some(incoming) => {
+                    let _ = incoming.refuse().await;
+                    ended(&report, Err(Cancelled.into()));
+                }
+                None => tell(&report, Stage::Offer, String::new()),
+            }
         }
         Err(e) => ended(&report, Err(e)),
     }
 }
 
 pub async fn accept(transfer: &Transfer, fd: i32, cache_dir: String) {
+    let file = owned_file(fd);
     let Some((incoming, report)) = transfer.slot().take() else {
         return;
     };
-    let accepted = match owned_file(fd) {
+    let accepted = match file {
         Ok(file) => {
             let mut file = tokio::fs::File::from_std(file);
             incoming.accept(&mut file, PathBuf::from(cache_dir)).await

@@ -5,7 +5,7 @@ use anyhow::Context;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use wyrmyon_transfer::protocol::{self, Answer, AppMessage, Offer};
 use wyrmyon_transfer::{
-    Connection, Events, Opening, Sink, await_offer, receive_into, receive_tree, refuse,
+    Connection, Events, Opening, Sink, await_offer, receive_into, receive_tree, refuse, unprintable,
 };
 use wyrmyon_wormhole::{Mood, Wormhole};
 
@@ -53,7 +53,7 @@ pub async fn receive(
         Offer::Directory(dir) => Some(tree_info(
             &dir.dirname,
             dir.bundle,
-            dir.numbytes,
+            dir.numbytes.max(dir.zipsize),
             dir.numfiles,
             iroh,
         )),
@@ -209,7 +209,7 @@ fn tree_info(name: &str, bundle: bool, size: u64, count: u64, iroh: bool) -> Off
 
 fn file_name(offered: &str) -> String {
     let last = offered.rsplit(['/', '\\']).next().unwrap_or_default();
-    let name: String = last.chars().filter(|c| !c.is_control()).collect();
+    let name: String = last.chars().filter(|&c| !unprintable(c)).collect();
     if name.is_empty() || name == "." || name == ".." {
         "received".to_owned()
     } else {
@@ -227,6 +227,7 @@ mod tests {
         assert_eq!(file_name("../../etc/passwd"), "passwd");
         assert_eq!(file_name("C:\\Users\\me\\notes.txt"), "notes.txt");
         assert_eq!(file_name("bell\u{7}.txt"), "bell.txt");
+        assert_eq!(file_name("invoice\u{202e}fdp.apk"), "invoicefdp.apk");
         for unusable in ["", "dir/", "..", "a/.", "\u{1b}"] {
             assert_eq!(file_name(unusable), "received", "{unusable:?}");
         }
