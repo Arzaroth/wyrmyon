@@ -5477,7 +5477,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5508,7 +5508,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-mobile"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "flutter_rust_bridge",
@@ -5523,7 +5523,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-testkit"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "futures-util",
  "iroh-relay",
@@ -5534,7 +5534,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-transfer"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -5553,7 +5553,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-transport-classic"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "hex",
  "if-addrs",
@@ -5568,7 +5568,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-transport-iroh"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "futures-util",
  "iroh",
@@ -5586,7 +5586,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-wormhole"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "crypto_secretbox",
  "futures-util",
@@ -5606,7 +5606,7 @@ dependencies = [
 
 [[package]]
 name = "wyrmyon-xtask"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "clap_complete",
