@@ -79,6 +79,7 @@ on x86_64 and arm64:
 | Arch | `sudo pacman -U` the package's URL, once pacman trusts the key below, or `makepkg -si` from the PKGBUILDs in `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` |
 | Windows | the `.msi` (unsigned: SmartScreen asks once), or the script below |
 | Any Linux, macOS | the script below, or a `.tar.gz` |
+| Android 10 and newer | `wyrmyon-X.Y.Z-android-arm64-v8a.apk` (`armeabi-v7a` on older 32-bit phones), opened on the phone |
 
 ```
 curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/scripts/install.sh | sh
@@ -100,6 +101,12 @@ For Arch, the same:
 curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/master/packaging/wyrmyon.asc | sudo pacman-key --add -
 sudo pacman-key --lsign-key D399CF355EE4767B49F8C76E76B59B8342D88151
 ```
+
+The APKs are listed in `SHA256SUMS.android` and signed with the app's own key,
+whose certificate has the SHA-256
+`6b4a50d7008361cc105a66f18d5b45568633ed04dbc582c2d8847804cc046fca`
+(`apksigner verify --print-certs` shows it). Android only installs an update
+signed with the same key.
 
 The script checks the download against the release's `SHA256SUMS` and installs
 into `~/.local/bin`, with man pages and shell completions

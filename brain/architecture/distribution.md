@@ -18,6 +18,13 @@ runs `scripts/coverage.sh --check`: line coverage under 98% fails the build
 An `android` job analyzes and tests the Flutter app and builds its APK
 ([mobile.md](mobile.md)). The app's release APKs, signed with its release key,
 come from `mise run apk-release`, which refuses to build without that key.
+The key never leaves the machine that holds it, so the APKs are built and
+attached there: `mise run apk-publish` checks each is release-signed and of
+the app's version, then uploads them as `wyrmyon-X.Y.Z-android-<abi>.apk`
+with `SHA256SUMS.android` to the GitHub release the workflow made.
+`scripts/release.sh` sets the app's version to the release's, its build
+number `major * 10000 + minor * 100 + patch`, so each ABI's version code
+(`abi * 1000 + build`) grows from one release to the next.
 
 The repository lives on Forgejo (`git.arzaroth.com/Arzaroth/wyrmyon`) and is
 push-mirrored to GitHub (`github.com/Arzaroth/wyrmyon`). CI and releases run on
@@ -55,6 +62,7 @@ everywhere except:
 | `wyrmyon-vX.Y.Z-pkgbuild.tar.gz` | the AUR, later | `scripts/arch.sh` |
 | `wyrmyon-vX.Y.Z-<target>.msi` | Windows x64 and arm64 | WiX 5, `packaging/windows/wyrmyon.wxs` |
 | `SHA256SUMS` | the install scripts, anyone checking | the workflow |
+| `wyrmyon-X.Y.Z-android-{arm64-v8a,armeabi-v7a,x86_64}.apk`, `SHA256SUMS.android` | Android 10 and newer | `mise run apk-release` and `apk-publish`, on the keystore's machine |
 
 Every archive and Linux package carries both binaries, a man page per binary
 and subcommand, and bash, zsh and fish completions (PowerShell and elvish in

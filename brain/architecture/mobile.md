@@ -50,13 +50,17 @@ Cancelling goes through the transfer library's `Events::cancelled`
 ([transfer.md](transfer.md)) once the peers are paired, so a pipe or an iroh
 endpoint is closed rather than dropped; before that (waiting for the peer or
 for the offer) the pending future is dropped. Either way the peer is sent
-`transfer cancelled` once the wormhole is open.
+`transfer cancelled` once the wormhole is open. An offer that arrives after
+the cancel is refused by `receive` itself, and the app also calls `refuse`
+when it cancels before answering, so an offer never waits in the handle
+unanswered.
 
 The core (`send.rs`, `receive.rs`, `report.rs`, `session.rs`) takes a
 `wyrmyon_transfer::Source`, any writer and a callback, so it is tested in
-Rust against the in-process mailbox; `api/bridge.rs` only turns descriptors
-and Dart callbacks into those, and is left out of coverage with the generated
-code. Descriptors are Unix only: elsewhere `accept` and a descriptor source
+Rust against the in-process mailbox; `api/bridge.rs` turns descriptors
+and Dart callbacks into those, owns every descriptor it is handed (a late
+`accept` closes it), and is left out of coverage with the generated code.
+The app's callbacks never throw into Rust: a failure is a `-1` descriptor. Descriptors are Unix only: elsewhere `accept` and a descriptor source
 fail, so the crate still builds in the desktop CI jobs.
 
 ## The Android side
@@ -88,6 +92,12 @@ Dart by `lib/platform.dart`:
   off, with an ongoing notification showing progress (updated at most every
   second); a finished or failed transfer posts a notification that opens the
   app. Notifications are asked for at the first transfer (Android 13+).
+  It counts the transfers running, so the first to end does not stop it
+  under another, and stops through its own `onStartCommand`, so a transfer
+  that ends at once never stops it before it went to the foreground. The
+  count is dropped with the activity, whose engine the transfers die with.
+  Flutter's own deep linking is off: the app routes `wormhole-transfer:`
+  links itself.
 
 ## The flows
 

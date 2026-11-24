@@ -12,7 +12,8 @@ step 3 runs: a bad tag means a new patch release.
 ## 0. What a release publishes
 
 The GitHub release only: archives for six targets, .deb, .rpm and Arch
-packages, the rendered PKGBUILDs, MSIs and `SHA256SUMS`; the install scripts
+packages, the rendered PKGBUILDs, MSIs and `SHA256SUMS` from the workflow,
+then the Android APKs and `SHA256SUMS.android` from step 4b; the install scripts
 are read from `master`. PyPI, Homebrew and the AUR are deferred (ROADMAP,
 Later). The pipeline is in `brain/architecture/distribution.md`; pull
 requests that touch packaging already ran all of it but the publishing.
@@ -78,6 +79,19 @@ or reuse a tag. The release job runs last, after every package was installed
 and checked, so a failed run leaves nothing public: the dead tag just stays
 unreleased.
 
+## 4b. Attach the Android APKs
+
+Once the release exists, on the machine with the app's keystore
+(`apps/mobile/android/key.properties`), from the tag:
+
+```bash
+git switch --detach v<x.y.z>
+mise run apk-release     # signed, one per ABI; refuses without the keystore
+mise run apk-publish     # refuses debug-signed or wrongly versioned APKs
+git switch master
+gh release view v<x.y.z> -R Arzaroth/wyrmyon --json assets --jq '.assets[].name' | grep android
+```
+
 ## 5. Verify it installs
 
 ```bash
@@ -87,6 +101,6 @@ h=$(mktemp -d); curl -fsSL https://raw.githubusercontent.com/Arzaroth/wyrmyon/ma
 
 ## Done when
 
-The tag is pushed, the GitHub release has its archives and packages, a
+The tag is pushed, the GitHub release has its archives, packages and APKs, a
 throwaway install reports the new version, and `CHANGELOG.md` has a dated
 section for it. Report the version and the release URL.

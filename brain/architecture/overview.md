@@ -1,8 +1,8 @@
 # Overview
 
 A Cargo workspace of six crates, and the Android app in `apps/mobile`. The security-critical code sits in one small
-crate, and the CLI is written once against a `Transport` trait, so the two
-transports are interchangeable behind it.
+crate, and the CLI and the app share one transfer library
+(`crates/transfer`), so the two transports are interchangeable behind it.
 
 ## Crates
 

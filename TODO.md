@@ -6,12 +6,20 @@ done.
 
 ## Small work
 
-- [ ] From the Android emulator, a phone-to-computer send over iroh stalls:
-      the path flips between direct and the relay and the data barely moves
-      (a 500 KB file waits about 25 s at 100%, a 320 MB folder never
-      starts), while the other way runs direct at 10 to 30 MB/s and classic
-      transit is fine both ways. Check on a real phone whether it is the
-      emulator's NAT or the phone serving blobs.
+- [ ] The app's collection send opens a descriptor for every member before
+      importing any (`Hashing::tree`), so a folder with more files than the
+      process may hold open fails with `Too many open files`. Open each
+      member as it is imported.
+- [ ] The app's cancel while waiting for the peer drops the pending
+      wormhole without `Pending::abandon`, so the nameplate stays claimed on
+      the server until it prunes it; a cancel while `await_offer` is binding
+      iroh drops that endpoint instead of closing it.
+- [ ] The CLI keeps its own `send_tree`, `top_names` and
+      `receive_collection`, near copies of `wyrmyon_transfer`'s. Move the CLI
+      onto the library's so the offers cannot drift apart.
+- [ ] App flow tests still missing: a well-formed wrong code (PAKE fails), a
+      sender that vanishes mid-folder, and a `wyrm forward` peer joining the
+      phone's code.
 - [ ] Tests for out-of-order and duplicate phases: needs a way to make the fake
       mailbox reorder deliveries.
 - [ ] Mailbox reconnection after a dropped connection, as the Python client

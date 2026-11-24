@@ -2,7 +2,7 @@
 
 | Doc | What it covers |
 | --- | --- |
-| [overview.md](overview.md) | The workspace, the crates and the `Transport` trait |
+| [overview.md](overview.md) | The workspace, the crates and the one pipe over two transports |
 | [wormhole-core.md](wormhole-core.md) | The mailbox protocol, SPAKE2, phases, key derivations, codes |
 | [transit-classic.md](transit-classic.md) | Classic transit: hints, handshakes, the connection race, encrypted records |
 | [negotiation.md](negotiation.md) | Choosing the transport after the key exchange, and why it cannot be downgraded |

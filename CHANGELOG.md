@@ -14,7 +14,7 @@
   Received files land in `Download/wyrmyon` and are listed on Home. It talks
   to `wyrm` over iroh and to any other magic-wormhole client over classic
   transit, keeps going with the screen off, and its servers can be changed in
-  Settings. `mise run apk-release` builds its signed APKs.
+  Settings. Its signed APKs, one per ABI, are attached to the release.
 
 ## [0.8.0] - 2026-11-16
 

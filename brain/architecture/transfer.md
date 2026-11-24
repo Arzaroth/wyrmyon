@@ -21,7 +21,7 @@ progress bars, prompts, destinations, zips, merges and partial files.
 | `await_offer` | Reads the sender's messages up to the offer, answering its `transit` or `wyrmyon-iroh-v1` with ours on the way, and returns the offer with the `Connection` |
 | `receive_into(..., Sink, ...)` | Sends the `file_ack`, connects and receives into a `Sink`, then `Received::complete` acks once the caller has put the data in place (or aborts) |
 | `Tree`, `send_tree` / `receive_tree` | Several files and folders from sources, sent as a collection or the legacy zip, received into a writer per file; `usable_path` is the check a received path passes |
-| `Events` | What a transfer reports: hashing, connected (with the pipe), bytes moved, settle, awaiting the ack, stopped. `cancelled()` is the other way: a future that, once it resolves, stops the hashing, the wait for the receiver's answer or the data with `Cancelled`, closing the pipe (the sender tells a receiver still waiting for the offer `the sender cancelled`); by default it never does. `Quiet` reports nothing; the CLI's `transfer::terminal` draws bars and prints the lines the brain's feature docs quote |
+| `Events` | What a transfer reports: hashing, connected (with the pipe), bytes moved, settle, awaiting the ack, stopped. `cancelled()` is the other way: a future that, once it resolves, stops the hashing, the wait for the receiver's answer, the connection being set up or the data with `Cancelled`, closing the pipe or the iroh endpoint (the sender tells a receiver still waiting for the offer `the sender cancelled`); by default it never does. `Quiet` reports nothing; the CLI's `transfer::terminal` draws bars and prints the lines the brain's feature docs quote |
 
 ## Streams, and the copies left
 
@@ -51,9 +51,12 @@ zip64 from 3.75 GiB, as the CLI does) and sends that as the legacy directory
 offer; a source that ends early or runs long fails the zip.
 `receive_tree` takes either back into a writer per file, from a callback
 given each relative path: a collection is fetched then copied out of the
-cache (`Collection::export_each`); a zip is received into the cache and
-unpacked there, its entries checked as the CLI checks them (inside the
-directory, plain relative paths, no more files or bytes than offered).
+cache (`Collection::export_each`); a zip is received into the cache (made
+if missing) and unpacked there, over either transport, its entries checked
+as the CLI checks them (inside the directory, plain relative paths, no more
+files or bytes than offered) and its own `./` entry skipped. `usable_path`
+also refuses control and bidirectional-override characters, so a name cannot
+hide its real extension.
 Empty folders reach the callback only through the paths of the files under
 them. The CLI keeps its path-based zip and export, which merge into existing
 folders and set modes.
