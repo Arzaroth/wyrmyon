@@ -563,7 +563,14 @@ class _Done extends StatelessWidget {
             Primary(
               'Open',
               icon: Icons.open_in_new,
-              onPressed: () => platform.openDownload(saved),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                if (!await platform.openDownload(saved)) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('No app can open this file')),
+                  );
+                }
+              },
             ),
             Secondary(
               'Share…',
