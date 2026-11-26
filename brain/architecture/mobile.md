@@ -86,7 +86,9 @@ Dart by `lib/platform.dart`:
   (`notes (1).txt`) and holds files only, so a tree's empty folders are not
   kept. Home lists the newest entries under that folder rather than a
   history; Android only shows an app the entries it created, so files from
-  before a reinstall are not listed.
+  before a reinstall are not listed. Opening one is an `ACTION_VIEW` with
+  its MIME type; the manifest declares `REQUEST_INSTALL_PACKAGES`, without
+  which Android's installer silently refuses an APK opened from the app.
 - **The service** (`TransferService.kt`): a `dataSync` foreground service runs
   from the start of a transfer to its end, so it survives the screen turning
   off, with an ongoing notification showing progress (updated at most every

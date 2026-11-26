@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The Android app's Open on a received APK now starts the installer (or asks
+  to allow installs from wyrmyon first) instead of silently doing nothing,
+  and Open after a transfer says when no app can open the file.
+
 ## [0.9.0] - 2026-11-24
 
 ### Added
