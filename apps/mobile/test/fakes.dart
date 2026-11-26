@@ -157,6 +157,7 @@ class FakePlatform implements Platform {
   Completer<void>? creating;
   Object? createFails;
   List<Download> downloads = const [];
+  var opens = true;
 
   @override
   Stream<Shared> get shared => sharing.stream;
@@ -196,7 +197,7 @@ class FakePlatform implements Platform {
   @override
   Future<bool> openDownload(String uri) async {
     calls.add('open $uri');
-    return true;
+    return opens;
   }
 
   @override

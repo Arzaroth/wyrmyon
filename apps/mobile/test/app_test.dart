@@ -71,6 +71,24 @@ void main() {
     ]);
   });
 
+  testWidgets('home says when no app opens a received file', (tester) async {
+    final (_, platform) = await launch(
+      tester,
+      downloads: [
+        Download(
+          uri: 'content://downloads/9',
+          name: 'wyrmyon.apk',
+          size: 312000,
+          modified: DateTime.now(),
+        ),
+      ],
+    );
+    platform.opens = false;
+    await tester.tap(find.text('wyrmyon.apk'));
+    await tester.pump();
+    expect(find.text('No app can open this file'), findsOneWidget);
+  });
+
   testWidgets('home says where files land before any arrives', (tester) async {
     await launch(tester);
     expect(find.text('Nothing received yet'), findsOneWidget);
@@ -243,6 +261,36 @@ void main() {
     await tester.tap(find.text('Done'));
     await settle(tester);
     expect(find.text('notes.txt'), findsOneWidget);
+  });
+
+  testWidgets('open after receiving says when no app opens the file', (
+    tester,
+  ) async {
+    final (engine, platform) = await launch(
+      tester,
+      shared: const SharedLink('wormhole-transfer:7-guitarist-revenge'),
+    );
+    engine.running
+      ..offered = OfferInfo(
+        kind: OfferKind.file,
+        name: 'wyrmyon.apk',
+        size: BigInt.from(2000),
+        count: BigInt.from(1),
+        text: '',
+        iroh: false,
+      )
+      ..tell(Stage.offer);
+    await tester.pump();
+    await tester.tap(find.text('Accept'));
+    await settle(tester);
+    engine.running
+      ..tell(Stage.moving, bytes: 2000, total: 2000)
+      ..tell(Stage.done);
+    await settle(tester);
+    platform.opens = false;
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+    expect(find.text('No app can open this file'), findsOneWidget);
   });
 
   testWidgets('a failed download is removed and the error shown', (
